@@ -12,7 +12,7 @@
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
 | P-000 | 회사 구조 셋업 | (창업 세션) | DONE | - |
-| P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | TODO | - |
+| P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | IN PROGRESS | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | TODO | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | TODO | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
@@ -43,7 +43,7 @@
 - **메모:** 이후 PM 세션을 새로 띄워서 P-001부터 진행한다.
 
 ### P-001 uv 프로젝트 뼈대 + ruff + pytest + pre-commit
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-21 시작, 브랜치 `feat/P-001-project-skeleton`)
 - **담당 역할:** data-engineer
 - **단계:** 0
 - **의존:** 없음
@@ -65,6 +65,7 @@
   5. Python 3.12로 고정되어 있다(`.python-version`, `requires-python`).
 - **확인 방법:** 위 명령 4개.
 - **메모:** 2026-10-21 기준 이 맥에 uv 미설치. 설치 명령과 확인 결과를 PR에 적을 것.
+  - 2026-10-21 PM: 브리핑 작성, 사람 확인 후 data-engineer 세션 시작. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
 
 ### P-002 Docker Compose PostgreSQL + 설정 로딩
 - **상태:** TODO
