@@ -65,7 +65,7 @@
   5. Python 3.12로 고정되어 있다(`.python-version`, `requires-python`).
 - **확인 방법:** 위 명령 4개.
 - **메모:** 2026-10-21 기준 이 맥에 uv 미설치. 설치 명령과 확인 결과를 PR에 적을 것.
-  - 2026-10-21 PM: 브리핑 작성, 사람 확인 후 data-engineer 세션 시작. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
+  - 2026-10-21 PM: 브리핑 작성, 사람 확인 후 data-engineer 세션 시작(Opus 5.5, 노력 높음, D-011). 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
 
 ### P-002 Docker Compose PostgreSQL + 설정 로딩
 - **상태:** TODO
