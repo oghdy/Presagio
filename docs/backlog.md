@@ -66,7 +66,8 @@
 - **확인 방법:** 위 명령 4개.
 - **메모:** 2026-10-21 기준 이 맥에 uv 미설치. 설치 명령과 확인 결과를 PR에 적을 것.
   - 2026-10-21 PM: 브리핑 작성, 사람 확인 후 data-engineer 세션 시작(Opus 5.5, 노력 높음, D-011).
-  - 2026-10-21 PM: PR #1(https://github.com/oghdy/Presagio/pull/1) 도착. reviewer 세션 시작(Opus 5.5, 노력 높음). 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
+  - 2026-10-21 PM: PR #1(https://github.com/oghdy/Presagio/pull/1) 도착. reviewer 세션 시작(Opus 5.5, 노력 높음).
+  - 2026-10-21 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O. 발견 사항 [낮음] 1건(README가 `pre-commit run --all-files`로 비밀값 전체 검사가 되는 것처럼 읽힘. 실제 gitleaks 훅은 스테이징 변경만 검사). 결정 D-012, D-013, D-014 기록. 사람 머지 대기. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
 
 ### P-002 Docker Compose PostgreSQL + 설정 로딩
 - **상태:** TODO
@@ -103,6 +104,7 @@
   2. uv 캐시를 써서 2회차 실행이 1분 이내다(증거: Actions 로그 링크).
   3. main 브랜치 보호 규칙 제안(필수 체크)을 PR 본문에 적는다. 적용은 사람이 한다.
 - **확인 방법:** PR의 Checks 탭.
+- **메모:** 2026-10-21 PM: P-001 리뷰어가 완료 기준 추가를 제안함(decisions.md Q-001: `gitleaks git` 기록 전체 검사). 기준 변경은 사람 승인 후 반영. README에 "gitleaks 훅은 스테이징 변경만 본다, 기록 전체는 CI에서" 한 줄 추가도 이 티켓에서 같이 처리 가능(사람 확인 필요).
 
 ---
 
