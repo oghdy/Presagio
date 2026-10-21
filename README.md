@@ -28,7 +28,57 @@
 
 ## 실행 방법
 
-단계 0(P-001, P-002)이 끝나면 여기에 `uv sync`, `docker compose up`, 테스트 명령이 채워진다.
+### 1. uv 설치 (처음 한 번)
+
+[uv](https://docs.astral.sh/uv/)는 파이썬 버전, 가상환경, 의존성을 한 번에 관리하는 도구다. 둘 중 하나로 설치한다.
+
+```bash
+brew install uv
+```
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+설치 후 `uv --version`이 나오면 된다. 안 나오면 새 터미널을 열거나 `~/.local/bin`이 `PATH`에 있는지 확인한다.
+
+### 2. 의존성 설치
+
+```bash
+uv sync
+```
+
+`.python-version`(3.12)에 맞는 파이썬을 uv가 직접 내려받아 `.venv/`를 만든다. 시스템(anaconda 등) 파이썬은 쓰지 않는다(`pyproject.toml`의 `python-preference = "only-managed"`).
+
+### 3. 테스트와 린트
+
+```bash
+uv run pytest -q
+```
+
+```bash
+uv run ruff check .
+```
+
+```bash
+uv run ruff format --check .
+```
+
+### 4. 커밋 전 검사(pre-commit) 켜기 (클론마다 한 번)
+
+```bash
+uv run pre-commit install
+```
+
+이후 `git commit`마다 ruff(린트, 포맷)와 gitleaks(비밀값 탐지)가 자동으로 돈다. 전체 파일에 한 번 돌려 보려면:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+gitleaks 훅은 처음 실행할 때 Go 툴체인을 pre-commit이 알아서 내려받으므로 몇 분 걸릴 수 있다.
+
+DB(`docker compose up`)와 설정 파일(`.env.example`)은 P-002에서 추가된다.
 
 ## 기술 스택 (기본안)
 
