@@ -223,6 +223,7 @@
   - 2026-10-22 PM: 설계안 3장의 "실제 일정 응답(4MB)으로 jsonb TOAST 압축률을 재본다"는 raw 저장이 처음 생기는 이 티켓에서 한다(P-012 리뷰에서 범위 조정). 결과를 PR에 적고 용량 추정을 갱신.
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑은 PM 공유 노트 `P-013-briefing.md`. nba_api(requests 내부)와 The Odds API(httpx) 두 소스를 한 레이어로, 상태 코드를 파싱 전에 검사, raw 버전 규칙(D-028 A-1).
   - 2026-10-22 PM: PR #10(https://github.com/oghdy/Presagio/pull/10) 도착. 테스트 43개 추가(DB 켜면 77 passed), CI 초록. 결정 제안 7건(nba_api는 요청 설명만, 전송은 httpx / nba_api 런타임 이동 / Accept-Encoding gzip / 모든 응답 raw 저장 / 시계 분리 / lz4 검토 / job_type은 P-016). 작성자 질문: 403/429는 브리핑의 `failed`가 아니라 설계안 4장의 `aborted`로 닫음 → PM 판단: 승인된 설계안(D-028)이 브리핑보다 우선, `aborted`가 맞다. TOAST: pglz 780KB vs lz4 630KB(4MB 일정 응답). reviewer 카드 올림.
+  - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O(네트워크 차단 상태에서 77 passed, 순서 강제·raw 버전·비밀값 누출 0 재현). [낮음] 4건: `STALE_RUN_HOURS` 미사용, 같은 바이트·다른 상태 코드 병합, `finish()`가 닫힌 행 덮어씀, `DecodingError` 미포장 → (a)(b)(c)는 P-016 완료 기준으로, 병합 한계는 D-032에 기록. 결정 D-031, D-032 기록, lz4는 Q-010 보류 추천. PM 수락. 사람 머지 대기.
 
 ### P-014 nba_api 어댑터: 팀, 일정, 결과 → teams, games
 - **상태:** TODO
@@ -269,6 +270,7 @@
   2. `--dry-run`이 호출 수와 예상 시간을 출력하고 DB를 건드리지 않는다.
   3. 날짜 단위로 진행 상황이 `ingestion_runs`에 남고, 재실행 시 이미 완료된 날짜는 건너뛰거나 멱등하게 다시 처리한다(둘 중 무엇을 택했는지 decisions 제안).
   4. 일부 날짜가 실패해도 전체가 멈추지 않고 실패 목록을 마지막에 출력한다.
+  5. (2026-10-22 추가, D-032 후속) `track_run`에 `stale_after_hours`를 설정값(`STALE_RUN_HOURS`)으로 넘겨 죽은 프로세스의 `running` 행이 이후 실행을 영구 거부하지 않는다(테스트). `RunTracker.finish()`는 `WHERE status='running'`으로만 갱신한다(테스트). `httpx.DecodingError` 등 `TransportError` 밖의 httpx 예외도 `IngestionError`로 감싼다. `job_type` 값 목록과 `code_version`(git 해시) 자동 기록을 확정한다. CLI 로깅 설정이 `httpx` 로거를 INFO로 내리지 않는다(쿼리스트링에 키가 찍힘, D-031).
 - **확인 방법:** 픽스처 기반 테스트 + `--dry-run` 실행.
 
 ### P-017 증분 수집 CLI (전날 결과 + 오늘 일정)
