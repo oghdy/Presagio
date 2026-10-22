@@ -80,7 +80,47 @@ gitleaks 훅은 처음 실행할 때 Go 툴체인을 pre-commit이 알아서 내
 
 gitleaks 훅은 스테이징된 변경만 본다. 커밋 기록 전체 검사는 CI에서 한다.
 
-DB(`docker compose up`)와 설정 파일(`.env.example`)은 P-002에서 추가된다.
+### 5. 로컬 DB(PostgreSQL) 띄우기
+
+DB는 [Docker Desktop](https://www.docker.com/products/docker-desktop/)으로 띄운다(D-016). Docker Desktop을 설치하고 실행한 뒤 `docker info`가 에러 없이 나오면 된다.
+
+먼저 설정 파일을 만든다. `.env.example`에는 로컬 개발용 가짜 값만 있고, 복사본 `.env`는 `.gitignore`에 있어 커밋되지 않는다.
+
+```bash
+cp .env.example .env
+```
+
+PostgreSQL 컨테이너를 백그라운드로 띄운다. `--wait`는 헬스체크가 healthy가 될 때까지 기다렸다가 끝나고, healthy가 안 되면 실패(종료 코드 1)한다. 처음에는 이미지를 받느라 1분쯤 걸릴 수 있다.
+
+```bash
+docker compose up -d --wait
+```
+
+`--wait` 없이 `docker compose up -d`만 쓰면 바로 끝나지만, 직후 몇 초 동안은 `(health: starting)` 상태다. 상태를 본다. `STATUS`에 `(healthy)`가 보이면 준비 완료다.
+
+```bash
+docker compose ps
+```
+
+파이썬 코드가 `.env`의 `DATABASE_URL`로 DB에 붙는지 확인한다. 성공하면 `OK ... PostgreSQL 17...`이 찍히고, 실패하면 `FAILED: ...`와 함께 종료 코드 1로 끝난다.
+
+```bash
+uv run python -m presagio.db.session
+```
+
+이제 `uv run pytest -q`를 돌리면 DB 연결 테스트도 실제로 실행된다. DB가 꺼져 있거나 `.env`가 없으면 연결 테스트만 skip 되고 나머지는 그대로 통과한다.
+
+멈출 때는 아래 명령을 쓴다. 데이터는 이름 있는 볼륨(`presagio_pgdata`)에 남아 다음 `up`에서 그대로 쓰인다. 데이터까지 지우려면 `docker compose down -v`.
+
+```bash
+docker compose down
+```
+
+호스트 포트는 5432가 아니라 **5433**이다. 맥에 Postgres.app이나 Homebrew PostgreSQL이 이미 5432를 쓰고 있는 경우가 많아서 충돌을 피했다. 바꾸려면 `.env`의 `POSTGRES_HOST_PORT`와 `DATABASE_URL`의 포트를 함께 고친다.
+
+`DATABASE_URL`의 호스트는 `localhost`가 아니라 `127.0.0.1`이다. `localhost`는 IPv6 주소(`::1`)로도 풀리는데 컨테이너는 `127.0.0.1`에만 열려 있어서, 연결 실패 메시지의 첫 줄이 엉뚱한 `::1 ... Connection refused`가 되어 진짜 원인(비밀번호 틀림 등)을 가린다.
+
+연결 테스트는 "DB 포트에 아무도 없음"이면 skip하고, "포트는 열려 있는데 접속이 거부됨"(비밀번호·DB 이름이 틀림)이면 **실패**한다. 설정이 틀렸는데 skip으로 조용히 넘어가지 않게 하기 위해서다.
 
 ## 기술 스택 (기본안)
 

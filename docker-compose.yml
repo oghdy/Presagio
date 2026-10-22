@@ -1,0 +1,28 @@
+# Local development database.
+#   start: docker compose up -d     status: docker compose ps     stop: docker compose down
+# Values are read from .env (copy .env.example); the defaults below match .env.example.
+name: presagio
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-presagio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-presagio}
+      POSTGRES_DB: ${POSTGRES_DB:-presagio}
+    ports:
+      # Bind to localhost only. The host port defaults to 5433 so it does not clash with a
+      # natively installed PostgreSQL (e.g. Postgres.app) that already listens on 5432.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata:
