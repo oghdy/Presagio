@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 사람 승인(D-045). 새 PM 세션이 P-030 브리핑부터 시작한다.
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 사람 승인(D-045). 새 PM 세션(2026-10-23 오전 교대)이 P-030 브리핑 초안을 올렸고 사람 확인 대기. Q-015~Q-017(검증 노트 F-1~F-3) 사람 결정 대기.
 
 ### 보드 한눈에 보기
 
@@ -427,6 +427,9 @@
 
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
+| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | TODO (Q-017 승인 대기) | P-017, Q-017 |
+| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | TODO (Q-015 승인 대기) | P-021, Q-015 |
+| P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | TODO (사람 확인 대기) | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | TODO | P-021 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (features, model_versions, predictions as_of 스냅숏, 참조 배당) + `games.is_neutral`(Q-013) → 마이그레이션 0002 | data-engineer | TODO | P-030 승인 |
 | P-032 | walk-forward 평가 틀 + 지표(log loss, Brier, 보정 구간, MAE/RMSE) + 시장 확률·CLV 계산 | ml-engineer | TODO | P-030 승인 |
@@ -436,6 +439,88 @@
 | P-036 | 누수 감사 1차 (P-032~P-035 대상: as_of 강제, 시간 여행 테스트, 미래 주입 테스트) | leakage-auditor | TODO | P-035 |
 | P-037 | 실험 1차: 가설 등록 → 기준선 vs Elo vs 시장, 시즌별 walk-forward 지표 표 → `docs/experiments.md` | ml-engineer | TODO | P-034, P-035, P-036 |
 | P-038 | 단계 2 학습 노트 + 단계 3 계획 초안 | pm | TODO | P-037 |
+
+병렬: **P-024, P-025, P-029, P-030**은 서로 파일이 겹치지 않는다(`scripts/`+README / `ingestion/`+tests / `docs/team/`+CLAUDE.md / `docs/design/modeling-v1.md`). 사람 승인이 나오는 대로 동시에 띄울 수 있다. P-031 보드 제목의 "`games.is_neutral`(Q-013) → 마이그레이션 0002"는 **Q-015 결과대로 고친다**(검증 노트 F-1: 컬럼은 이미 있음). 지금은 그대로 두고 메모만 남긴다.
+
+### 티켓 상세 (2026-10-23 새 PM이 확정. 완료 기준은 사람만 바꾼다, D-008)
+
+### P-030 🧑 모델링 설계안 v1 + 실험 계획
+- **상태:** TODO (브리핑 초안 작성 완료 `P-030-briefing.md`, 사람 확인 대기 → 확인 후 IN PROGRESS)
+- **담당 역할:** ml-engineer (설계안 작성. Fable 5.1, 노력 xhigh, D-043) → PM → 사람 승인
+- **단계:** 2
+- **의존:** P-021 (DONE)
+- **목표:** 단계 2~4에서 "무엇을 어떤 데이터로 예측하고, 시장(배당)과 어떻게 비교·결합하고, 어떤 가설을 어떤 순서로 어떻게 검증할지"를 한 문서로 정해 사람 승인을 받는다. 이 문서가 P-031(모델링 스키마), P-032(walk-forward 틀), P-033~P-035(기준선·Elo·피처), P-037(실험 1차)의 입력이다. **사람 승인 전에 구현 티켓은 시작되지 않는다.** 코드는 쓰지 않는다.
+- **범위(건드릴 파일):** `docs/design/modeling-v1.md` 하나(그림은 mermaid로 문서 안에).
+- **범위 밖:** 코드, 마이그레이션·DDL(P-031이 설계안의 "요구 사항"을 받아 만든다), 실험 실행, `docs/experiments.md` 기록(P-037), 배당 결제 결정(사람, P-033 때), `docs/backlog.md`·`docs/decisions.md`.
+- **읽어야 할 파일:** `CLAUDE.md`, `PRESAGIO_OVERVIEW.md` 1·2·3·7장, `docs/backlog.md` 단계 2 절(사람의 방향 메모 포함), `docs/decisions.md` D-004·D-023·D-025~D-028·D-033·D-035·D-036·D-038·D-039·D-042~D-045, `docs/design/schema-v1.md` 1-5·6·7·8·9장, `docs/research/backfill-report-stage1.md` 3·10장, `docs/research/nba_api.md` 3·6장, `docs/research/odds_api.md` 2.1·3·4장, `docs/experiments.md`, `docs/learning/glossary.md`, `.claude/agents/leakage-auditor.md`, `src/presagio/ingestion/possessions.py`, `src/presagio/db/models.py`(읽기만)
+- **완료 기준 (전부 만족해야 DONE):**
+  1. **예측 대상 표.** 승패(홈팀 승 확률)와 총점(예상 총점, 그리고 토탈 라인 대비 오버 확률) 각각에 대해 입력·출력·단위, 대상 경기 필터(`game_type` regular/playin/playoffs 기본. `cup_final`·플레이인 포함 여부는 M-항목), 예측 기준 시각(`as_of`) 후보와 D-038 수집 시각(16:00 KST 본 실행, 동부 18:45·19:45·21:45 마감 스냅숏)과의 관계가 표로 적혀 있다.
+  2. **피처 후보 표.** 피처마다 이름, 정의(수식 또는 SQL 의사코드), 읽는 테이블·뷰(`games`, `team_game_stats_primary`, `odds_snapshots`/`odds_closing_lines`만), as_of 규칙(어느 시각 이전 행만 쓰는지), 버전 전략, 근거(출처 또는 사람 메모의 대리 지표). 최소 포함: 최근 5/10/20경기 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정·중립, 시즌 누적, Elo, 시장 암시 확률. D-035 포제션 공식과 대안(basketball-reference식) 비교 실험 계획이 있다. 현재 스키마로 계산할 수 없는 대리 지표는 "데이터 요구"로 따로 적는다.
+  3. **시장 기준선 정의.** 마진 제거 방식(D-036 비례 배분을 출발값으로, 대안 1개 이상과 비교), 북메이커 선택 규칙(특정 북메이커 vs 합의 확률), "예측 시점 배당"(as_of 이전 마지막 스냅숏)과 "마감 배당"(`odds_closing_lines`, `lead_time` 허용치)의 정의, CLV 정의, 배당이 없는 경기·시즌(2023-24~2025-26은 $59 백필 전까지)의 처리 규칙이 있다.
+  4. **지표와 walk-forward 프로토콜.** 지표(정확도, log loss, Brier, 보정 구간표, 총점 MAE/RMSE, 시장 대비 log loss·Brier 차이, CLV)의 정의와 계산 단위, walk-forward 단위(재학습 주기)와 이유, 학습 시작·콜드 스타트 규칙, 시즌 경계 처리(Elo 평균 회귀 포함), 보류(holdout) 시즌 규칙(제안: 2025-26을 P-037까지 보지 않음. M-항목)이 있다.
+  5. **가설 목록 8~12개.** 번호(H-01…), 한 문장 가설, 비교 대상, 지표, **사전 등록된 성공 판정 기준(숫자)**, 시장 포함/미포함 실험군, 배정 단계(2/3/4). 사람 방향 메모의 항목(시뮬레이션 모델, 감독·전술 대리 지표, 전략 토너먼트, 다폴더)이 어느 가설·단계에 들어가는지 또는 왜 지금 범위 밖인지 적혀 있다. `docs/experiments.md` 양식에 추가할 항목 제안(가설 번호, 사전 판정 기준, 보류 시즌 미접촉 선언)이 있다.
+  6. **P-031에 넘길 모델링 레이어 요구 사항.** `features`, `model_versions`, `predictions`, `evaluations`에 필요한 컬럼·키·as_of 규칙을 요구 형태(DDL 아님)로. D-033(경기당 여러 as_of 스냅숏 + 참조 배당 스냅숏), schema-v1 9장 초안, D-030 교훈(features는 계산 시 저장, 재계산 덮어쓰기 금지)이 반영돼 있다.
+  7. **누수 자기 점검 절.** 피처·기준선·평가마다 "as_of 이후 정보가 섞일 수 있는 경로"와 방어책(시간 여행 테스트·미래 주입 테스트 아이디어). 브리핑의 leakage-auditor 관점 질문 8개에 전부 답한다. "누수 없음" 선언은 하지 않는다(판정은 감사관, D-006).
+  8. **"사람이 결정할 지점" 절.** M-1부터 번호, 각각 추천안·대안·영향. 최소 포함: 예측 기준 시각, 보류 시즌, `cup_final`·플레이인 포함 여부, 북메이커 선택, 마진 제거 방식, walk-forward 단위, Elo 출발 상수(K·홈 어드밴티지·회귀율)와 출처, 시장 비교 불가 기간의 처리.
+  9. **문서 품질.** 맨 앞에 사람용 쉬운 말 요약(10문장 이내)과 새 용어 풀이. 문서의 모든 숫자는 출처(개발 DB 쿼리 원문 또는 보고서 절)가 있고, 문헌 값은 출처가 있으며, 확인 못 한 것은 "(미확인)"으로 표시한다. 사람이 승인하면 PM이 D-번호로 기록한다.
+- **확인 방법:** 사람이 설계안을 읽고 M-번호에 답한다. reviewer(Opus 5.5 높음)가 문서 리뷰(숫자를 개발 DB에서 재현, 수식 검토, 누수 경로 점검)를 하고 PM이 기준 1~9를 대조한다.
+- **메모:**
+  - 2026-10-23 PM: 브리핑 초안 `P-030-briefing.md`(공유 노트) 작성. 사람 확인 후 ml-engineer 세션(Fable 5.1 xhigh, 새 worktree) 시작. 브랜치 `docs/P-030-modeling-design`. 검증 노트 F-5의 데이터 사실(cup_final 별도 타입, `team_game_stats_primary`, `odds_closing_lines`, 배당은 live 1회분)을 브리핑에 넣었다.
+
+### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
+- **상태:** TODO (Q-017 승인 대기)
+- **담당 역할:** platform-engineer (단계 6 역할의 선행 예외 활성. D-002 예외, P-003·P-023과 같은 방식)
+- **단계:** 2 (단계 6 선행)
+- **의존:** P-017 (DONE), Q-017 승인
+- **목표:** 단계 6 배포 전까지 올 시즌 배당 스냅숏과 매일 결과 수집이 끊기지 않게, 이 맥에서 launchd로 `presagio ingest-daily`를 D-038 시각에 돌린다. 임시 장치이며 단계 6에서 서버 스케줄로 대체하고 제거한다.
+- **범위(건드릴 파일):** `scripts/launchd/`(plist 템플릿, 설치·제거 스크립트, 실행 래퍼), `README.md` 8절 아래 운영 소절.
+- **범위 밖:** 스케줄러 도구 선택(Prefect 등), 클라우드 배포, 알림, 신선도 체크(전부 단계 6), 제품 코드(`src/`), 스키마, `.env` 내용 변경.
+- **읽어야 할 파일:** `CLAUDE.md`, `README.md` 8·9절, `docs/decisions.md` D-027·D-037(종료 코드)·D-038·D-039, `src/presagio/cli.py`(`ingest-daily` 옵션), `.env.example`
+- **완료 기준 (전부 만족해야 DONE):**
+  1. `scripts/launchd/`에 plist와 설치·제거 명령이 있고, README에 "켜는 법 / 끄는 법 / 로그 보는 법 / 맥이 꺼져 있던 날을 확인하는 쿼리(`ingestion_runs`)"가 있다. 새 클론에서 설치 명령을 실행하면 `launchctl list | grep presagio`에 잡이 보인다(D-021: 명령 + 예상 결과).
+  2. 하루 **정확히 4회**만 실행된다: 16:00 KST 본 실행 1회, 동부 18:45·19:45·21:45 `--odds-only` 3회. 미국 서머타임 종료(2026-11-01) 전후 모두 **동부 시각 기준**으로 맞는다(테스트 또는 dry-run 로그로 증명). 중복 호출은 없다(월 최대 372크레딧, D-027).
+  3. 실행 결과(종료 코드, 표준 출력·오류)가 날짜별 로그 파일로 남고, 종료 코드 2(차단)·1(실패/partial)·0이 로그에서 구분된다.
+  4. 레포 경로·uv 경로·`.env` 위치가 plist에 사람 손으로 박히지 않고 설치 스크립트가 채운다. 루트 `.env`의 키는 읽기만 하고 복사·출력하지 않는다.
+  5. 실제 설치 후 본 실행 1회의 `ingestion_runs` 결과(run_id, status, 배당 스냅숏 행 수)를 PR에 적는다. 외부 호출은 그 1회(nba_api 2~3회 + 배당 3크레딧) 이내. Q-017 승인이 이 호출의 승인이다.
+- **확인 방법:** `launchctl list | grep presagio`, 로그 파일, `SELECT job_type, scope_key, status, started_at FROM ingestion_runs ORDER BY run_id DESC LIMIT 10`.
+- **메모:**
+  - 2026-10-23 PM: 창업 세션 검증 노트 F-3로 생성. 맥·Docker Desktop이 꺼진 날은 결손이고 `ingestion_runs`에 run이 없는 것으로 드러난다(정직한 결손). 브랜치 `feat/P-024-launchd-schedule`.
+
+### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
+- **상태:** TODO (Q-015 승인 대기)
+- **담당 역할:** data-engineer
+- **단계:** 2 (단계 1 보수)
+- **의존:** P-021 (DONE), Q-015 (a) 승인
+- **목표:** `games.is_neutral`은 schema v1에 이미 있지만 2023-24 시즌은 NBA 일정 응답의 `isNeutral`이 전부 false라 중립 경기 5개(멕시코시티 `0022300172`, 파리 `0022300527`, 라스베이거스 인시즌 토너먼트 준결승 `0022301229`·`0022301230`, 결승 `0062300001`)가 false로 저장돼 있다. 일정 파서에 보완 규칙을 넣고 2023-24 일정을 다시 받아 값을 채운다. Elo 홈 어드밴티지와 홈/원정 피처(P-034·P-035)가 이 값을 쓴다.
+- **범위(건드릴 파일):** `src/presagio/ingestion/sources/nba_api/schedule.py`(보완 규칙), 필요 시 `src/presagio/ingestion/loaders/games.py`, `tests/ingestion/`, `tests/fixtures/nba_api/`(2023-24 중립 경기 1~2개가 든 작은 일정 샘플), `docs/design/schema-v1.md` 6-1 적재 규칙 표 한 줄(스키마 아님).
+- **범위 밖:** 스키마·마이그레이션(컬럼은 이미 있음), 다른 시즌 값 변경, 모델링 레이어(P-031), `docs/backlog.md`·`docs/decisions.md`.
+- **읽어야 할 파일:** `CLAUDE.md`, `docs/decisions.md` D-034·D-042·D-044(Q-015로 정정 예정), `docs/design/schema-v1.md` 6-1, `docs/research/backfill-report-stage1.md` 4-1·10장, `tests/fixtures/nba_api/scheduleleaguev2__2023-24.json`
+- **완료 기준 (전부 만족해야 DONE):**
+  1. 보완 규칙이 코드와 schema-v1 6-1 적재 규칙 표에 적혀 있다. 규칙 후보 둘 중 하나를 raw 응답 근거로 고르고 PR에 이유를 적는다: (a) `isNeutral` OR `arenaCity`가 중립 개최지 목록(Mexico City, Paris, Las Vegas, London, Berlin, Manchester 등)에 있음, (b) game_id 고정 목록. 어느 쪽이든 `isNeutral=true`인 경기는 그대로 true다.
+  2. 테스트: 2023-24 일정 픽스처로 파서가 중립 경기를 true, 일반 경기를 false로 낸다. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과.
+  3. 개발 DB에서 `uv run presagio backfill --season 2023-24 --force` 후 `SELECT game_id FROM games WHERE season='2023-24' AND is_neutral ORDER BY 1`이 위 5경기 정확히 그 집합을 돌려주고, 다른 시즌의 true 수(2024-25 6, 2025-26 6, 2026-27 4)와 `games` 5,169·`team_game_stats` 7,946 행 수가 변하지 않는다(전후 count를 PR에).
+  4. D-042 2항대로 PR 본문에 "영향받는 단위: 2023-24 일정"과 실제 `--force` 실행 결과(호출 수, 종료 코드)를 적는다. 외부 호출은 최대 5회(teams 1 + 일정 1 + 게임로그 3) 이내.
+- **확인 방법:** 기준 3의 쿼리, `uv run presagio quality-check --season 2023-24` 14 pass.
+- **메모:**
+  - 2026-10-23 PM: 창업 세션 검증 노트 F-1로 생성. D-044의 "컬럼 추가"는 틀린 전제였다(컬럼은 마이그레이션 0001에 있음) → Q-015로 정정 요청. 브랜치 `fix/P-025-neutral-2023-24`.
+
+### P-029 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다
+- **상태:** TODO (사람 확인 대기)
+- **담당 역할:** pm
+- **단계:** 2
+- **의존:** 없음 (Q-016 결과가 나오면 D-047도 같은 PR에)
+- **목표:** 단계 1에서 내린 운영 결정이 운영 문서(`docs/team/*`, `CLAUDE.md`)에 반영되지 않아 새 세션이 옛 규칙을 읽는다(검증 노트 F-4). 문서를 결정과 맞춘다. 규칙을 새로 만들지 않는다.
+- **범위(건드릴 파일):** `docs/team/risks.md`, `docs/team/workflow.md`, `docs/team/organization.md`, `CLAUDE.md`
+- **범위 밖:** 결정 변경, 역할 파일(`.claude/agents/`), 제품 코드, `PRESAGIO_OVERVIEW.md`(3장은 이미 D-038대로임).
+- **완료 기준 (전부 만족해야 DONE):**
+  1. `risks.md` B2가 "하루 최대 4회(D-027, 시각은 D-038)"이고, B8의 "uv 미설치"가 현재 상태(uv 설치됨, D-013 `only-managed`)로 갱신된다.
+  2. `workflow.md` 리뷰어 시작 프롬프트에 D-014의 `git fetch origin <브랜치> && git checkout --detach origin/<브랜치>`와 `git diff main...HEAD --stat` 확인 단계가 있고, 7장(머지)에 D-005 보완("사람이 명시하면 PM이 `gh pr merge --squash`")이 있고, "세션 시작은 사람 턴에서만, 자동 턴은 카드 또는 서브에이전트(전용 worktree)" 한 줄이 있다.
+  3. `organization.md`에 D-011·D-043 모델·노력 표가 있다.
+  4. `CLAUDE.md` 7장(또는 1장)에 D-005 보완 한 줄이 있다. Q-016이 승인되면 "PM 문서 변경도 브랜치 + PR"(D-047)로 바뀐다.
+  5. `git grep -n "하루 2회" docs/team CLAUDE.md`가 0줄이고, 바뀐 문장마다 D-번호가 붙어 있다. PR은 문서만(`src/`·`tests/` 변경 0).
+- **확인 방법:** PR diff, 기준 5의 grep.
+- **메모:**
+  - 2026-10-23 PM: 검증 노트 F-4로 생성. P-030과 파일이 겹치지 않아 병렬. 브랜치 `docs/P-029-ops-docs-sync`. PM이 직접 쓰고 사람이 머지한다(리뷰어 없음, 문서 정합성 작업).
 
 ### 티켓 초안 요지 (상세 완료 기준은 P-030 승인 후 새 PM이 확정)
 
@@ -449,6 +534,7 @@
 
 ### 단계 2 시작 전 결정된 것 (2026-10-23)
 - D-043 모델·노력 배치, D-044 `is_neutral` 컬럼(P-031), D-045 계획 승인. 과거 배당 $59 백필은 **P-033 시장 기준선 만들 때** 사람이 결제 → PM이 백필 티켓(P-039 후보) 생성.
+- 2026-10-23 새 PM: 창업 세션 검증 노트(`stage-1-verification-2026-10-23.md`, F-1~F-5)로 세 가지를 질문으로 올렸다. **Q-015** D-044 정정(`is_neutral` 컬럼은 이미 있음, 2023-24 값만 보완 → P-025), **Q-016** 브랜치 보호, **Q-017** 임시 스케줄(P-024). F-4 문서 드리프트는 P-029. P-031 보드 제목의 "`games.is_neutral`(Q-013) → 마이그레이션 0002"는 Q-015 결과대로 고친다.
 
 ## 나중에 (단계 2 이후, 티켓화 전 메모)
 
