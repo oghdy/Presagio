@@ -288,6 +288,18 @@
 - **다른 선택지:** basketball-reference `Poss`(0.4 × FTA + 1.07 × 공격 리바운드 보정, 상대 DREB·FGM 필요. 더 정확하다고 알려졌지만 복잡. 브리핑의 "basketball-reference 근사"는 부정확한 표현이었고 작성자가 바로잡음), 0.475(대학 농구), 팀별 값만 쓰기, 컬럼 추가해 저장(스키마 변경, 재현성 약화).
 - **다시 볼 때:** 단계 2에서 Four Factors·페이스 피처를 만들 때 공식 비교 실험을 `docs/experiments.md`에 남긴다.
 
+## D-036 배당 적재 규칙: 긴 형식, 시작한 경기는 버림, 매핑은 별칭+±6시간+후보 1개, 소수식 ROUND_HALF_UP 4자리, 쿼터 헤더 기록
+- **날짜:** 2026-10-22 (P-019, PR #14의 결정 제안 + 리뷰어 검증을 PM이 채택. 실제 호출 2회는 사람 승인)
+- **무엇을:**
+  1. The Odds API `/odds`(지역 `us`, 마켓 `h2h,spreads,totals`, `oddsFormat=decimal`)를 `IngestionClient`로 받아 outcome 1개 = `odds_snapshots` 1행(긴 형식), 자연키 5컬럼 `ON CONFLICT DO NOTHING`. `captured_at`은 우리가 받은 시각(raw `fetched_at`). `captured_at >= commence_time`인 경기(이미 시작)는 저장하지 않고 건너뛴 수를 run에 기록(설계안 7-2 CHECK).
+  2. 매핑(A-9 구체화): `team_aliases(source='the_odds_api')` 두 팀이 모두 매치되고 `games.start_time_utc`가 `commence_time` ±6시간(경계 포함) 안인 후보가 **정확히 1개**일 때만 `odds_events.game_id`를 채운다(`match_method='alias+time'`). 아니면 NULL + 이슈(`unknown_team_alias`, `no_matching_game`, `home_away_swapped`, `ambiguous_game`). `remap_unmatched_events`가 나중에 NULL을 채운다. 연기 후에도 `game_id`는 그대로.
+  3. 배당 수학: 미국식 → 소수식(`+150→2.5`, `-110→1.9091`), 소수식 4자리 ROUND_HALF_UP, 암시 확률 `1/odds`, 마진 제거는 비례 배분(두 쪽 합 1). 팀 이름 시드 30개는 실제 응답으로 확인됨.
+  4. 모르는 마켓(`h2h_lay`, 선수 마켓)·북메이커·필드는 버리거나 무시하고 이슈로만 남긴다(깨지지 않음). 다른 종목은 `other_sport` 이슈로 저장 0.
+  5. 키는 `ApiRequest.secret_params`로만 전달(D-031). `x-requests-remaining/used/last`를 성공 run의 `error_detail.quota`에 기록. 첫 실제 호출 후 월 잔여 497크레딧.
+- **왜:** 긴 형식은 마켓이 늘어도 스키마가 안 바뀐다. 시작한 경기의 배당(live)은 예측 시점 배당으로 쓰면 누수라 아예 저장하지 않는다. 매핑을 보수적으로(후보 1개) 해야 잘못된 경기에 배당이 붙는 것을 막고, NULL은 품질 체크(P-020)가 드러낸다. 리뷰어가 실제 응답 41경기·796가격으로 41/41 매핑, 시각 차이 최대 600초, 마진 2.8~6.4%를 확인했다.
+- **다른 선택지:** 넓은 형식(마켓별 컬럼, 스키마 변경 잦음), 팀 이름 유사도 매칭(오매핑 위험), 시작한 경기도 저장 후 플래그(누수 위험), 은행가 반올림(가격 비교 시 혼동).
+- **남은 것:** D-027의 "하루 최대 4회의 정확한 시각"은 이 PR이 정하지 않았다 → P-017(증분 CLI)에서 정한다. 같은 응답에 중복 `event id`가 있으면 적재 전체가 실패한다(리뷰어 [낮음] L1, 실제 응답에서는 미관찰) → P-017에서 그 이벤트만 제외하도록. 과거 배당 API는 최상위 `{data: ...}` 구조라 어댑터가 따로 필요(D-026 보류와 함께).
+
 ---
 
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)
