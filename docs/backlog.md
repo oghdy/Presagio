@@ -12,7 +12,7 @@
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
 | P-000 | 회사 구조 셋업 | (창업 세션) | DONE | - |
-| P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | REVIEW | - |
+| P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | TODO | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | TODO | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
@@ -43,7 +43,7 @@
 - **메모:** 이후 PM 세션을 새로 띄워서 P-001부터 진행한다.
 
 ### P-001 uv 프로젝트 뼈대 + ruff + pytest + pre-commit
-- **상태:** REVIEW (2026-10-21 PR #1 열림, 브랜치 `feat/P-001-project-skeleton`)
+- **상태:** DONE (2026-10-22, PR #1 squash merge → main `7f06c2a`)
 - **담당 역할:** data-engineer
 - **단계:** 0
 - **의존:** 없음
@@ -67,7 +67,8 @@
 - **메모:** 2026-10-21 기준 이 맥에 uv 미설치. 설치 명령과 확인 결과를 PR에 적을 것.
   - 2026-10-21 PM: 브리핑 작성, 사람 확인 후 data-engineer 세션 시작(Opus 5.5, 노력 높음, D-011).
   - 2026-10-21 PM: PR #1(https://github.com/oghdy/Presagio/pull/1) 도착. reviewer 세션 시작(Opus 5.5, 노력 높음).
-  - 2026-10-21 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O. 발견 사항 [낮음] 1건(README가 `pre-commit run --all-files`로 비밀값 전체 검사가 되는 것처럼 읽힘. 실제 gitleaks 훅은 스테이징 변경만 검사). 결정 D-012, D-013, D-014 기록. 사람 머지 대기. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
+  - 2026-10-21 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O. 발견 사항 [낮음] 1건(README가 `pre-commit run --all-files`로 비밀값 전체 검사가 되는 것처럼 읽힘. 실제 gitleaks 훅은 스테이징 변경만 검사). 결정 D-012, D-013, D-014 기록. 사람 머지 대기.
+  - 2026-10-22 PM: 사람이 리뷰어 세션에서 "확인 완료 PR 합치는것으로 결정"이라 말해 리뷰어 세션이 `gh`로 squash merge 수행(머지 계정 oghdy). 머지는 사람 또는 PM 요청으로만 하는 것이 원칙(D-005)이므로 다음부터는 PM 세션에서 진행. README [낮음] 발견 사항은 P-003 범위로 이동. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
 
 ### P-002 Docker Compose PostgreSQL + 설정 로딩
 - **상태:** TODO
@@ -96,15 +97,20 @@
 - **단계:** 0
 - **의존:** P-001
 - **목표:** PR을 열면 자동으로 ruff와 pytest가 돌아 결과가 PR에 표시된다.
-- **범위:** `.github/workflows/ci.yml`
+- **범위:**
+  - `.github/workflows/ci.yml`
+  - `README.md`의 "4. 커밋 전 검사" 섹션에 한 줄 추가: gitleaks 훅은 스테이징된 변경만 보고, 기록 전체 검사는 CI에서 한다 (P-001 리뷰 발견 사항, 사람 승인으로 이 티켓에 포함. README의 다른 부분은 건드리지 않는다)
 - **범위 밖:** 배포, Docker 이미지 빌드, DB가 필요한 테스트(단계 1에서 service container로 추가).
-- **읽어야 할 파일:** `CLAUDE.md`, `pyproject.toml`
+- **읽어야 할 파일:** `CLAUDE.md`, `pyproject.toml`, `.pre-commit-config.yaml`, `docs/decisions.md` D-012
 - **완료 기준:**
   1. PR에서 CI가 실행되고 ruff check, ruff format --check, pytest가 통과한다.
   2. uv 캐시를 써서 2회차 실행이 1분 이내다(증거: Actions 로그 링크).
   3. main 브랜치 보호 규칙 제안(필수 체크)을 PR 본문에 적는다. 적용은 사람이 한다.
+  4. CI에서 `gitleaks git`(커밋 기록 전체) 검사가 돌고 통과한다. 가짜 키를 커밋한 테스트 브랜치에서 CI가 실패하는 것을 Actions 로그 링크로 증명한다. (2026-10-22 사람 승인으로 추가, decisions.md D-015)
 - **확인 방법:** PR의 Checks 탭.
-- **메모:** 2026-10-21 PM: P-001 리뷰어가 완료 기준 추가를 제안함(decisions.md Q-001: `gitleaks git` 기록 전체 검사). 기준 변경은 사람 승인 후 반영. README에 "gitleaks 훅은 스테이징 변경만 본다, 기록 전체는 CI에서" 한 줄 추가도 이 티켓에서 같이 처리 가능(사람 확인 필요).
+- **메모:**
+  - 2026-10-21 PM: P-001 리뷰어가 완료 기준 추가를 제안함(`gitleaks git` 기록 전체 검사).
+  - 2026-10-22 PM: 사람이 승인. 완료 기준 4와 README 한 줄을 범위에 추가했다(D-015).
 
 ---
 
