@@ -21,7 +21,7 @@
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | DONE | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | DONE | P-010, P-013 |
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | DONE | P-014 |
-| P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | IN PROGRESS | P-014, P-015 |
+| P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | REVIEW | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
@@ -267,7 +267,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 기준 1~4 O(리뷰어 SQL 독립 확인, 실제 85경기 불일치 0). [낮음] 3건: 정수 상한 미검사(비현실적), 매일 흐름에서 득점 검증이 자기 자신과 비교됨 → P-020 체크 항목으로, 게임로그 응답의 동점 정렬 순서가 호출마다 바뀌어 raw 새 버전이 생길 수 있음 → P-017 참고. PM 수락. 사람 머지 대기.
 
 ### P-016 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등)
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-016-backfill-cli`)
+- **상태:** REVIEW (2026-10-22 PR #15 열림, 브랜치 `feat/P-016-backfill-cli`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-014, P-015
@@ -283,6 +283,7 @@
 - **확인 방법:** 픽스처 기반 테스트 + `--dry-run` 실행.
 - **메모:**
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-016-briefing.md`. 호출 단위는 시즌×시즌 유형, 재개는 scope_key + has_succeeded, 차단은 즉시 전체 중단.
+  - 2026-10-22 PM: PR #15(https://github.com/oghdy/Presagio/pull/15) 도착. 로컬 299 passed, 실제 2호출 1회 실행(임시 DB). reviewer 카드 올림.
 
 ### P-017 증분 수집 CLI (전날 결과 + 오늘 일정)
 - **상태:** TODO
