@@ -222,6 +222,22 @@ def test_game_log_problems_are_issues() -> None:
     ]
 
 
+def test_neutral_site_game_is_kept_with_an_issue() -> None:
+    """Both rows 'X @ Y' (Paris, Mexico City, cup semifinals): one result + 'neutral_site'."""
+    data = fixture_json("leaguegamelog__2023-24_RegularSeason")
+    headers = data["resultSets"][0]["headers"]
+    matchup, game = headers.index("MATCHUP"), headers.index("GAME_ID")
+    for row in data["resultSets"][0]["rowSet"]:
+        if row[game] == "0022300061":
+            row[matchup] = row[matchup].replace(" vs. ", " @ ")  # "DEN @ LAL", "LAL @ DEN"
+    batch = parse_game_log(data, "2023-24", "regular", LOG_PROV)
+    (neutral,) = [r for r in batch.results if r.game_id == "0022300061"]
+    # Oriented by team ID (higher = home); loaders take home/away from the schedule.
+    assert (neutral.home_team_id, neutral.away_team_id) == (1610612747, 1610612743)
+    assert (neutral.home_score, neutral.away_score) == (107, 119)
+    assert [(i.kind, i.key) for i in batch.issues] == [("neutral_site", "0022300061")]
+
+
 def test_adapter_sends_through_ingestion_client(
     make_client: Callable[..., IngestionClient],
 ) -> None:
