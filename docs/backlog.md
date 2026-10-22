@@ -16,7 +16,7 @@
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | DONE | P-001 |
-| P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | IN PROGRESS | P-010 |
+| P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | REVIEW | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | TODO | P-010, P-013 |
@@ -158,7 +158,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O(리뷰어가 실제 호출 5번과 픽스처로 재현, 5,470경기 ID·시간대 규칙 위반 0). 발견 [중간] 1건: 조사 스크립트가 HTML 403에서 즉시 멈추지 않음(JSON 파싱 후 검사) → 제품 코드가 아니므로 수정 없이 수락, P-013 기준 보강으로 반영(Q-008, D-024). [낮음] 2건(호출 수 표기, 픽스처 단계 경로)은 일회성 스크립트라 무시. 결정 D-023~D-025 기록. 사람 머지 대기.
 
 ### P-011 🧑 raw/clean 스키마 설계안 v1
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `docs/P-011-schema-v1`)
+- **상태:** REVIEW (2026-10-22 PR #7 열림, 브랜치 `docs/P-011-schema-v1`)
 - **담당 역할:** data-engineer (설계안 작성) → PM → 사람 승인
 - **단계:** 1
 - **의존:** P-010
@@ -176,6 +176,7 @@
 - **확인 방법:** 사람이 설계안을 읽고 승인/수정 요청.
 - **메모:**
   - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). 브리핑에 P-010 6장 관찰과 P-018 응답 구조, D-023~D-026을 반영. 결과물은 설계안 + "승인 요청 사항" 번호 목록.
+  - 2026-10-22 PM: PR #7(https://github.com/oghdy/Presagio/pull/7) 도착. 표 8개(raw_api_responses, ingestion_runs, teams, team_aliases, games, team_game_stats, odds_events, odds_snapshots) + 뷰 2개 + 승인 요청 A-1~A-11. 부록 DDL은 작성자가 임시 Postgres 17에서 검증. CI 초록. reviewer 카드 올림(픽스처 대조, DDL 실행, 매일 흐름 시뮬레이션 지시).
 
 ### P-012 SQLAlchemy 모델 + Alembic 초기 마이그레이션
 - **상태:** TODO
