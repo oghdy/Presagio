@@ -28,7 +28,7 @@
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
-| P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | REVIEW | P-002 |
+| P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | DONE | P-002 |
 
 병렬로 돌릴 수 있는 것: P-001 다음에 **P-002, P-003, P-010, P-018**은 서로 다른 파일을 건드리므로 동시에 가능하다. 단, 같은 역할(data-engineer)이 두 티켓을 동시에 하지는 않는다. P-003은 platform-engineer가 한다.
 
@@ -341,7 +341,7 @@
 - **확인 방법:** 사람이 로컬 DB에서 보고서의 쿼리를 직접 실행.
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
-- **상태:** REVIEW (2026-10-22 PR #8 열림, 브랜치 `feat/P-023-ci-postgres-service`)
+- **상태:** DONE (2026-10-22, PR #8 squash merge)
 - **담당 역할:** platform-engineer (단계 1 예외 활성, D-022)
 - **단계:** 1
 - **의존:** P-002 (DONE). P-012와 같은 시기에 진행.
@@ -360,6 +360,7 @@
   - 2026-10-22 PM: 사람 지시로 platform-engineer 세션 시작(Opus 5.5 높음). P-012와 병렬(파일 겹침 없음: ci.yml만).
   - 2026-10-22 PM: PR #8(https://github.com/oghdy/Presagio/pull/8) 도착. CI에서 21 passed, skipped 0(DB 테스트 6개 실제 실행), 2회차 31초 캐시 복원. concurrency는 PR만 취소(증명), main은 run_id 그룹(문서 근거, 머지 후 확인 필요). reviewer 카드 올림. 머지 순서: #8 먼저.
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~4 전부 O(3(b) main 미취소는 문서 근거 + 논리, 머지 후 확인). 리뷰어가 P-012 브랜치 테스트 33개를 같은 CI 조건에서 교차 확인(통과, 임시 DB 정리됨). [낮음] 3건(PR 본문 설명 1곳 부정확, squash 필수, 포트 0.0.0.0). PM 수락, squash 머지 조건. 결정 D-029 기록. 사람 머지 대기.
+  - 2026-10-22 PM: 사람 지시로 squash merge. 후속 확인: main 연속 머지 2회에서 두 실행 모두 완료되는지(다음 머지 때 PM이 본다).
 
 ### P-022 단계 0~1 학습 노트 + 회고
 - **상태:** TODO
