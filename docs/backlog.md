@@ -99,6 +99,7 @@
   - 2026-10-22 PM: 재리뷰 판정 "수정 후 재리뷰"(반려 1회차). 1차 발견 1~3은 고쳐짐, 완료 기준 전부 O 유지. 새 발견 [중간]: fail 경로의 pytest traceback에 `DATABASE_URL` 비밀번호 평문 노출(`grep -c WRONGPW` → 4). 작업자에게 그것만 수정 요청(`__tracebackhide__` 또는 URL 객체). fixture session 범위는 단계 1로.
   - 2026-10-22 PM: 수정 커밋 `91bc7df`, 리뷰어 재확인 판정 "수락 가능"(6가지 traceback 옵션에서 비밀번호 0회, 변이 검사로 누출 테스트가 실제 누출을 잡음 확인). 결정 D-020 기록. 남은 것: PR #2 머지 후 README 충돌 해결 → PM 확인 → 사람 머지.
   - 2026-10-22 PM: PR #2 머지됨. 작업자에게 README 충돌 해결 + PR #4 CI 확인 요청.
+  - 2026-10-22 PM: 충돌 해결 머지 커밋 `c6b08d3`. PM이 README diff(충돌 표식 없음, P-003 한 줄 유지, 자리표시 제거, 5번 섹션 추가)와 PR #4 CI(lint-and-test, secret-scan 초록, CLEAN)를 직접 확인. PM 수락. 사람 머지 대기.
 
 ### P-003 GitHub Actions CI (lint + test)
 - **상태:** DONE (2026-10-22, PR #2 squash merge → main `84c46ec`)
