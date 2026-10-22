@@ -26,7 +26,7 @@
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | DONE | P-015 |
-| P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | IN PROGRESS | P-016, P-020 |
+| P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | REVIEW | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
 | P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | DONE | P-002 |
 
@@ -364,7 +364,7 @@
   - 2026-10-22 PM: 수정 `4435e21` 재리뷰 "수락 가능"(L1 skip/warn, L2 이벤트 기준 warn 재현, 357 passed). PM 수락. 사람 머지 대기.
 
 ### P-021 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고
-- **상태:** IN PROGRESS (2026-10-22 밤 시작, 브랜치 `docs/P-021-backfill-report`)
+- **상태:** REVIEW (2026-10-23 PR #19 열림, 브랜치 `docs/P-021-backfill-report`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-016, P-020
@@ -379,6 +379,7 @@
 - **메모:**
   - 2026-10-22 PM: 야간 위임(D-041)으로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-021-briefing.md`. 개발 DB(5433)를 실제로 채운다. 차단(exit 2)이면 멈추고 보고.
   - 2026-10-22 PM: 자동 이벤트 턴이라 세션 시작이 거부됨(사람 클릭 필요) → CLAUDE.md 허용 범위대로 data-engineer **서브에이전트**(Opus, 전용 worktree `.claude/worktrees/p-021-backfill-report`)로 수행.
+  - 2026-10-23 PM: PR #19(https://github.com/oghdy/Presagio/pull/19) 도착. 68호출, 차단·재시도 0, games 5,169·team_game_stats 7,946, 품질 체크 14 pass, 멱등 증명(`--force` 전체 재실행 후 행 수 불변). 시즌별 경기 수가 조사 보고서 표와 일치. **코드 수정 1건**(중립 경기장: 게임로그가 두 팀 모두 "@"로 줘서 10경기 거부되던 것 → 일정 기준으로 처리, 21줄 + 테스트 3개). 결정 제안 3건(중립 경기 규칙, 로더 의미 변경 시 --force 운영, `games.is_neutral` 컬럼은 스키마 변경 → 사람). reviewer 서브에이전트로 독립 리뷰 중.
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
 - **상태:** DONE (2026-10-22, PR #8 squash merge)
