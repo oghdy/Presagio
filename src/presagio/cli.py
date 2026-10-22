@@ -82,6 +82,17 @@ def iso_date(value: str) -> date:
         raise argparse.ArgumentTypeError(f"not a date (YYYY-MM-DD): {value!r}") from None
 
 
+def positive_hours(value: str) -> float:
+    """argparse type for --stale-after-hours: a number of hours > 0 (like STALE_RUN_HOURS)."""
+    try:
+        hours = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number of hours: {value!r}") from None
+    if not hours > 0:  # also rejects nan
+        raise argparse.ArgumentTypeError(f"must be > 0 hours: {value!r}")
+    return hours
+
+
 def build_parser() -> ArgumentParser:
     """The presagio argument parser with its subcommands."""
     parser = ArgumentParser(prog="presagio", description=__doc__.splitlines()[0])
@@ -126,7 +137,7 @@ def build_parser() -> ArgumentParser:
     backfill.add_argument("--force", action="store_true", help="run units that already succeeded")
     backfill.add_argument(
         "--stale-after-hours",
-        type=float,
+        type=positive_hours,
         metavar="H",
         help="close 'running' rows older than H hours as aborted first (default STALE_RUN_HOURS)",
     )

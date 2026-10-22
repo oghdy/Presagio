@@ -7,9 +7,10 @@ Work units (D-023): nba_api's natural unit is the season, not the date. One unit
 A date range is widened to the seasons it touches and loads those seasons whole, under the same
 scope keys, so a later `--season` run finds them done. Calls are never made per date (risk B1).
 
-Resume: a unit is skipped when it already has a 'succeeded' run that started after its season
-was over (teams: any 'succeeded' run). partial, failed and aborted units run again, and so does
-every unit of a season that is not over yet (its data still changes). --force runs everything.
+Resume: a unit is skipped only when its latest run is 'succeeded' and started after its season
+was over (teams: latest run 'succeeded'). A unit whose latest run is partial, failed, aborted or
+still running runs again, even if an older run succeeded, and so does every unit of a season
+that is not over yet (its data still changes). --force runs everything.
 All loads are upserts, so running a unit again is idempotent.
 
 Failures: a unit that ends partial or failed is reported and the next unit runs. A unit whose
@@ -40,7 +41,6 @@ from presagio.ingestion.runs import (
     PARTIAL,
     SUCCEEDED,
     error_line,
-    has_succeeded,
     track_run,
 )
 from presagio.ingestion.sources.base import (
@@ -232,19 +232,37 @@ def build_units(
     return units
 
 
-def last_statuses(engine: Engine, units: Sequence[Unit]) -> dict[tuple[str, str], tuple[str, int]]:
-    """Latest run (status, run_id) per unit, for the plan's reasons. Read only."""
+@dataclass(frozen=True)
+class LastRun:
+    """The latest ingestion_runs row of a unit (highest run_id)."""
+
+    status: str
+    run_id: int
+    started_at: datetime
+
+
+def last_runs(engine: Engine, units: Sequence[Unit]) -> dict[tuple[str, str], LastRun]:
+    """Latest run per unit; the resume decision looks only at this one. Read only."""
     stmt = (
-        select(RUNS.c.job_type, RUNS.c.scope_key, RUNS.c.status, RUNS.c.run_id)
+        select(RUNS.c.job_type, RUNS.c.scope_key, RUNS.c.status, RUNS.c.run_id, RUNS.c.started_at)
         .where(RUNS.c.job_type.in_({u.job_type for u in units}))
         .where(RUNS.c.scope_key.in_({u.scope_key for u in units}))
         .order_by(RUNS.c.run_id.desc())
     )
-    latest: dict[tuple[str, str], tuple[str, int]] = {}
+    latest: dict[tuple[str, str], LastRun] = {}
     with engine.connect() as conn:
         for row in conn.execute(stmt):
-            latest.setdefault((row.job_type, row.scope_key), (row.status, row.run_id))
+            latest.setdefault(
+                (row.job_type, row.scope_key), LastRun(row.status, row.run_id, row.started_at)
+            )
     return latest
+
+
+def is_done(unit: Unit, last: LastRun | None) -> bool:
+    """Latest run succeeded, and (for a season unit) started after the season was over."""
+    if last is None or last.status != SUCCEEDED:
+        return False
+    return unit.season is None or last.started_at >= season_over_at(unit.season)
 
 
 def plan_backfill(
@@ -257,19 +275,18 @@ def plan_backfill(
     """Decide run or skip for every unit (resume rule in the module docstring). Read only."""
     now = now if now is not None else datetime.now(UTC)
     units = build_units(request, **unit_options)
-    last = last_statuses(engine, units)
+    latest = last_runs(engine, units)
     planned: list[PlannedUnit] = []
     for unit in units:
-        previous = last.get((unit.job_type, unit.scope_key))
-        history = f"last {previous[0]} (run {previous[1]})" if previous else "never run"
+        last = latest.get((unit.job_type, unit.scope_key))
+        history = f"last {last.status} (run {last.run_id})" if last else "never run"
         if request.force:
             planned.append(PlannedUnit(unit, RUN, f"--force; {history}"))
             continue
         if unit.season is not None and now < season_over_at(unit.season):
             planned.append(PlannedUnit(unit, RUN, f"season not over; {history}"))
             continue
-        since = season_over_at(unit.season) if unit.season is not None else None
-        if has_succeeded(engine, unit.job_type, unit.scope_key, started_after=since):
+        if is_done(unit, last):
             planned.append(PlannedUnit(unit, SKIP, f"done; {history}"))
         else:
             planned.append(PlannedUnit(unit, RUN, history))

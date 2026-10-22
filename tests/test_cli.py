@@ -66,6 +66,10 @@ def test_httpx_logger_stays_at_warning(no_backfill, capsys, verbose) -> None:
         ["backfill", "--from", "2024-02-01", "--to", "2024-01-01"],
         ["backfill", "--from", "2024-13-01", "--to", "2024-01-01"],
         ["backfill", "--season", "2025-26", "--season-type", "preseason"],
+        ["backfill", "--season", "2025-26", "--stale-after-hours", "-5"],
+        ["backfill", "--season", "2025-26", "--stale-after-hours", "0"],
+        ["backfill", "--season", "2025-26", "--stale-after-hours", "nan"],
+        ["backfill", "--season", "2025-26", "--stale-after-hours", "six"],
     ],
 )
 def test_bad_arguments_exit_64_not_2(no_backfill, capsys, argv) -> None:
@@ -85,6 +89,14 @@ def test_arguments_become_a_request(no_backfill) -> None:
     assert request.seasons == ("2023-24", "2025-26")
     assert request.season_types == ("playoffs",)
     assert request.force is True
+
+
+def test_stale_after_hours_accepts_positive_hours(no_backfill) -> None:
+    """A positive number (fractions too) is passed through as hours."""
+    args = cli.build_parser().parse_args(
+        ["backfill", "--season", "2025-26", "--stale-after-hours", "0.1"]
+    )
+    assert args.stale_after_hours == 0.1
 
 
 def test_console_script_is_registered() -> None:

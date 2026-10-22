@@ -326,6 +326,28 @@ def test_success_before_the_season_ended_does_not_count_as_done(db: Engine, nba:
     ]
 
 
+def test_latest_run_decides_even_after_an_older_success(db: Engine, nba: Stub, capsys) -> None:
+    """succeeded, then --force ends partial: the next run does those units again (PM, review 1)."""
+    nba.clean_game_logs()
+    assert backfill(db, nba, "--season", SEASON, *TYPES) == 0
+    nba.overrides.clear()  # plain fixtures: each game log lists a game the schedule lacks
+    assert backfill(db, nba, "--season", SEASON, *TYPES, "--force") == 1
+    plan = plan_backfill(
+        db, BackfillRequest.for_seasons([SEASON], ["regular", "playoffs"]), now=NOW
+    )
+    assert [(p.unit.job_type, p.action) for p in plan] == [
+        ("teams", SKIP),
+        ("schedule", SKIP),
+        ("gamelog", RUN),
+        ("gamelog", RUN),
+    ]
+    assert plan[2].reason.startswith("last partial (run ")
+    capsys.readouterr()
+    nba.clean_game_logs()
+    assert backfill(db, nba, "--season", SEASON, *TYPES) == 0
+    assert nba.seen[-2:] == [LOG_REGULAR, LOG_PLAYOFFS] and len(nba.seen) == 10
+
+
 def test_date_range_loads_the_seasons_it_touches(db: Engine, nba: Stub, capsys) -> None:
     """--from/--to: the season's units run under the season scope keys; the range is recorded."""
     nba.clean_game_logs()
