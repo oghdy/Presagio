@@ -15,7 +15,7 @@
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
-| P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | IN PROGRESS | P-001 |
+| P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | REVIEW | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
@@ -134,7 +134,7 @@
 ## 단계 1. 데이터 파이프라인
 
 ### P-010 nba_api 엔드포인트 조사 (스파이크)
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `docs/P-010-nba-api-research`)
+- **상태:** REVIEW (2026-10-22 PR #6 열림, 브랜치 `docs/P-010-nba-api-research`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-001
@@ -154,6 +154,7 @@
 - **확인 방법:** 보고서 읽기, 픽스처 존재 확인.
 - **메모:**
   - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). P-018과 병렬(파일 겹침 없음). 브리핑에서 `nba_api`는 dev 그룹에만 추가, `scripts/explore_nba_api.py` 1개만 예외 허용.
+  - 2026-10-22 PM: PR #6(https://github.com/oghdy/Presagio/pull/6) 도착. 실제 호출 40번, 차단 0, 픽스처 21개(328KB), 결정 제안 3개(백필 소스 조합, 간격 1.0초, 경기 유형은 ID 3번째 자리). CI 초록. reviewer 카드 올림(호출 최소화 지시).
 
 ### P-011 🧑 raw/clean 스키마 설계안 v1
 - **상태:** TODO
@@ -283,6 +284,7 @@
 - **메모:**
   - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). P-010과 병렬. 실제 API 호출·키 발급 금지, 가격·약관은 공식 URL과 확인 날짜 필수.
   - 2026-10-22 PM: PR #5(https://github.com/oghdy/Presagio/pull/5) 도착. 후보 5개, 추천 The Odds API(매일 무료 + 과거 3시즌 백필에 $59 한 달). CI 초록. reviewer 세션 시작(Opus 5.5 높음, 출처·계산 검증 중심).
+  - 2026-10-22 PM: 리뷰 판정 "수락 가능"(출처 표본 25개 중 오류 0, 계산 전부 일치). 발견 [중간] 1건(100K 플랜의 하루 스냅숏 상한 5회가 안 적힘), [낮음] 3건. 작성자에게 문서 보완 요청. 보완 후 사람에게 결정 질문(The Odds API, $59 vs $0) 올림. 리뷰어 지적: 마감 스냅숏을 하루 3~4회로 하면 risks B2의 "하루 2회"를 고치는 결정 필요.
 
 ### P-019 배당 어댑터 인터페이스 + odds_snapshots 저장
 - **상태:** TODO
