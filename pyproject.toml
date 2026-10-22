@@ -5,6 +5,7 @@ description = "Daily NBA win-probability and total-points forecasts, validated a
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "alembic>=1.20.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.1",
     "sqlalchemy>=2.1.6",

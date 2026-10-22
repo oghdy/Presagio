@@ -22,7 +22,8 @@ def make_engine(url: str | URL | None = None, connect_timeout: int | None = None
     return create_engine(
         url,
         pool_pre_ping=True,
-        connect_args={"connect_timeout": connect_timeout},
+        # Session time zone UTC (schema v1 rule 1-2.6): timestamptz values print as UTC.
+        connect_args={"connect_timeout": connect_timeout, "options": "-c timezone=UTC"},
     )
 
 
