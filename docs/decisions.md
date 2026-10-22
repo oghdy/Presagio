@@ -215,6 +215,14 @@
 - **다른 선택지:** 설계안 10장의 12개 항목(JSONB vs 정규화, 대리키, 약어 키, `snapshot_type` 컬럼 등).
 - **다시 볼 때:** 단계 2 시작 시 모델링 레이어 승인과 함께. 컬럼 추가는 마이그레이션으로 자유롭게, 키 변경은 사람 승인.
 
+## D-029 CI는 postgres service container로 실제 DB 테스트를 돌리고, main push 실행은 취소·교체되지 않는다
+- **날짜:** 2026-10-22 (P-023, PR #8의 결정 제안 + 리뷰어 검증을 PM이 채택)
+- **무엇을:** `lint-and-test` 잡 안에 `postgres:17-alpine` service container(포트 5433, 사용자/DB `presagio`, 워크플로 파일에 박힌 CI 전용 가짜 비밀번호 `ci-only-not-a-secret`)를 두고 `PRESAGIO_REQUIRE_DB=1`, `pytest -rs`로 돈다. DB가 없으면 skip이 아니라 실패한다(D-020, D-022). concurrency는 `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`, 그룹은 PR이면 `github.ref`, main push면 `github.run_id`. 즉 PR은 같은 PR의 앞 실행을 취소하고, main push는 실행마다 자기만의 그룹이라 취소도 대기 교체도 되지 않는다.
+- **왜:** (1) 별도 잡으로 나누지 않아 브랜치 보호 필수 체크 이름(`lint-and-test`, `secret-scan`)이 그대로이고 설치·캐시도 한 번이다. (2) 비밀번호는 잡이 끝나면 사라지는 컨테이너용이라 GitHub Secrets로 둘 이유가 없다(포크 PR에서도 동작). (3) `cancel-in-progress: false`만으로는 같은 그룹의 **대기 중** 실행이 기본으로 교체되므로(GitHub 문서, 리뷰어가 원문 확인) main 그룹 자체를 분리해야 "머지 커밋마다 CI 한 번"이 보장된다. 실제로 2026-10-22 머지 커밋 `376e4d5`의 실행이 docs 푸시에 밀려 취소된 적이 있다.
+- **검증:** CI에서 21 passed, skipped 0(이전 6개 skip). 2회차 31초, 캐시 복원. PR 그룹 취소는 실행 ID로 확인. main 미취소는 머지 전 실증 불가라 문서 근거 + 논리로 판정했고, 머지 후 연속 머지 2회에서 두 실행이 끝까지 도는지 PM이 확인한다. P-012 브랜치의 임시 DB 생성 테스트(33개)도 같은 조건에서 통과(리뷰어 교차 확인).
+- **다른 선택지:** 별도 `db-test` 잡(체크 이름 추가, 설치 중복), 비밀번호를 Secrets로(포크 PR 실패), `concurrency.queue: max`(main을 한 줄로 세움, 느림, 100개 제한), `cancel-in-progress`만 표현식(대기 교체 문제 남음).
+- **알려진 것:** 서비스 포트가 러너에서 `0.0.0.0:5433`에 열리지만 잡마다 버려지는 VM이라 실해 없음. `docker create` 로그에 가짜 비밀번호가 평문 1회 찍힘(공개된 값). 이미지는 태그 고정(digest 아님, compose와 동일).
+
 ---
 
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)

@@ -1,6 +1,7 @@
 # CI for every PR into main and every push to main.
 # Two independent jobs so branch protection can require each one by name:
 #   - lint-and-test: ruff check, ruff format --check, pytest (uv-managed Python from .python-version)
+#                    against a real PostgreSQL 17 service container (DB tests must not skip)
 #   - secret-scan:   gitleaks over the full commit history (pre-commit only sees staged changes)
 name: CI
 
@@ -13,15 +14,35 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR cancels that PR's older run. Pushes to main never cancel or replace
+# each other: each gets its own group (run_id), because GitHub also cancels a *pending* run
+# in the same group when a newer one queues, even with cancel-in-progress: false.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint-and-test:
     name: lint-and-test
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      # Same image, user and database as docker-compose.yml / .env.example. The job starts
+      # only after the health check passes. Host port 5433 matches local development.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: presagio
+          # CI-only throwaway value for a container that lives for one job; not a secret.
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: presagio
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U presagio -d presagio"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,7 +66,14 @@ jobs:
         run: uv run --locked ruff format --check .
 
       - name: Pytest
-        run: uv run --locked pytest -q
+        env:
+          # 127.0.0.1, not localhost (see .env.example). The user owns the database, so
+          # migration tests can create and drop everything in it.
+          DATABASE_URL: postgresql+psycopg://presagio:ci-only-not-a-secret@127.0.0.1:5433/presagio
+          # Fail instead of skip when the database is unreachable: no silent skips in CI.
+          PRESAGIO_REQUIRE_DB: "1"
+        # -rs lists every skip with its reason, so a skip is visible in the log.
+        run: uv run --locked pytest -q -rs
 
   secret-scan:
     name: secret-scan
