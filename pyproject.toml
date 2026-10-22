@@ -40,6 +40,7 @@ addopts = ["-ra", "--strict-markers"]
 
 [dependency-groups]
 dev = [
+    "nba-api>=1.11.6",
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
