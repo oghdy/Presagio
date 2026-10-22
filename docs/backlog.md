@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 0 (프로젝트 셋업)
+## 현재 단계: 0 완료 (2026-10-22) → 단계 1 시작은 사람 확인 대기
 
 ### 보드 한눈에 보기
 
@@ -13,7 +13,7 @@
 | --- | --- | --- | --- | --- |
 | P-000 | 회사 구조 셋업 | (창업 세션) | DONE | - |
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
-| P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | REVIEW | P-001 |
+| P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
@@ -71,7 +71,7 @@
   - 2026-10-22 PM: 사람이 리뷰어 세션에서 "확인 완료 PR 합치는것으로 결정"이라 말해 리뷰어 세션이 `gh`로 squash merge 수행(머지 계정 oghdy). 머지는 사람 또는 PM 요청으로만 하는 것이 원칙(D-005)이므로 다음부터는 PM 세션에서 진행. README [낮음] 발견 사항은 P-003 범위로 이동. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
 
 ### P-002 Docker Compose PostgreSQL + 설정 로딩
-- **상태:** REVIEW (2026-10-22 PR #4 열림, 브랜치 `feat/P-002-docker-postgres`)
+- **상태:** DONE (2026-10-22, PR #4 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 0
 - **의존:** P-001
@@ -100,6 +100,7 @@
   - 2026-10-22 PM: 수정 커밋 `91bc7df`, 리뷰어 재확인 판정 "수락 가능"(6가지 traceback 옵션에서 비밀번호 0회, 변이 검사로 누출 테스트가 실제 누출을 잡음 확인). 결정 D-020 기록. 남은 것: PR #2 머지 후 README 충돌 해결 → PM 확인 → 사람 머지.
   - 2026-10-22 PM: PR #2 머지됨. 작업자에게 README 충돌 해결 + PR #4 CI 확인 요청.
   - 2026-10-22 PM: 충돌 해결 머지 커밋 `c6b08d3`. PM이 README diff(충돌 표식 없음, P-003 한 줄 유지, 자리표시 제거, 5번 섹션 추가)와 PR #4 CI(lint-and-test, secret-scan 초록, CLEAN)를 직접 확인. PM 수락. 사람 머지 대기.
+  - 2026-10-22 PM: 사람 지시로 PM이 squash merge(D-005 보완). 후속(단계 1): fixture session 범위, `check_connection`의 print 위치, CI postgres service container + `PRESAGIO_REQUIRE_DB=1`(Q-005).
 
 ### P-003 GitHub Actions CI (lint + test)
 - **상태:** DONE (2026-10-22, PR #2 squash merge → main `84c46ec`)
