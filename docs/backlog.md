@@ -14,7 +14,7 @@
 | P-000 | 회사 구조 셋업 | (창업 세션) | DONE | - |
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | TODO | P-001 |
-| P-003 | GitHub Actions CI (lint + test) | platform-engineer | TODO | P-001 |
+| P-003 | GitHub Actions CI (lint + test) | platform-engineer | IN PROGRESS | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
@@ -94,7 +94,7 @@
   - 2026-10-22 PM: 이 맥에 `docker` 명령 없음(PM 확인). Docker 런타임 선택과 설치는 사람(decisions.md Q-003). 설치 전에는 세션을 띄우지 않는다. 브리핑은 PM 공유 노트 `P-002-briefing.md`에 준비됨.
 
 ### P-003 GitHub Actions CI (lint + test)
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-003-github-actions-ci`)
 - **담당 역할:** platform-engineer (단계 0 예외 활성)
 - **단계:** 0
 - **의존:** P-001
@@ -113,6 +113,7 @@
 - **메모:**
   - 2026-10-21 PM: P-001 리뷰어가 완료 기준 추가를 제안함(`gitleaks git` 기록 전체 검사).
   - 2026-10-22 PM: 사람이 승인. 완료 기준 4와 README 한 줄을 범위에 추가했다(D-015).
+  - 2026-10-22 PM: 사람 확인 후 platform-engineer 세션 시작(Opus 5.5, 노력 높음, D-011). P-002는 Docker 설치 대기.
 
 ---
 
