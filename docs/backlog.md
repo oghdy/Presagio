@@ -17,8 +17,8 @@
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | DONE | P-010 |
-| P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | REVIEW | P-002, P-011 승인 |
-| P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
+| P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | DONE | P-002, P-011 승인 |
+| P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | IN PROGRESS | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | TODO | P-010, P-013 |
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
@@ -181,7 +181,7 @@
   - 2026-10-22 PM: v1.1(`35b97b9`) 재리뷰 "수락 가능". [중간] 1~3은 리뷰어가 시나리오(S3 연기, C5/S2 scoreboard 선적재, S6 TOV)를 임시 DB에서 다시 돌려 해결 확인. 표 구조·키 변경 없음, 뷰 1개만 변경. PM 수락. **사람 승인 대기: A-1~A-11**(decisions.md Q-009). 승인되면 PR #7 머지 + D-번호 기록 + P-012/P-013/P-023 시작.
 
 ### P-012 SQLAlchemy 모델 + Alembic 초기 마이그레이션
-- **상태:** REVIEW (2026-10-22 PR #9 열림, 브랜치 `feat/P-012-db-models-migrations`)
+- **상태:** DONE (2026-10-22, PR #9 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-002(DONE), P-011 승인(D-028, 2026-10-22)
@@ -204,7 +204,7 @@
   - 2026-10-22 PM: 재리뷰 "수락 가능". CI 실제 DB 2회(같은 커밋 attempt 1·2) 모두 34 passed, skipped 0. 시계 의존 제거·CHECK 드리프트 감지 확인. 결정 D-030 기록. PM 수락. 사람 머지 대기.
 
 ### P-013 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-013-ingestion-client`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-012
@@ -221,6 +221,7 @@
 - **확인 방법:** `uv run pytest tests/ingestion -q`
 - **메모:**
   - 2026-10-22 PM: 설계안 3장의 "실제 일정 응답(4MB)으로 jsonb TOAST 압축률을 재본다"는 raw 저장이 처음 생기는 이 티켓에서 한다(P-012 리뷰에서 범위 조정). 결과를 PR에 적고 용량 추정을 갱신.
+  - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑은 PM 공유 노트 `P-013-briefing.md`. nba_api(requests 내부)와 The Odds API(httpx) 두 소스를 한 레이어로, 상태 코드를 파싱 전에 검사, raw 버전 규칙(D-028 A-1).
 
 ### P-014 nba_api 어댑터: 팀, 일정, 결과 → teams, games
 - **상태:** TODO
