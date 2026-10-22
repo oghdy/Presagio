@@ -18,8 +18,8 @@
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | DONE | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | DONE | P-002, P-011 승인 |
-| P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | REVIEW | P-012 |
-| P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | TODO | P-010, P-013 |
+| P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | DONE | P-012 |
+| P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | IN PROGRESS | P-010, P-013 |
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
@@ -204,7 +204,7 @@
   - 2026-10-22 PM: 재리뷰 "수락 가능". CI 실제 DB 2회(같은 커밋 attempt 1·2) 모두 34 passed, skipped 0. 시계 의존 제거·CHECK 드리프트 감지 확인. 결정 D-030 기록. PM 수락. 사람 머지 대기.
 
 ### P-013 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs
-- **상태:** REVIEW (2026-10-22 PR #10 열림, 브랜치 `feat/P-013-ingestion-client`)
+- **상태:** DONE (2026-10-22, PR #10 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-012
@@ -226,7 +226,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O(네트워크 차단 상태에서 77 passed, 순서 강제·raw 버전·비밀값 누출 0 재현). [낮음] 4건: `STALE_RUN_HOURS` 미사용, 같은 바이트·다른 상태 코드 병합, `finish()`가 닫힌 행 덮어씀, `DecodingError` 미포장 → (a)(b)(c)는 P-016 완료 기준으로, 병합 한계는 D-032에 기록. 결정 D-031, D-032 기록, lz4는 Q-010 보류 추천. PM 수락. 사람 머지 대기.
 
 ### P-014 nba_api 어댑터: 팀, 일정, 결과 → teams, games
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-014-nba-schedule-adapter`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-010, P-013
@@ -240,6 +240,8 @@
   3. 경기 시각이 UTC로 저장되고, 정규/플레이오프 구분이 맞다(픽스처로 검증).
   4. 상태가 "예정"인 경기와 "종료"인 경기를 모두 처리한다(점수 NULL 허용).
 - **확인 방법:** `uv run pytest tests/ingestion -q`
+- **메모:**
+  - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑은 PM 공유 노트 `P-014-briefing.md`(어댑터/로더 분리, D-023·D-025·D-028 규칙, raw는 2xx만 읽기).
 
 ### P-015 nba_api 어댑터: 팀 박스스코어 → team_game_stats
 - **상태:** TODO
