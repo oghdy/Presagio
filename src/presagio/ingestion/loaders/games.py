@@ -2,6 +2,9 @@
 
 - Schedule (ScheduleBatch): INSERT ... ON CONFLICT (game_id) DO UPDATE of every column the
   schedule owns, guarded by games.fetched_at <= EXCLUDED.fetched_at (1-4).
+- Scoreboard (ScheduleBatch from ScoreboardV3, P-017): the same upsert, but on conflict only
+  the scoreboard's columns (6-1 "scoreboardv3"); season and postponed_status keep the stored
+  value, so a source that lacks them never blanks them. A new game gets season from its ID.
 - Results (ResultBatch, e.g. LeagueGameLog): UPDATE of status and scores only, on games the
   schedule already created. A result source has no start time, so it cannot insert a game.
   When it disagrees with the schedule (teams, home/away, a different final score) the
@@ -10,13 +13,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import date
+from typing import Any, Protocol
 
 from sqlalchemy import Connection, Engine, bindparam, case, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from presagio.db.models import Game, Team
+from presagio.ingestion.client import RunCounter
 from presagio.ingestion.loaders.base import (
     INSERTED,
     UpsertCounts,
@@ -25,7 +31,7 @@ from presagio.ingestion.loaders.base import (
     record_issues,
     table_of,
 )
-from presagio.ingestion.runs import track_run
+from presagio.ingestion.runs import RunTracker, track_run
 from presagio.ingestion.sources.base import (
     QualityIssue,
     ResultBatch,
@@ -60,6 +66,21 @@ SCHEDULE_COLUMNS = (
     "fetched_at",
     "raw_response_id",
 )
+# Columns a scoreboard source owns (6-1 table, column "scoreboardv3"): no season (INSERT only,
+# from the game ID) and no postponed_status (the scoreboard does not have it).
+SCOREBOARD_COLUMNS = tuple(
+    name for name in SCHEDULE_COLUMNS if name not in ("season", "postponed_status")
+)
+
+
+class ScoreboardSource(Protocol):
+    """Gives every game of one US Eastern date (e.g. nba_api ScoreboardV3)."""
+
+    name: str
+
+    def fetch_scoreboard(self, game_date: date, run: RunCounter | None = None) -> ScheduleBatch:
+        """Fetch the games of the ET date."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -95,6 +116,22 @@ def known_team_ids(conn: Connection) -> set[int]:
 
 def upsert_schedule(conn: Connection, batch: ScheduleBatch) -> ScheduleLoadResult:
     """Upsert the batch's games; games naming a team missing from teams are left out."""
+    return _upsert_games(conn, batch, SCHEDULE_COLUMNS)
+
+
+def upsert_scoreboard(conn: Connection, batch: ScheduleBatch) -> ScheduleLoadResult:
+    """Upsert a scoreboard's games, updating only the scoreboard's columns (6-1).
+
+    A game the schedule never listed is inserted with season from its ID and no
+    postponed_status; an existing game keeps both.
+    """
+    return _upsert_games(conn, batch, SCOREBOARD_COLUMNS)
+
+
+def _upsert_games(
+    conn: Connection, batch: ScheduleBatch, update_columns: Sequence[str]
+) -> ScheduleLoadResult:
+    """INSERT every usable game; on conflict update update_columns if not older (1-4)."""
     provenance = batch.provenance
     if provenance.raw_response_id is None:
         raise ValueError("games rows need the raw response they came from (raw_response_id)")
@@ -137,7 +174,7 @@ def upsert_schedule(conn: Connection, batch: ScheduleBatch) -> ScheduleLoadResul
         stmt = insert(GAMES).values(list(chunk))
         stmt = stmt.on_conflict_do_update(
             index_elements=[GAMES.c.game_id],
-            set_={name: stmt.excluded[name] for name in SCHEDULE_COLUMNS},
+            set_={name: stmt.excluded[name] for name in update_columns},
             where=GAMES.c.fetched_at <= stmt.excluded.fetched_at,
         ).returning(GAMES.c.game_id, INSERTED)
         counts += count_returned(conn.execute(stmt).all(), len(chunk))
@@ -317,3 +354,48 @@ def load_season_results(
         )
         record_issues(run, result.issues)
     return result
+
+
+def load_scoreboard(
+    source: ScoreboardSource,
+    engine: Engine,
+    game_date: date,
+    *,
+    scope_key: str | None = None,
+    stale_after_hours: float | None = None,
+) -> ScheduleLoadResult:
+    """Fetch one ET date's scoreboard and upsert it as one run (job_type 'schedule').
+
+    scope_key defaults to 'date_et=<date>'; items are the stored-type games listed.
+    """
+    with track_run(
+        engine,
+        JOB_SCHEDULE,
+        scope_key or f"date_et={game_date.isoformat()}",
+        source=source.name,
+        target_date_et=game_date,
+        stale_after_hours=stale_after_hours,
+    ) as run:
+        batch = source.fetch_scoreboard(game_date, run)
+        run.items_total = len(batch.games) + len(batch.rejected)
+        with engine.begin() as conn:
+            result = upsert_scoreboard(conn, batch)
+        record_scoreboard_load(run, batch, result)
+    return result
+
+
+def record_scoreboard_load(
+    run: RunTracker, batch: ScheduleBatch, result: ScheduleLoadResult
+) -> None:
+    """Write a scoreboard load's items, rows and issues into its run."""
+    for _ in range(len(batch.games) + len(batch.rejected) - len(result.failed)):
+        run.item_succeeded()
+    for game_id, reason in result.failed.items():
+        run.item_failed(game_id, reason)
+    run.rows_written = result.counts.written
+    run.detail.update(
+        games=result.counts.as_dict(),
+        skipped_game_types=result.skipped,
+        raw_response_id=batch.provenance.raw_response_id,
+    )
+    record_issues(run, result.issues)

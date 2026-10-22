@@ -199,6 +199,42 @@ docker compose exec -T postgres psql -U presagio -d presagio -c "SELECT run_id, 
 - 프로세스가 죽어 `running`으로 남은 행은 `STALE_RUN_HOURS`(기본 6시간)가 지나면 다음 실행이 `aborted`로 닫고 진행한다. 그 전에 다시 돌리면 "already running"으로 거부된다. 확실히 죽었으면 `--stale-after-hours 0.1`처럼 줄여서 돌린다.
 - `-v`를 붙이면 우리 로그만 자세히 나온다. `-v`는 `presagio -v backfill --season 2023-24`처럼 **`backfill` 앞에** 쓴다(뒤에 쓰면 인자 오류, 종료 코드 64). `httpx` 로그는 요청 주소(배당 API 키 포함)를 찍기 때문에 항상 꺼 둔다(D-031).
 
+### 8. 매일 수집 (어제 결과 + 오늘 일정 + 배당)
+
+`presagio ingest-daily`는 매일 한 번 돌리는 명령이다. 7단계 백필로 시즌 일정이 들어 있다고 가정한다.
+
+**날짜를 어떻게 정하나.** 기준 날짜 D는 **한국 날짜**다(기본값: 지금 한국 날짜). NBA는 미국 동부 날짜로 경기를 묶으므로,
+- 미국 동부 날짜 **D-1**에 시작한 경기 = "어제 경기" → 결과·점수·팀 박스스코어를 채운다.
+- 미국 동부 날짜 **D**에 시작하는 경기 = "오늘 경기" → 일정을 넣고 배당을 받는다.
+
+예: D = 2026-10-23(한국)이면 어제 경기는 동부 10-22(한국 10-23 아침에 열린 경기), 오늘 경기는 동부 10-23(한국 10-24 아침에 열릴 경기)이다.
+
+먼저 `--dry-run`으로 무엇을 할지 본다(DB에 쓰지 않고 외부 호출 0번).
+
+```bash
+uv run presagio ingest-daily --date 2026-10-22 --dry-run
+```
+
+실제로 받는다. 보통 nba_api 3번(어제 스코어보드 1 + 게임로그 1 + 오늘 스코어보드 1)과 배당 1번이다. `.env`에 `ODDS_API_KEY`가 없으면 배당 단계는 `skipped`로 기록하고 넘어간다.
+
+```bash
+uv run presagio ingest-daily
+```
+
+배당만 받는 모드(경기 직전 "마감" 배당용, nba_api 호출 0번):
+
+```bash
+uv run presagio ingest-daily --odds-only
+```
+
+알아 두면 좋은 것:
+
+- **언제 돌리나(D-027, 결정 제안).** 본 실행은 한국 16:00(`INGEST_DAILY_TIME_KST`) = 미국 동부 새벽 3시(여름)/2시(겨울)로, 어제 경기가 다 끝난 뒤다. 배당만 받는 실행은 동부 18:45, 19:45, 21:45(`ODDS_CLOSING_TIMES_ET`). 합쳐서 하루 최대 4번이다. `--dry-run`이 그날의 시각을 한국·동부·UTC로 보여 준다. 실제 예약(스케줄러)은 단계 6에서 한다.
+- **어제 경기가 아직 안 끝났으면** 그 날짜는 `partial`로 남고, 다음 실행이 그 날짜를 다시 받는다(최근 3일까지). 이미 다 끝난 날짜는 다시 받지 않는다. 억지로 다시 받으려면 `--force`.
+- **같은 날 두 번 돌려도 된다.** 경기·팀 스탯 행 수는 그대로다. 배당은 "스냅숏"이라 받을 때마다 값이 바뀌었으면 새 행이 쌓이는 것이 정상이다(값이 같으면 안 쌓인다).
+- 종료 코드는 백필과 같다: 전부 성공 `0`, 하나라도 성공 아님(`partial` 포함) `1`, 403/429 차단으로 즉시 멈춤 `2`, 인자 오류 `64`.
+- 기록은 `ingestion_runs`에 부모 행(`job_type = 'incremental'`, `scope_key = 'date_kst=<D>'`) 1개와 단계별 자식 행으로 남는다. 어제 날짜의 결과 단위는 `job_type = 'schedule'`, `scope_key = 'date_et=<D-1>'`이다.
+
 ## 기술 스택 (기본안)
 
 Python 3.12 · uv · PostgreSQL · SQLAlchemy 2 + Alembic · nba_api + httpx · scikit-learn + LightGBM · FastAPI · pytest + ruff

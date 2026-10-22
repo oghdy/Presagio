@@ -7,6 +7,8 @@
   loaded twice adds nothing. Prices captured at or after commence_time are never written.
 - A live capture's captured_at/fetched_at is the fetched_at of its raw row (1-3, 7-2): a
   response identical to an earlier one lands on the same raw row, so it adds no snapshots.
+- An event id listed twice in one response keeps its first listing; the later ones are left
+  out with a 'duplicate_event' quality issue and the rest of the batch loads (P-017).
 - Mapping (A-9), only here: both team names known in team_aliases and exactly one game with
   those home/away teams starting within +-6 h of commence_time. Otherwise game_id stays NULL
   and a quality issue says why; remap_unmatched_events retries once games are loaded.
@@ -37,6 +39,7 @@ from presagio.ingestion.sources.odds.base import (
     SKIPPED_REJECTED_OUTCOMES,
     SKIPPED_STARTED_OUTCOMES,
     OddsBatch,
+    OddsEventRecord,
     OddsSource,
 )
 from presagio.ingestion.sources.odds.the_odds_api import SOURCE as THE_ODDS_API
@@ -320,8 +323,35 @@ def anchor_to_raw(conn: Connection, batch: OddsBatch) -> OddsBatch:
     )
 
 
+def drop_duplicate_events(batch: OddsBatch) -> OddsBatch:
+    """The batch with each event id kept at its first listing; later ones become issues.
+
+    One INSERT ... ON CONFLICT cannot touch the same key twice, so a repeated id would fail
+    the whole capture. Only the repeats are left out (P-019 review L1).
+    """
+    seen: set[str] = set()
+    kept: list[OddsEventRecord] = []
+    issues: list[QualityIssue] = []
+    for event in batch.events:
+        if event.source_event_id in seen:
+            issues.append(
+                QualityIssue(
+                    "duplicate_event",
+                    event.source_event_id,
+                    f"listed again ({len(event.outcomes)} price(s)); first listing kept",
+                )
+            )
+            continue
+        seen.add(event.source_event_id)
+        kept.append(event)
+    if not issues:
+        return batch
+    return replace(batch, events=tuple(kept), issues=batch.issues + tuple(issues))
+
+
 def store_odds_batch(conn: Connection, batch: OddsBatch) -> OddsLoadResult:
     """Upsert events, insert snapshots, then map this batch's still-unmatched events."""
+    batch = drop_duplicate_events(batch)
     batch = anchor_to_raw(conn, batch)
     event_ids, events = upsert_odds_events(conn, batch)
     inserted, duplicate, started = insert_odds_snapshots(conn, batch, event_ids)
@@ -343,8 +373,10 @@ def store_odds_batch(conn: Connection, batch: OddsBatch) -> OddsLoadResult:
 
 def _record(run: RunTracker, batch: OddsBatch, result: OddsLoadResult) -> None:
     """Write a stored batch's counts, quota and issues into the run."""
-    run.items_total = len(batch.events) + len(batch.rejected)
-    for _ in batch.events:
+    # A repeated event id is one item (stored once, its repeats are issues).
+    listed = {event.source_event_id for event in batch.events}
+    run.items_total = len(listed) + len(batch.rejected)
+    for _ in listed:
         run.item_succeeded()
     for key, reason in result.failed.items():
         run.item_failed(key, reason)

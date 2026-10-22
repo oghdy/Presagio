@@ -116,3 +116,69 @@ def test_help_runs_as_a_module() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert "--dry-run" in completed.stdout and "--from" in completed.stdout
+
+
+# --- ingest-daily (P-017) --------------------------------------------------------------------
+
+
+@pytest.fixture
+def no_ingest_daily(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """Replace the ingest-daily runner so main() only parses arguments and sets up logging."""
+    from presagio.ingestion import incremental
+
+    calls: list[object] = []
+
+    def fake(args: object, **kwargs: object) -> int:
+        """Record the parsed arguments instead of touching a database."""
+        calls.append(args)
+        return 0
+
+    monkeypatch.setattr(incremental, "cmd_ingest_daily", fake)
+    return calls
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["ingest-daily", "--date", "2026-13-01"],
+        ["ingest-daily", "--date", "yesterday"],
+        ["ingest-daily", "--stale-after-hours", "0"],
+        ["ingest-daily", "--season", "2025-26"],  # a backfill option
+    ],
+)
+def test_ingest_daily_bad_arguments_exit_64(no_ingest_daily, capsys, argv) -> None:
+    """Usage errors of ingest-daily exit 64 too, never 2 (blocked)."""
+    with pytest.raises(SystemExit) as caught:
+        cli.main(argv)
+    assert caught.value.code == cli.EXIT_USAGE
+    assert "error:" in capsys.readouterr().err
+    assert no_ingest_daily == []
+
+
+def test_ingest_daily_arguments(no_ingest_daily) -> None:
+    """--date is a date, default None (today in Korea is decided at run time)."""
+    assert cli.main(["ingest-daily"], setup_logging=False) == 0
+    assert cli.main(["ingest-daily", "--date", "2026-10-22", "--odds-only", "--dry-run"]) == 0
+    default, given = no_ingest_daily
+    assert default.base_date is None and default.odds_only is False and default.force is False
+    assert str(given.base_date) == "2026-10-22" and given.odds_only and given.dry_run
+
+
+def test_ingest_daily_keeps_httpx_quiet(no_ingest_daily) -> None:
+    """The -v flag never lowers httpx below WARNING for ingest-daily either (D-031)."""
+    assert cli.main(["-v", "ingest-daily", "--dry-run"]) == 0
+    for name in cli.QUIET_LOGGERS:
+        assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING
+
+
+def test_ingest_daily_help_runs_as_a_module() -> None:
+    """`python -m presagio.cli ingest-daily --help` works without a database or network."""
+    completed = subprocess.run(
+        [sys.executable, "-m", "presagio.cli", "ingest-daily", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "--odds-only" in completed.stdout and "Korea" in completed.stdout
