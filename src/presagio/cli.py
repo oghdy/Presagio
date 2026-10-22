@@ -32,6 +32,8 @@ from presagio.ingestion.backfill import (
 from presagio.ingestion.client import IngestionClient, db_raw_store
 from presagio.ingestion.errors import RunAlreadyRunningError
 from presagio.ingestion.runs import error_line
+from presagio.quality.cli import COMMAND as QUALITY_CHECK
+from presagio.quality.cli import add_quality_check_parser, cmd_quality_check
 
 logger = logging.getLogger("presagio.cli")
 
@@ -141,6 +143,7 @@ def build_parser() -> ArgumentParser:
         metavar="H",
         help="close 'running' rows older than H hours as aborted first (default STALE_RUN_HOURS)",
     )
+    add_quality_check_parser(commands)
     return parser
 
 
@@ -314,6 +317,10 @@ def main(
     """Entry point (`presagio`); engine, sources and now are injectable for tests."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == QUALITY_CHECK:
+        if setup_logging:
+            configure_logging(args.verbose)
+        return cmd_quality_check(args, engine=engine)
     if args.command == "backfill" and (args.date_from is None) != (args.date_to is None):
         parser.error("--from and --to go together")
     try:
