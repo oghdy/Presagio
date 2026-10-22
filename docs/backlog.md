@@ -285,6 +285,7 @@
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-016-briefing.md`. 호출 단위는 시즌×시즌 유형, 재개는 scope_key + has_succeeded, 차단은 즉시 전체 중단.
   - 2026-10-22 PM: PR #15(https://github.com/oghdy/Presagio/pull/15) 도착. 로컬 299 passed, 실제 2호출 1회 실행(임시 DB). reviewer 카드 올림.
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 기준 1~5 O(임시 DB 실제 2호출, 재개·차단·후속 4건 재현, 소켓 차단 299 passed). [낮음] 3건: 재개 판정이 "하나라도 succeeded"라 --force 후 partial이 영구 skip → **최신 run 기준으로 수정 요청**, `--stale-after-hours` 음수 검사 없음 → 수정 요청, README 소유권 → PM 예외 허용. 결정 D-037 기록. 조건부 수락, 재확인은 같은 리뷰어.
+  - 2026-10-22 PM: 수정 커밋 `759f3b1`(재개는 최신 run 기준, 옵션 양수 검사, README). 재리뷰 "수락 가능", 새 발견 0, 305 passed. PM 수락. 사람 머지 대기.
 
 ### P-017 증분 수집 CLI (전날 결과 + 오늘 일정)
 - **상태:** TODO
