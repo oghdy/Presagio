@@ -197,3 +197,59 @@ def with_allstar_and_club_games(data: dict[str, Any]) -> dict[str, Any]:
     club["awayTeam"]["teamId"] = 15016  # Melbourne United
     day.extend([allstar, club])
     return data
+
+
+def stats_fixture_name(request: httpx.Request) -> str:
+    """fixture_name, plus BoxScoreTraditionalV3 by GameID (P-015)."""
+    endpoint = request.url.path.rsplit("/", 1)[-1]
+    if endpoint == "boxscoretraditionalv3":
+        return f"boxscoretraditionalv3__{request.url.params['GameID']}"
+    return fixture_name(request)
+
+
+def nba_stats_fixture_handler(overrides: dict[str, bytes] | None = None) -> Handler:
+    """nba_fixture_handler that also serves box scores; overrides are read on every request."""
+    seen: list[httpx.Request] = []
+    replaced = overrides if overrides is not None else {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve the matching fixture bytes with HTTP 200."""
+        seen.append(request)
+        name = stats_fixture_name(request)
+        body = replaced[name] if name in replaced else fixture_bytes(name)
+        return json_bytes(200, body)
+
+    handler.seen = seen  # type: ignore[attr-defined]
+    return handler
+
+
+def game_log_rows(data: dict[str, Any], game_id: str) -> list[dict[str, Any]]:
+    """LeagueGameLog rows of one game as {column: value} copies (use edit_log_row to edit)."""
+    headers = data["resultSets"][0]["headers"]
+    rows = data["resultSets"][0]["rowSet"]
+    return [
+        dict(zip(headers, row, strict=True))
+        for row in rows
+        if row[headers.index("GAME_ID")] == game_id
+    ]
+
+
+def edit_log_row(data: dict[str, Any], game_id: str, team_id: int, **values: Any) -> None:
+    """Replace columns of one team's LeagueGameLog row in place."""
+    headers = data["resultSets"][0]["headers"]
+    for row in data["resultSets"][0]["rowSet"]:
+        if row[headers.index("GAME_ID")] == game_id and row[headers.index("TEAM_ID")] == team_id:
+            for name, value in values.items():
+                row[headers.index(name)] = value
+            return
+    raise KeyError((game_id, team_id))
+
+
+def keep_log_games(data: dict[str, Any], *game_ids: str) -> dict[str, Any]:
+    """Drop every LeagueGameLog row whose game is not listed (returns the same object)."""
+    headers = data["resultSets"][0]["headers"]
+    result_set = data["resultSets"][0]
+    result_set["rowSet"] = [
+        r for r in result_set["rowSet"] if r[headers.index("GAME_ID")] in game_ids
+    ]
+    return data

@@ -1,4 +1,4 @@
-"""Source-neutral records and the interfaces every team/schedule/result source implements.
+"""Source-neutral records and the interfaces every team/schedule/result/stats source implements.
 
 An adapter turns one source's responses into these records and knows nothing about the
 database; a loader writes the records and knows nothing about HTTP. Swapping nba_api for
@@ -161,6 +161,51 @@ class ResultBatch:
     issues: tuple[QualityIssue, ...] = ()
 
 
+@dataclass(frozen=True)
+class TeamGameStatRecord:
+    """One team's box-score line in one game, values exactly as the source gave them (A-6)."""
+
+    game_id: str
+    team_id: int
+    opponent_team_id: int
+    is_home: bool
+    minutes: int
+    pts: int
+    fgm: int
+    fga: int
+    fg3m: int
+    fg3a: int
+    ftm: int
+    fta: int
+    oreb: int
+    dreb: int
+    reb: int
+    ast: int
+    stl: int
+    blk: int
+    tov: int
+    pf: int
+    plus_minus: int
+
+
+@dataclass(frozen=True)
+class TeamStatsBatch:
+    """Team box-score lines from one response: two per usable game.
+
+    rejected maps a game the source listed but we could not use to the reason (a failed
+    item). results carries the final scores of the same response when the source has them
+    (LeagueGameLog), so one call feeds both the games loader and the team_game_stats loader.
+    """
+
+    stats: tuple[TeamGameStatRecord, ...]
+    provenance: Provenance
+    season: str | None = None
+    season_type: str | None = None
+    rejected: Mapping[str, str] = field(default_factory=dict)
+    issues: tuple[QualityIssue, ...] = ()
+    results: ResultBatch | None = None
+
+
 @runtime_checkable
 class TeamSource(Protocol):
     """Gives the current list of teams."""
@@ -195,6 +240,32 @@ class ResultSource(Protocol):
         self, season: str, season_type: str, run: RunCounter | None = None
     ) -> ResultBatch:
         """Fetch final scores; season_type is one of RESULT_SEASON_TYPES."""
+        ...
+
+
+@runtime_checkable
+class TeamStatsSource(Protocol):
+    """Gives every team box-score line of one season type (one call), with final scores."""
+
+    name: str
+    # Our season type -> the source's own label, recorded in ingestion_runs.season_type.
+    season_type_labels: Mapping[str, str]
+
+    def fetch_season_team_stats(
+        self, season: str, season_type: str, run: RunCounter | None = None
+    ) -> TeamStatsBatch:
+        """Fetch team lines; season_type is one of RESULT_SEASON_TYPES."""
+        ...
+
+
+@runtime_checkable
+class GameTeamStatsSource(Protocol):
+    """Gives both teams' box-score lines of one game (one call per game)."""
+
+    name: str
+
+    def fetch_game_team_stats(self, game_id: str, run: RunCounter | None = None) -> TeamStatsBatch:
+        """Fetch the two team lines of a finished game."""
         ...
 
 
