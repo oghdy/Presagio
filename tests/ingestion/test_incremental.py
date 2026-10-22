@@ -32,11 +32,17 @@ from presagio.ingestion.incremental import (
     result_date,
     run_daily,
 )
-from presagio.ingestion.loaders import load_odds, load_season_schedule, load_teams
+from presagio.ingestion.loaders import (
+    load_odds,
+    load_season_schedule,
+    load_teams,
+    seed_odds_team_aliases,
+)
 from presagio.ingestion.sources.nba_api import NbaApiScheduleSource, NbaApiTeamSource
 from presagio.ingestion.sources.nba_api.scoreboard import NbaApiScoreboardSource
 from presagio.ingestion.sources.nba_api.team_stats import NbaApiTeamStatsSource
 from presagio.ingestion.sources.odds import TheOddsApiSource
+from presagio.quality import CheckResult, QualityReport, Scope
 
 from .helpers import FakeClock, fixture_bytes, fixture_json, fixture_name, html, json_bytes
 from .odds_helpers import (
@@ -191,17 +197,23 @@ def live(game: dict[str, Any]) -> dict[str, Any]:
 
 
 def game_log(*games: tuple[str, int, str, int, str, int, int]) -> bytes:
-    """2026-27 regular game log with only the given games: (id, home, home abbr, away, ...)."""
+    """2026-27 regular game log with only the given games: (id, home, home abbr, away, ...).
+
+    Each team line copies the fixture line with the same points (DET 121 or BOS 113), so
+    every stat adds up (P-020 stat_arithmetic) and only ids, teams and matchups change.
+    """
     data = fixture_json(LOG_2026)
     headers = data["resultSets"][0]["headers"]
-    home_row, away_row = data["resultSets"][0]["rowSet"][:2]  # DET vs. BOS, BOS @ DET
+    by_points = {
+        row[headers.index("PTS")]: row for row in data["resultSets"][0]["rowSet"][:2]
+    }  # 121: DET vs. BOS, 113: BOS @ DET
     rows = []
     for game_id, home, home_abbr, away, away_abbr, home_pts, away_pts in games:
-        for template, team, abbr, matchup, pts, other in (
-            (home_row, home, home_abbr, f"{home_abbr} vs. {away_abbr}", home_pts, away_pts),
-            (away_row, away, away_abbr, f"{away_abbr} @ {home_abbr}", away_pts, home_pts),
+        for team, abbr, matchup, pts, other in (
+            (home, home_abbr, f"{home_abbr} vs. {away_abbr}", home_pts, away_pts),
+            (away, away_abbr, f"{away_abbr} @ {home_abbr}", away_pts, home_pts),
         ):
-            row = dict(zip(headers, template, strict=True))
+            row = dict(zip(headers, by_points[pts], strict=True))
             row.update(
                 GAME_ID=game_id,
                 TEAM_ID=team,
@@ -217,8 +229,8 @@ def game_log(*games: tuple[str, int, str, int, str, int, int]) -> bytes:
     return json.dumps(data).encode()
 
 
-PHI_CLE_FINAL = (PHI_CLE, PHI, "PHI", CLE, "CLE", 110, 104)
-OKC_DEN_FINAL = (OKC_DEN, OKC, "OKC", DEN, "DEN", 112, 115)
+PHI_CLE_FINAL = (PHI_CLE, PHI, "PHI", CLE, "CLE", 121, 113)
+OKC_DEN_FINAL = (OKC_DEN, OKC, "OKC", DEN, "DEN", 113, 121)
 
 
 @dataclass
@@ -345,8 +357,8 @@ def finish_yesterday(w: World) -> None:
     """ET 10-22 is over: both games final on the scoreboard and in the game log."""
     w.boards["2026-10-22"] = scoreboard(
         date(2026, 10, 22),
-        final(board_game(PHI_CLE), 110, 104),
-        final(board_game(OKC_DEN), 112, 115, "Final/OT"),
+        final(board_game(PHI_CLE), 121, 113),
+        final(board_game(OKC_DEN), 113, 121, "Final/OT"),
     )
     w.overrides[LOG_2026] = game_log(PHI_CLE_FINAL, OKC_DEN_FINAL)
 
@@ -379,15 +391,15 @@ def test_scheduled_game_becomes_final_with_scores_and_box_scores(db: Engine, wor
     assert (phi.status_code, phi.status_text, phi.home_score, phi.away_score) == (
         3,
         "Final",
-        110,
-        104,
+        121,
+        113,
     )
     # The game log keeps the scoreboard's own final text (6-1); its fetch is the latest source.
     assert (okc.status_code, okc.status_text, okc.home_score, okc.away_score) == (
         3,
         "Final/OT",
-        112,
-        115,
+        113,
+        121,
     )
     assert phi.source == "leaguegamelog"
     assert rows(
@@ -395,10 +407,10 @@ def test_scheduled_game_becomes_final_with_scores_and_box_scores(db: Engine, wor
         "SELECT game_id, team_id, is_home, pts FROM team_game_stats_primary "
         "ORDER BY game_id, is_home DESC",
     ) == [
-        (PHI_CLE, PHI, True, 110),
-        (PHI_CLE, CLE, False, 104),
-        (OKC_DEN, OKC, True, 112),
-        (OKC_DEN, DEN, False, 115),
+        (PHI_CLE, PHI, True, 121),
+        (PHI_CLE, CLE, False, 113),
+        (OKC_DEN, OKC, True, 113),
+        (OKC_DEN, DEN, False, 121),
     ]
     (unit,) = runs(db, job_type="schedule", scope_key="date_et=2026-10-22")
     assert (unit.status, unit.items_total, unit.items_succeeded, unit.items_failed) == (
@@ -492,7 +504,7 @@ def test_unfinished_game_makes_the_date_partial_and_the_next_run_retries_it(
     """A game still on at run time leaves ET 10-22 partial; the next day fetches 10-22 again."""
     ingest(db, world, KST_OCT22)
     world.boards["2026-10-22"] = scoreboard(
-        date(2026, 10, 22), final(board_game(PHI_CLE), 110, 104), live(board_game(OKC_DEN))
+        date(2026, 10, 22), final(board_game(PHI_CLE), 121, 113), live(board_game(OKC_DEN))
     )
     world.overrides[LOG_2026] = game_log(PHI_CLE_FINAL)
     assert ingest(db, world, KST_OCT23) == 1
@@ -513,7 +525,7 @@ def test_unfinished_game_makes_the_date_partial_and_the_next_run_retries_it(
     ]
     latest = runs(db, job_type="schedule", scope_key="date_et=2026-10-22")[-1]
     assert latest.status == "succeeded"
-    assert game_row(db, OKC_DEN).away_score == 115
+    assert game_row(db, OKC_DEN).away_score == 121
 
 
 def test_final_game_missing_from_the_game_log_keeps_the_date_partial(
@@ -528,7 +540,7 @@ def test_final_game_missing_from_the_game_log_keeps_the_date_partial(
     assert unit.status == "partial"
     assert unit.error_detail["remaining"] == {OKC_DEN: "final, 0 of 2 game log team lines"}
     okc = game_row(db, OKC_DEN)
-    assert (okc.status_code, okc.home_score) == (3, 112)  # the scoreboard result is stored
+    assert (okc.status_code, okc.home_score) == (3, 113)  # the scoreboard result is stored
 
 
 def test_missed_day_is_fetched_by_the_next_run(db: Engine, world: World) -> None:
@@ -584,7 +596,13 @@ def test_teams_are_refreshed_once_a_week(db: Engine, world: World) -> None:
 
 
 def test_no_odds_key_skips_the_odds_step(db: Engine, world: World, capsys) -> None:
-    """Without ODDS_API_KEY the odds step is 'skipped', recorded, and the run still succeeds."""
+    """Without ODDS_API_KEY the odds step is 'skipped', recorded, and the run still succeeds.
+
+    The provider's team names are seeded first: without them P-020's teams_and_aliases fails
+    (the odds step is what seeds them), which is a quality finding, not this test's subject.
+    """
+    with db.begin() as conn:
+        seed_odds_team_aliases(conn)
     world.odds = None
     assert ingest(db, world, KST_OCT22) == 0
     assert "odds" not in world.seen
@@ -649,7 +667,7 @@ def test_a_failed_step_does_not_stop_the_next(db: Engine, world: World) -> None:
         "gamelog": "skipped",
         "upcoming": "failed",
         "odds": "succeeded",
-        "checks": "skipped",
+        "checks": "succeeded",
     }
     assert parent.status == "partial"
 
@@ -682,22 +700,58 @@ def test_block_during_the_game_log_closes_open_dates(db: Engine, world: World) -
     assert unit.status == "aborted"
 
 
-def test_checks_hook_runs_last(db: Engine, world: World) -> None:
-    """P-020 plugs checks in at the end; a problem makes the step partial and exit non-zero."""
-    calls: list[DailyRequest] = []
+def test_failed_quality_check_exits_1_and_is_summarised(db: Engine, world: World, capsys) -> None:
+    """A game log line that does not add up fails P-020's stat_arithmetic: exit 1, summary kept."""
+    ingest(db, world, KST_OCT22)
+    finish_yesterday(world)
+    data = json.loads(world.overrides[LOG_2026])
+    headers = data["resultSets"][0]["headers"]
+    data["resultSets"][0]["rowSet"][0][headers.index("REB")] += 1  # reb != oreb + dreb
+    world.overrides[LOG_2026] = json.dumps(data).encode()
+    assert ingest(db, world, KST_OCT23) == 1
+    (parent,) = runs(db, job_type="incremental", scope_key="date_kst=2026-10-23")
+    quality = parent.error_detail["quality"]
+    assert quality["ok"] is False and quality["fail"] == ["stat_arithmetic"]
+    assert quality["scope"]["date_et"] == "2026-10-22"
+    assert quality["summary"]["fail"] == 1 and sum(quality["summary"].values()) == 14
+    steps = {s["step"]: s["status"] for s in parent.error_detail["steps"]}
+    assert steps["checks"] == "failed" and steps["results"] == "succeeded"
+    out = capsys.readouterr().out
+    assert "Quality checks (date_et=2026-10-22):" in out and "fail: stat_arithmetic" in out
 
-    def check(engine: Engine, request: DailyRequest) -> list[str]:
-        """Record the call and report one problem."""
-        calls.append(request)
-        return ["2 games without team stats"]
 
-    request = DailyRequest(KST_OCT22)
+def test_quality_warnings_alone_keep_exit_0(db: Engine, world: World) -> None:
+    """Only 'warn' results: the step succeeds and the run exits 0; the warning is recorded."""
+    seen: list[date] = []
+
+    def warn_only(engine: Engine, day: date) -> QualityReport:
+        """A report with one passing and one warning check for the day."""
+        seen.append(day)
+        return QualityReport(
+            Scope(date_et=day),
+            (
+                CheckResult("team_rows_per_game", "final games", "pass", 2, 0, (), "ok"),
+                CheckResult("past_games_not_final", "games", "warn", 2, 1, (OKC_DEN,), "late"),
+            ),
+        )
+
     world.clock.wall = RUN_AT[KST_OCT22]
-    plan = plan_daily(db, request, odds_enabled=True, checks=[check])
-    report = run_daily(db, plan, world.sources(db), checks=[check])
-    assert calls == [request]
-    assert report.results[-1].step == "checks" and report.results[-1].status == "partial"
-    assert report.exit_code == 1
+    plan = plan_daily(db, DailyRequest(KST_OCT22), odds_enabled=True)
+    report = run_daily(db, plan, world.sources(db), quality=warn_only)
+    assert seen == [date(2026, 10, 21)]  # yesterday (ET)
+    assert report.exit_code == 0 and report.results[-1].status == "succeeded"
+    (parent,) = runs(db, job_type="incremental")
+    assert parent.status == "succeeded"
+    assert parent.error_detail["quality"]["warn"] == ["past_games_not_final"]
+    assert parent.error_detail["quality"]["ok"] is True
+
+
+def test_dry_run_does_not_run_quality_checks(db: Engine, world: World, capsys) -> None:
+    """--dry-run lists the checks step but never calls it (no parent run, no summary)."""
+    assert ingest(db, world, KST_OCT23, "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "P-020 quality checks on yesterday (ET), read only" in out
+    assert "Quality checks (" not in out and runs(db, job_type="incremental") == []
 
 
 # --- odds loader: a repeated event id (P-019 review L1) -------------------------------------------

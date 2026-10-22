@@ -16,7 +16,9 @@ Steps, all children of one parent run (job_type 'incremental', scope 'date_kst=<
             those dates -> games results + team_game_stats (A-6: daily stats are game logs)
   upcoming  ScoreboardV3(D) -> games (schedule, 'date_et=<D>;phase=upcoming')
   odds      The Odds API /odds once -> odds_events + odds_snapshots; 'skipped' without a key
-  checks    where P-020's quality checks plug in (none yet)
+  checks    P-020 quality checks (presagio.quality.run_checks, read only) on ET D-1; a
+            'fail' or 'error' makes the step failed (exit 1), 'warn' alone does not.
+            The summary goes to the parent run's error_detail.quality
 `--odds-only` runs only the odds step (closing captures, no nba_api call).
 
 Date unit success (schema ch. 4, Q9): X ends 'succeeded' only when every stored-type game of
@@ -96,6 +98,8 @@ from presagio.ingestion.sources.nba_api.team_stats import NbaApiTeamStatsSource
 from presagio.ingestion.sources.odds.base import OddsSource
 from presagio.ingestion.sources.odds.the_odds_api import SOURCE as THE_ODDS_API
 from presagio.ingestion.sources.odds.the_odds_api import TheOddsApiSource
+from presagio.quality import QualityReport, run_checks
+from presagio.quality.checks import ERROR, FAIL, STATUSES, WARN
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +140,26 @@ GAMES = Game.__table__
 STATS = TeamGameStat.__table__
 ALIASES = TeamAlias.__table__
 
-# A check gets the engine and the request and returns problems found (P-020 plugs in here).
-DailyCheck = Callable[[Engine, "DailyRequest"], Sequence[str]]
+# Runs the P-020 quality checks for one ET date (injectable for tests).
+QualityRunner = Callable[[Engine, date], QualityReport]
+
+
+def run_quality_checks(engine: Engine, day: date) -> QualityReport:
+    """Every P-020 check, scoped to the ET date (scope-free checks cover everything)."""
+    return run_checks(engine, date_et=day)
+
+
+def quality_summary(report: QualityReport) -> dict[str, Any]:
+    """What the parent run keeps: scope, counts per status and the names behind fail/warn/error."""
+    return {
+        "scope": report.scope.as_dict(),
+        "ok": report.ok,
+        "summary": {status: report.count(status) for status in STATUSES},
+        **{
+            status: [r.name for r in report.results if r.status == status]
+            for status in (FAIL, ERROR, WARN)
+        },
+    }
 
 
 # --- dates ------------------------------------------------------------------------------------
@@ -357,7 +379,6 @@ def plan_daily(
     *,
     odds_enabled: bool,
     teams_scope: str = NbaApiTeamSource.name,
-    checks: Sequence[DailyCheck] = (),
     teams_refresh_hours: float | None = None,
 ) -> DailyPlan:
     """Decide run or skip for every step (rules in the module docstring). Read only.
@@ -432,8 +453,17 @@ def plan_daily(
             PlannedStep(STEP_ODDS, JOB_ODDS, THE_ODDS_API, SKIP, "ODDS_API_KEY is not set", 0)
         )
     if not request.odds_only:
-        reason = f"{len(checks)} check(s)" if checks else "no quality checks wired yet (P-020)"
-        steps.append(PlannedStep(STEP_CHECKS, None, "-", RUN if checks else SKIP, reason, 0))
+        steps.append(
+            PlannedStep(
+                STEP_CHECKS,
+                None,
+                f"date_et={request.yesterday_et.isoformat()}",
+                RUN,
+                "P-020 quality checks on yesterday (ET), read only",
+                0,
+                target_date_et=request.yesterday_et,
+            )
+        )
     return DailyPlan(request, steps, odds_enabled)
 
 
@@ -658,7 +688,7 @@ class DailyRunner:
         sources: DailySources,
         *,
         stale_after_hours: float,
-        checks: Sequence[DailyCheck] = (),
+        quality: QualityRunner = run_quality_checks,
         clock: Callable[[], float] = monotonic.monotonic,
     ) -> None:
         """Keep what every step needs."""
@@ -666,7 +696,7 @@ class DailyRunner:
         self.plan = plan
         self.sources = sources
         self.stale_after_hours = stale_after_hours
-        self.checks = checks
+        self.quality = quality
         self.clock = clock
         self.report = DailyReport(plan)
         self.parent: RunTracker | None = None
@@ -944,25 +974,41 @@ class DailyRunner:
         )
 
     def _checks_step(self, step: PlannedStep) -> None:
-        """Quality checks (P-020): each returns problems; any problem makes the step partial."""
-        if step.action == SKIP or not self.checks:
-            self._record(StepResult(step.step, None, "-", SKIPPED, error=step.reason))
+        """P-020 quality checks on ET D-1: fail/error -> step failed (exit 1), warn -> ok."""
+        assert self.parent is not None and step.target_date_et is not None
+        logger.info("%s %s ...", step.step, step.scope_key)
+        started = self.clock()
+        try:
+            report = self.quality(self.engine, step.target_date_et)
+        except Exception as exc:  # the checks could not run at all: say so, never skip quietly
+            logger.debug("quality checks failed", exc_info=True)
+            self.parent.detail["quality"] = {"ok": False, "error": error_line(exc)}
+            self._record(
+                StepResult(
+                    step.step,
+                    None,
+                    step.scope_key,
+                    FAILED,
+                    error=error_line(exc),
+                    seconds=self.clock() - started,
+                )
+            )
             return
-        problems: list[str] = []
-        for check in self.checks:
-            try:
-                problems.extend(check(self.engine, self.plan.request))
-            except Exception as exc:  # a broken check is a problem, not a crash
-                problems.append(error_line(exc))
-        status = PARTIAL if problems else SUCCEEDED
+        summary = quality_summary(report)
+        self.parent.detail["quality"] = summary
+        bad = summary[FAIL] + summary[ERROR]
         self._record(
             StepResult(
                 step.step,
                 None,
-                "-",
-                status,
-                items_total=len(self.checks),
-                error="; ".join(problems)[:500] or None,
+                step.scope_key,
+                SUCCEEDED if report.ok else FAILED,
+                items_total=len(report.results),
+                items_succeeded=len(report.results) - len(bad),
+                items_failed=len(bad),
+                error=None if report.ok else f"fail/error: {', '.join(bad)}",
+                seconds=self.clock() - started,
+                detail={"quality": summary},
             )
         )
 
@@ -994,12 +1040,14 @@ def run_daily(
     sources: DailySources,
     *,
     stale_after_hours: float | None = None,
-    checks: Sequence[DailyCheck] = (),
+    quality: QualityRunner = run_quality_checks,
     clock: Callable[[], float] = monotonic.monotonic,
 ) -> DailyReport:
     """Execute the plan; a step's failure never stops it, a block (403/429) does."""
     hours = stale_after_hours if stale_after_hours is not None else get_settings().stale_run_hours
-    runner = DailyRunner(engine, plan, sources, stale_after_hours=hours, checks=checks, clock=clock)
+    runner = DailyRunner(
+        engine, plan, sources, stale_after_hours=hours, quality=quality, clock=clock
+    )
     return runner.run()
 
 
@@ -1147,6 +1195,13 @@ def print_report(report: DailyReport) -> None:
                 f"{snaps.get('already_stored', 0)} already stored; "
                 f"credits remaining {quota.get('x-requests-remaining', '?')}"
             )
+        if r.step == STEP_CHECKS and "quality" in r.detail:
+            quality = r.detail["quality"]
+            counts = ", ".join(f"{n} {status}" for status, n in quality["summary"].items())
+            print(f"Quality checks ({r.scope_key}): {counts}")
+            for status in (FAIL, ERROR, WARN):
+                if quality[status]:
+                    print(f"  {status}: {', '.join(quality[status])}")
     if report.failures:
         print(f"\nNot done ({len(report.failures)}):")
         for r in report.failures:
@@ -1162,7 +1217,7 @@ def cmd_ingest_daily(
     engine: Engine | None = None,
     sources: Callable[[Engine], DailySources] | None = None,
     now: datetime | None = None,
-    checks: Sequence[DailyCheck] = (),
+    quality: QualityRunner = run_quality_checks,
 ) -> int:
     """presagio ingest-daily: plan, then (unless --dry-run) run and report."""
     try:
@@ -1191,7 +1246,6 @@ def cmd_ingest_daily(
             engine,
             request,
             odds_enabled=built.odds is not None,
-            checks=checks,
             teams_refresh_hours=settings.teams_refresh_hours,
         )
         print_plan(plan, settings.http_min_interval, args.dry_run)
@@ -1200,7 +1254,7 @@ def cmd_ingest_daily(
             return EXIT_OK
         try:
             report = run_daily(
-                engine, plan, built, stale_after_hours=stale_after_hours, checks=checks
+                engine, plan, built, stale_after_hours=stale_after_hours, quality=quality
             )
         except RunAlreadyRunningError as exc:
             print(
