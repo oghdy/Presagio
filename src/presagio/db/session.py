@@ -3,13 +3,13 @@
 import sys
 from functools import lru_cache
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import URL, Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from presagio.config import DEFAULT_CONNECT_TIMEOUT, get_settings
 
 
-def make_engine(url: str | None = None, connect_timeout: int | None = None) -> Engine:
+def make_engine(url: str | URL | None = None, connect_timeout: int | None = None) -> Engine:
     """Build an engine; without a url, url and timeout come from settings (.env)."""
     if url is None:
         settings = get_settings()

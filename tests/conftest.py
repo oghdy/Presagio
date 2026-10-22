@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import Engine
+from sqlalchemy import URL, Engine, make_url
 from sqlalchemy.exc import OperationalError
 
 from presagio.config import Settings
@@ -23,8 +23,11 @@ def _skip_or_fail(reason: str) -> None:
     pytest.skip(reason)
 
 
-def _connect_test_engine(url: str) -> Engine:
+def _connect_test_engine(url: URL) -> Engine:
     """Return a connected engine; skip if no server listens, fail if the server rejects us."""
+    # Takes a URL object (its repr masks the password) and hides this frame from pytest
+    # tracebacks, so a failing run never prints database credentials.
+    __tracebackhide__ = True
     engine = make_engine(url, connect_timeout=TEST_DB_CONNECT_TIMEOUT)
     host, port = engine.url.host or "localhost", engine.url.port or 5432
     # Probe TCP first: "nothing listening" means no database here (skip), while any error
@@ -47,7 +50,7 @@ def _connect_test_engine(url: str) -> Engine:
 
 
 @pytest.fixture
-def connect_test_engine() -> Callable[[str], Engine]:
+def connect_test_engine() -> Callable[[URL], Engine]:
     """Expose the skip/fail connection logic so tests can exercise it directly."""
     return _connect_test_engine
 
@@ -55,10 +58,11 @@ def connect_test_engine() -> Callable[[str], Engine]:
 @pytest.fixture
 def db_engine() -> Iterator[Engine]:
     """Engine for the configured database; skips if it is not configured or not listening."""
+    __tracebackhide__ = True  # keep the settings (with the password) out of tracebacks
     try:
-        settings = Settings()
+        url = make_url(Settings().database_url)
     except ValidationError:
         _skip_or_fail("DATABASE_URL is not set (no env var and no .env)")
-    engine = _connect_test_engine(settings.database_url)
+    engine = _connect_test_engine(url)
     yield engine
     engine.dispose()
