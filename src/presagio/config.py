@@ -38,6 +38,9 @@ DEFAULT_INGEST_DAILY_TIME_KST = "16:00"
 # `ingest-daily --odds-only` closing captures, US Eastern wall time on the game date, 15 min
 # before the usual tip-off slots (19:00/19:30, 20:00/20:30/21:00, 22:00/22:30 ET).
 DEFAULT_ODDS_CLOSING_TIMES_ET = "18:45,19:45,21:45"
+# The daily ingest reloads the team list only when no teams run succeeded this recently, so a
+# normal day costs three nba_api calls (D-038 follow-up: teams change rarely, at most weekly).
+DEFAULT_TEAMS_REFRESH_HOURS = 168.0
 # D-027: at most four odds captures a day, one of them the full run's.
 MAX_ODDS_CLOSING_TIMES = 3
 CLOCK_TIME = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
@@ -115,6 +118,12 @@ class Settings(BaseSettings):
     odds_closing_times_et: str = Field(
         default=DEFAULT_ODDS_CLOSING_TIMES_ET,
         description="When `ingest-daily --odds-only` runs, HH:MM US Eastern, comma separated.",
+    )
+
+    teams_refresh_hours: float = Field(
+        default=DEFAULT_TEAMS_REFRESH_HOURS,
+        gt=0,
+        description="ingest-daily reloads teams when no teams run succeeded in this many hours.",
     )
 
     @field_validator("ingest_daily_time_kst")

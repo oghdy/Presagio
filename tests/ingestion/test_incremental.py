@@ -78,7 +78,7 @@ RESULT_COLUMNS = (
         (datetime(2026, 10, 22, 15, 0, 0, tzinfo=UTC), date(2026, 10, 23)),  # 00:00 KST
         (datetime(2026, 12, 31, 15, 0, 0, tzinfo=UTC), date(2027, 1, 1)),  # new year in Korea
         # 23:30 ET on 2026-10-22 is already 12:30 the next day in Korea.
-        (datetime(2026, 10, 22, 23, 30, tzinfo=UTC).replace(), date(2026, 10, 23)),
+        (datetime(2026, 10, 23, 3, 30, tzinfo=UTC), date(2026, 10, 23)),
     ],
 )
 def test_base_date_defaults_to_today_in_korea(now: datetime, expected: date) -> None:
@@ -555,19 +555,31 @@ def test_first_run_does_not_look_back_at_unknown_dates(db: Engine, world: World)
 # --- teams, odds, modes ------------------------------------------------------------------------
 
 
-def test_teams_are_refreshed_once_a_day(db: Engine, world: World) -> None:
-    """No recent teams run: the daily run reloads teams; a second run the same day does not."""
+def age_teams_runs(db: Engine, days: int) -> None:
+    """Move every teams run the given number of days into the past (DB clock)."""
     with db.begin() as conn:
         conn.execute(
             text(
-                "UPDATE ingestion_runs SET started_at = started_at - interval '1 day', "
-                "finished_at = finished_at - interval '1 day' WHERE job_type = 'teams'"
-            )
+                "UPDATE ingestion_runs SET started_at = started_at - make_interval(days => :d), "
+                "finished_at = finished_at - make_interval(days => :d) WHERE job_type = 'teams'"
+            ),
+            {"d": days},
         )
+
+
+def test_teams_are_refreshed_once_a_week(db: Engine, world: World) -> None:
+    """Teams loaded a day ago: no call (3 nba_api calls a day); 8 days ago: reloaded once."""
+    age_teams_runs(db, 1)
     assert ingest(db, world, KST_OCT22) == 0
-    assert world.calls("commonteamyears") == ["commonteamyears__00"]
+    assert world.calls("commonteamyears") == []
+    assert len(world.calls("scoreboardv3")) == 2
+
+    age_teams_runs(db, 7)  # now 8 days old: older than TEAMS_REFRESH_HOURS (168 h)
     world.seen.clear()
     assert ingest(db, world, KST_OCT22, now=RUN_AT[KST_OCT22] + timedelta(hours=1)) == 0
+    assert world.calls("commonteamyears") == ["commonteamyears__00"]
+    world.seen.clear()
+    assert ingest(db, world, KST_OCT22, now=RUN_AT[KST_OCT22] + timedelta(hours=2)) == 0
     assert world.calls("commonteamyears") == []
 
 

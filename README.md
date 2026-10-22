@@ -215,7 +215,7 @@ docker compose exec -T postgres psql -U presagio -d presagio -c "SELECT run_id, 
 uv run presagio ingest-daily --date 2026-10-22 --dry-run
 ```
 
-실제로 받는다. 보통 nba_api 3번(어제 스코어보드 1 + 게임로그 1 + 오늘 스코어보드 1)과 배당 1번이다. `.env`에 `ODDS_API_KEY`가 없으면 배당 단계는 `skipped`로 기록하고 넘어간다.
+실제로 받는다. 보통 nba_api 3번(어제 스코어보드 1 + 게임로그 1 + 오늘 스코어보드 1)과 배당 1번이다. 팀 목록은 일주일에 한 번만 다시 받는다(`TEAMS_REFRESH_HOURS`, 기본 168시간). 그날은 nba_api가 4번이다. `.env`에 `ODDS_API_KEY`가 없으면 배당 단계는 `skipped`로 기록하고 넘어간다.
 
 ```bash
 uv run presagio ingest-daily

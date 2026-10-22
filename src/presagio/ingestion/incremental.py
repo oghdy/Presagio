@@ -7,8 +7,8 @@ what NBA scoreboards use, so they are passed to ScoreboardV3 explicitly (A-2, re
 turned into UTC windows with zoneinfo (23 or 25 hours on DST days, schema 1-2.4).
 
 Steps, all children of one parent run (job_type 'incremental', scope 'date_kst=<D>'):
-  teams     team list, unless a teams run succeeded in the last TEAMS_REFRESH_HOURS (the
-            backfill never reloads teams once done, D-037)
+  teams     team list, unless a teams run succeeded in the last TEAMS_REFRESH_HOURS
+            (setting, default a week; the backfill never reloads teams once done, D-037)
   results   ScoreboardV3(X) -> games (6-1 "scoreboardv3" columns) for X = D-1 ET plus the
             retry dates; each X is a date unit (schedule, 'date_et=<X>') kept open until the
             game log step is done
@@ -104,9 +104,6 @@ SEOUL = ZoneInfo("Asia/Seoul")
 EASTERN = ZoneInfo("America/New_York")
 # Earlier ET dates (before D-1) a run looks back at for unfinished date units.
 RETRY_DAYS = 3
-# A teams run that succeeded this recently (DB clock) makes the teams step skip. Under 24 h so
-# a daily run a little earlier than yesterday's still refreshes; two runs a day load once.
-TEAMS_REFRESH_HOURS = 20.0
 # odds_snapshots.capture_label values (reference only, never used by logic; schema 7-2).
 LABEL_PREDICTION = "prediction"
 LABEL_CLOSING = "pre_tip"
@@ -361,6 +358,7 @@ def plan_daily(
     odds_enabled: bool,
     teams_scope: str = NbaApiTeamSource.name,
     checks: Sequence[DailyCheck] = (),
+    teams_refresh_hours: float | None = None,
 ) -> DailyPlan:
     """Decide run or skip for every step (rules in the module docstring). Read only.
 
@@ -368,7 +366,12 @@ def plan_daily(
     """
     steps: list[PlannedStep] = []
     if not request.odds_only:
-        recent = recent_teams_run(engine, teams_scope, TEAMS_REFRESH_HOURS)
+        hours = (
+            teams_refresh_hours
+            if teams_refresh_hours is not None
+            else get_settings().teams_refresh_hours
+        )
+        recent = recent_teams_run(engine, teams_scope, hours)
         if recent is not None and not request.force:
             steps.append(
                 PlannedStep(
@@ -376,7 +379,7 @@ def plan_daily(
                     JOB_TEAMS,
                     teams_scope,
                     SKIP,
-                    f"refreshed within {TEAMS_REFRESH_HOURS:g} h (run {recent.run_id})",
+                    f"refreshed within {hours:g} h (run {recent.run_id})",
                     0,
                 )
             )
@@ -1162,8 +1165,8 @@ def cmd_ingest_daily(
     checks: Sequence[DailyCheck] = (),
 ) -> int:
     """presagio ingest-daily: plan, then (unless --dry-run) run and report."""
-    settings = get_settings()
     try:
+        settings = get_settings()  # a bad setting is one line below, not a traceback
         if engine is None:
             from presagio.db.session import get_engine
 
@@ -1184,7 +1187,13 @@ def cmd_ingest_daily(
         mode = " (odds only)" * args.odds_only + " (dry run: nothing is written)" * args.dry_run
         print(f"Daily ingest{mode}")
         print_dates(request, settings)
-        plan = plan_daily(engine, request, odds_enabled=built.odds is not None, checks=checks)
+        plan = plan_daily(
+            engine,
+            request,
+            odds_enabled=built.odds is not None,
+            checks=checks,
+            teams_refresh_hours=settings.teams_refresh_hours,
+        )
         print_plan(plan, settings.http_min_interval, args.dry_run)
         sys.stdout.flush()  # show the plan before the progress lines on stderr
         if args.dry_run:
