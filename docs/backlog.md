@@ -380,6 +380,7 @@
   - 2026-10-22 PM: 야간 위임(D-041)으로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-021-briefing.md`. 개발 DB(5433)를 실제로 채운다. 차단(exit 2)이면 멈추고 보고.
   - 2026-10-22 PM: 자동 이벤트 턴이라 세션 시작이 거부됨(사람 클릭 필요) → CLAUDE.md 허용 범위대로 data-engineer **서브에이전트**(Opus, 전용 worktree `.claude/worktrees/p-021-backfill-report`)로 수행.
   - 2026-10-23 PM: PR #19(https://github.com/oghdy/Presagio/pull/19) 도착. 68호출, 차단·재시도 0, games 5,169·team_game_stats 7,946, 품질 체크 14 pass, 멱등 증명(`--force` 전체 재실행 후 행 수 불변). 시즌별 경기 수가 조사 보고서 표와 일치. **코드 수정 1건**(중립 경기장: 게임로그가 두 팀 모두 "@"로 줘서 10경기 거부되던 것 → 일정 기준으로 처리, 21줄 + 테스트 3개). 결정 제안 3건(중립 경기 규칙, 로더 의미 변경 시 --force 운영, `games.is_neutral` 컬럼은 스키마 변경 → 사람). reviewer 서브에이전트로 독립 리뷰 중.
+  - 2026-10-23 PM: 리뷰 판정 "수락 가능", 기준 1~4 전부 O(리뷰어가 읽기 전용 연결로 보고서 SQL 전부 재현, raw 14행에서 중립 10경기 직접 확인, 수정 되돌리면 테스트 3개 실패, 422 passed). [낮음] 3건은 보고서 문장(raw 행 증가 설명, 2023-24 중립 경기 목록, 추정 표시) → 작성자에게 수정 요청. 결정 D-042 기록, `is_neutral` 컬럼은 Q-013으로 사람에게.
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
 - **상태:** DONE (2026-10-22, PR #8 squash merge)
