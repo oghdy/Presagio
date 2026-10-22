@@ -20,6 +20,7 @@ from presagio.ingestion.client import ApiRequest, RequestPolicy, nba_api_request
 from presagio.ingestion.errors import (
     BlockedError,
     ClientRequestError,
+    IngestionError,
     InvalidResponseError,
     RetriesExhaustedError,
 )
@@ -221,6 +222,37 @@ def test_transient_errors_give_up_after_three_retries(make_client, clock) -> Non
     assert len(handler.seen) == 4
     assert clock.sleeps == [1.0, 2.0, 4.0]
     assert (run.api_calls, run.retry_count) == (4, 3)
+
+
+@pytest.mark.parametrize(
+    ("failure", "name"),
+    [
+        # A body that does not match its Content-Encoding: httpx raises DecodingError when the
+        # client reads it (a stream, so the Response is not decoded while building it here).
+        (
+            httpx.Response(
+                200, stream=httpx.ByteStream(b"not gzip"), headers={"Content-Encoding": "gzip"}
+            ),
+            "DecodingError",
+        ),
+        (httpx.TooManyRedirects("redirect loop"), "TooManyRedirects"),
+    ],
+    ids=["decoding_error", "too_many_redirects"],
+)
+def test_non_transport_httpx_errors_become_ingestion_errors(
+    make_client, clock, failure, name
+) -> None:
+    """httpx errors outside TransportError are IngestionError, not retried (D-032 follow-up c)."""
+    handler = responses(failure, json_bytes(200, b"{}"), clock=clock)
+    store, run = FakeStore(), FakeRun()
+    with pytest.raises(IngestionError) as caught:
+        make_client(handler, store).fetch(ODDS, run)
+    assert type(caught.value) is IngestionError  # not TransientTransportError: no retry
+    assert f"{name}, not retried" in str(caught.value)
+    assert "SECRET-KEY-123" not in str(caught.value) and caught.value.__cause__ is None
+    assert len(handler.seen) == 1 and clock.sleeps == []
+    assert store.calls == []  # no bytes arrived intact, so nothing to store
+    assert (run.api_calls, run.retry_count) == (1, 0)
 
 
 # --- secrets ----------------------------------------------------------------------------------
