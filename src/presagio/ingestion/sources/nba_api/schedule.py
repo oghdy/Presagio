@@ -162,10 +162,20 @@ def parse_schedule(data: Any, season: str, provenance: Provenance) -> ScheduleBa
     )
 
 
+def is_neutral_site(game_rows: list[list[Any]], aways: list[list[Any]], team_col: int) -> bool:
+    """Two rows of two different teams, both written as away ('X @ Y'): a neutral-site game."""
+    teams = {row[team_col] for row in game_rows}
+    return len(game_rows) == 2 and len(aways) == 2 and len(teams) == 2
+
+
 def parse_game_log(data: Any, season: str, season_type: str, provenance: Provenance) -> ResultBatch:
     """LeagueGameLog (team rows) JSON -> one GameResultRecord per game with two final rows.
 
     Home and away come from MATCHUP: "DEN vs. LAL" is DEN at home, "LAL @ DEN" is LAL away.
+    A neutral-site game (schedule isNeutral: Mexico City, Paris, cup semifinals in Las Vegas)
+    lists both teams as away ("IND @ SAS", "SAS @ IND"). Its record is oriented by team ID
+    with a 'neutral_site' issue; loaders take home/away from games (the schedule, D-034) and
+    match scores and stat lines by team ID, so the orientation never decides anything.
     """
     result_sets = require(data, "resultSets", "leaguegamelog")
     if not result_sets:
@@ -198,6 +208,17 @@ def parse_game_log(data: Any, season: str, season_type: str, provenance: Provena
             continue
         homes = [row for row in game_rows if " vs. " in row[index["MATCHUP"]]]
         aways = [row for row in game_rows if " @ " in row[index["MATCHUP"]]]
+        if is_neutral_site(game_rows, aways, index["TEAM_ID"]):
+            aways = sorted(game_rows, key=lambda row: row[index["TEAM_ID"]])
+            homes = [aways.pop()]
+            matchups = [row[index["MATCHUP"]] for row in game_rows]
+            issues.append(
+                QualityIssue(
+                    "neutral_site",
+                    game_id,
+                    f"both rows away {matchups}; home/away taken from the schedule",
+                )
+            )
         if len(game_rows) != 2 or len(homes) != 1 or len(aways) != 1:
             matchups = [row[index["MATCHUP"]] for row in game_rows]
             issues.append(

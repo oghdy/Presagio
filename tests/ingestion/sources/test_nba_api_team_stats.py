@@ -157,6 +157,15 @@ def test_unusable_games_are_rejected_other_games_ignored() -> None:
     assert {i.kind for i in playoffs.results.issues} == {"unexpected_game"}
 
 
+def test_neutral_site_game_keeps_both_lines() -> None:
+    """Both rows 'X @ Y' is not ambiguous any more: two lines, nothing rejected."""
+    data = fixture_json(LOG_2023)
+    edit_log_row(data, "0022300062", GSW, MATCHUP="GSW @ PHX")
+    batch = log_2023(data)
+    assert batch.rejected == {}
+    assert sorted(s.team_id for s in batch.stats if s.game_id == "0022300062") == sorted([GSW, PHX])
+
+
 def test_team_twice_in_one_game_is_rejected() -> None:
     """Both rows naming the same team cannot become two lines."""
     data = keep_log_games(fixture_json(LOG_2023), "0022300061")

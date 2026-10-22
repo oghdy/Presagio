@@ -72,6 +72,7 @@ NOT_IN_SCHEDULE = {
     "0022600003",
 }
 LOG_2026 = "leaguegamelog__2026-27_RegularSeason"
+LOG_2023_REG = "leaguegamelog__2023-24_RegularSeason"
 DET, BOS, PHI, DEN, LAL = 1610612765, 1610612738, 1610612755, 1610612743, 1610612747
 
 
@@ -366,6 +367,28 @@ def test_home_and_away_follow_the_schedule(db: Engine, scheduled: StatsStub) -> 
     assert home == [{"team_id": DET, "pts": 121}]
     (run,) = gamelog_runs(db)
     assert ("home_away_mismatch", "0022600001") in issue_kinds(run)
+
+
+def test_neutral_site_game_follows_the_schedule(db: Engine, scheduled: StatsStub) -> None:
+    """Both rows 'X @ Y': stored with home/away and scores from the schedule, run succeeded."""
+    data = keep_log_games(fixture_json(LOG_2023_REG), "0022300061")
+    edit_log_row(data, "0022300061", DEN, MATCHUP="DEN @ LAL")
+    override_log(scheduled, data, LOG_2023_REG)
+    load_season_game_log(scheduled.stats, db, "2023-24", "regular")
+    lines = rows(db, "SELECT team_id, is_home, pts FROM team_game_stats ORDER BY team_id")
+    assert lines == [
+        {"team_id": DEN, "is_home": True, "pts": 119},
+        {"team_id": LAL, "is_home": False, "pts": 107},
+    ]
+    game = rows(
+        db,
+        "SELECT home_team_id, home_score, away_score FROM games WHERE game_id = :g",
+        g="0022300061",
+    )
+    assert game == [{"home_team_id": DEN, "home_score": 119, "away_score": 107}]
+    (run,) = gamelog_runs(db)
+    assert run["status"] == "succeeded" and run["items_failed"] == 0
+    assert ("neutral_site", "0022300061") in issue_kinds(run)
 
 
 def test_older_response_does_not_overwrite(db: Engine, scheduled: StatsStub) -> None:
