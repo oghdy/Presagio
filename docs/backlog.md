@@ -94,6 +94,7 @@
   - 2026-10-22 PM: 이 맥에 `docker` 명령 없음(PM 확인). Docker 런타임 선택과 설치는 사람(decisions.md Q-003). 설치 전에는 세션을 띄우지 않는다. 브리핑은 PM 공유 노트 `P-002-briefing.md`에 준비됨.
   - 2026-10-22 PM: 사람이 Docker Desktop 설치 완료(D-016, hello-world 확인). data-engineer 세션 시작(Opus 5.5, 노력 높음, D-011). P-003과 병렬.
   - 2026-10-22 PM: PR #4(https://github.com/oghdy/Presagio/pull/4) 도착. README에서 PR #2와 충돌 예정(해결법은 PR 본문). reviewer 카드 올림. 머지 순서: #2 먼저, 그 다음 #4 충돌 해결 후.
+  - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~4 전부 O. 발견 [중간] 1건(비밀번호 틀려도 조용히 skip, 사유 오표시), [낮음] 4건. PM이 작업자에게 [중간]과 [낮음] 2건(make_engine 타임아웃 함정, healthy 대기 안내) 수정 요청. 나머지는 단계 1로. 결정 D-019 기록.
 
 ### P-003 GitHub Actions CI (lint + test)
 - **상태:** REVIEW (2026-10-22 PR #2 열림, 브랜치 `feat/P-003-github-actions-ci`)
@@ -117,6 +118,7 @@
   - 2026-10-22 PM: 사람이 승인. 완료 기준 4와 README 한 줄을 범위에 추가했다(D-015).
   - 2026-10-22 PM: 사람 확인 후 platform-engineer 세션 시작(Opus 5.5, 노력 높음, D-011). P-002는 Docker 설치 대기.
   - 2026-10-22 PM: PR #2(https://github.com/oghdy/Presagio/pull/2) 도착. CI 2개 잡 초록, 카나리 PR #3으로 실패 증명 후 삭제. 브랜치 보호는 비공개 무료 레포라 적용 불가(403) → 사람 결정 Q-004. reviewer 카드 올림.
+  - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~4 전부 O. 발견 [중간] 1건(PR 본문이 gitleaks 검사 범위를 반대로 설명. 실제는 모든 브랜치 검사). PM 결정: 동작 유지, 주석·PR 본문 정정 요청. [낮음] concurrency는 단계 1 CI 티켓으로. 결정 D-018 기록. 레포 공개 전환(D-017)으로 브랜치 보호는 머지 후 사람이 켠다.
 
 ---
 
