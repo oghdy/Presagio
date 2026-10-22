@@ -23,15 +23,18 @@ from presagio.ingestion.sources.nba_api import (
     parse_schedule,
 )
 
-from ..helpers import FakeRun, fixture_json, nba_fixture_handler
+from ..helpers import (
+    BROKEN_GAMES,
+    FakeRun,
+    edit_game,
+    fixture_json,
+    nba_fixture_handler,
+    schedule_games,
+    with_allstar_and_club_games,
+)
 
 PROV = Provenance("scheduleleaguev2", datetime(2026, 10, 22, 12, tzinfo=UTC), 1)
 LOG_PROV = Provenance("leaguegamelog", datetime(2026, 10, 22, 12, tzinfo=UTC), 2)
-
-
-def schedule_games(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every game object in a ScheduleLeagueV2 response."""
-    return [g for day in data["leagueSchedule"]["gameDates"] for g in day["games"]]
 
 
 @pytest.fixture(autouse=True)
@@ -117,8 +120,8 @@ def test_season_mismatch_is_rejected() -> None:
         parse_schedule(fixture_json("scheduleleaguev2__2026-27"), "2025-26", PROV)
 
 
-def test_bad_games_become_issues_not_exceptions() -> None:
-    """Duplicate IDs, malformed IDs and a final game without teams are reported and skipped."""
+def test_bad_games_are_rejected_not_raised() -> None:
+    """Malformed IDs and a final game without teams are rejected; a duplicate is an issue."""
     data = fixture_json("scheduleleaguev2__2026-27")
     day = data["leagueSchedule"]["gameDates"][0]["games"]
     duplicate = copy.deepcopy(day[0])
@@ -131,12 +134,8 @@ def test_bad_games_become_issues_not_exceptions() -> None:
     day.extend([duplicate, broken, teamless_final])
 
     batch = parse_schedule(data, "2026-27", PROV)
-    kinds = sorted((i.kind, i.key) for i in batch.issues)
-    assert kinds == [
-        ("duplicate_game", "0022600001"),
-        ("invalid_game_id", "22600001"),
-        ("unusable_game", "0022600099"),
-    ]
+    assert [(i.kind, i.key) for i in batch.issues] == [("duplicate_game", "0022600001")]
+    assert set(batch.rejected) == {"22600001", "0022600099"}
     games = {g.game_id: g for g in batch.games}
     assert games["0022600001"].status_text == "Final/OT"  # last listing wins
     assert "0022600099" not in games
@@ -147,8 +146,30 @@ def test_missing_field_is_a_format_error() -> None:
     data = fixture_json("scheduleleaguev2__2026-27")
     del schedule_games(data)[0]["gameDateTimeUTC"]
     batch = parse_schedule(data, "2026-27", PROV)
-    assert [(i.kind, i.key) for i in batch.issues] == [("unusable_game", "0022600001")]
-    assert "gameDateTimeUTC" in batch.issues[0].message
+    assert list(batch.rejected) == ["0022600001"]
+    assert "gameDateTimeUTC" in batch.rejected["0022600001"]
+    assert batch.issues == ()
+
+
+@pytest.mark.parametrize("case", sorted(BROKEN_GAMES))
+def test_game_a_check_would_reject_is_rejected_alone(case: str) -> None:
+    """The broken game is rejected with a reason; the other four games are kept."""
+    game_id, changes, reason = BROKEN_GAMES[case]
+    data = fixture_json("scheduleleaguev2__2026-27")
+    edit_game(data, game_id, **changes)
+    batch = parse_schedule(data, "2026-27", PROV)
+    assert list(batch.rejected) == [game_id]
+    assert reason in batch.rejected[game_id]
+    assert len(batch.games) == 4
+
+
+def test_allstar_and_preseason_are_skipped_and_counted() -> None:
+    """A-4: 003 and 001 never become records, whatever team IDs they carry."""
+    data = with_allstar_and_club_games(fixture_json("scheduleleaguev2__2025-26"))
+    batch = parse_schedule(data, "2025-26", PROV)
+    assert batch.skipped == {"preseason": 2, "allstar": 1}
+    assert not any(g.game_id[2] in "13" for g in batch.games)
+    assert (batch.rejected, batch.issues) == ({}, ())
 
 
 def test_game_log_pairs_rows_by_matchup() -> None:

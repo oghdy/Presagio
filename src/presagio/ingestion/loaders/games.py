@@ -64,7 +64,7 @@ SCHEDULE_COLUMNS = (
 
 @dataclass(frozen=True)
 class ScheduleLoadResult:
-    """Outcome of loading one ScheduleBatch."""
+    """Outcome of loading one ScheduleBatch; failed holds every listed game not stored."""
 
     counts: UpsertCounts
     skipped: dict[str, int]
@@ -74,10 +74,16 @@ class ScheduleLoadResult:
 
 @dataclass(frozen=True)
 class ResultLoadResult:
-    """Outcome of applying one ResultBatch."""
+    """Outcome of applying one ResultBatch.
+
+    updated results were written; stale ones lost to a newer games row; conflicting ones
+    disagreed with the schedule (issues say how) and were dropped; missing ones have no
+    games row yet.
+    """
 
     updated: int
     stale: int
+    conflicting: int
     missing: tuple[str, ...]
     issues: tuple[QualityIssue, ...] = ()
 
@@ -94,7 +100,8 @@ def upsert_schedule(conn: Connection, batch: ScheduleBatch) -> ScheduleLoadResul
         raise ValueError("games rows need the raw response they came from (raw_response_id)")
     teams = known_team_ids(conn)
     rows: list[dict[str, Any]] = []
-    failed: dict[str, str] = {}
+    # Games the adapter could not use count as failed too, so the run cannot end succeeded.
+    failed: dict[str, str] = dict(batch.rejected)
     for game in batch.games:
         unknown = [
             team_id
@@ -162,6 +169,7 @@ def apply_results(conn: Connection, batch: ResultBatch) -> ResultLoadResult:
     issues = list(batch.issues)
     missing: list[str] = []
     stale = 0
+    conflicting = 0
     updates: list[dict[str, Any]] = []
     for result in batch.results:
         game = existing.get(result.game_id)
@@ -181,6 +189,7 @@ def apply_results(conn: Connection, batch: ResultBatch) -> ResultLoadResult:
                     f"{provenance.source} {result.home_team_id} vs {result.away_team_id}",
                 )
             )
+            conflicting += 1
             continue
         # Scores follow team IDs, so a flipped home/away cannot put a score on the wrong team.
         points = {result.home_team_id: result.home_score, result.away_team_id: result.away_score}
@@ -206,6 +215,7 @@ def apply_results(conn: Connection, batch: ResultBatch) -> ResultLoadResult:
                     f"{provenance.source} {home_score}-{away_score}; schedule kept",
                 )
             )
+            conflicting += 1
             continue
         updates.append(
             {"b_game_id": result.game_id, "b_home_score": home_score, "b_away_score": away_score}
@@ -231,7 +241,7 @@ def apply_results(conn: Connection, batch: ResultBatch) -> ResultLoadResult:
             )
         )
         conn.execute(stmt, updates)
-    return ResultLoadResult(len(updates), stale, tuple(missing), tuple(issues))
+    return ResultLoadResult(len(updates), stale, conflicting, tuple(missing), tuple(issues))
 
 
 def load_season_schedule(
@@ -251,10 +261,11 @@ def load_season_schedule(
         stale_after_hours=stale_after_hours,
     ) as run:
         batch = source.fetch_season_schedule(season, run)
-        run.items_total = len(batch.games)
+        # Every game of a stored type the source listed, whether we could use it or not.
+        run.items_total = len(batch.games) + len(batch.rejected)
         with engine.begin() as conn:
             result = upsert_schedule(conn, batch)
-        for _ in range(len(batch.games) - len(result.failed)):
+        for _ in range(run.items_total - len(result.failed)):
             run.item_succeeded()
         for game_id, reason in result.failed.items():
             run.item_failed(game_id, reason)
@@ -291,7 +302,8 @@ def load_season_results(
         run.items_total = len(batch.results)
         with engine.begin() as conn:
             result = apply_results(conn, batch)
-        for _ in range(len(batch.results) - len(result.missing)):
+        # Only applied results succeed; stale and conflicting ones are counted in the detail.
+        for _ in range(result.updated):
             run.item_succeeded()
         # Design 1-4: a result for a game the schedule has not created yet is reported as a
         # failed item and retried by the next run (after the next schedule load).
@@ -300,7 +312,7 @@ def load_season_results(
         run.rows_written = result.updated
         run.detail.update(
             updated=result.updated,
-            stale=result.stale,
+            skipped={"stale": result.stale, "conflicting": result.conflicting},
             raw_response_id=batch.provenance.raw_response_id,
         )
         record_issues(run, result.issues)

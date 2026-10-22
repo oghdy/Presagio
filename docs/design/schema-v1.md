@@ -1,6 +1,6 @@
 # 스키마 설계안 v1: raw / clean 레이어 + ingestion_runs (P-011)
 
-- **작성:** Data Engineer, 2026-10-22 (v1.1: PR #7 리뷰 반영, 바뀐 곳은 13장)
+- **작성:** Data Engineer, 2026-10-22 (v1.1: PR #7 리뷰 반영, v1.2: P-014 게임로그 열 추가, 바뀐 곳은 13장)
 - **상태:** 🧑 사람 승인 대기. 승인 전에는 SQLAlchemy 모델도 Alembic 마이그레이션도 만들지 않는다(P-012에서 구현).
 - **이번 승인 대상:** `raw_api_responses`, `ingestion_runs`, `teams`, `team_aliases`, `games`, `team_game_stats`, `odds_events`, `odds_snapshots`, 뷰 2개(`team_game_stats_primary`, `odds_closing_lines`).
 - **승인 대상 아님:** 모델링 레이어(`features`, `model_versions`, `predictions`, `evaluations`). 9장에 초안만 두고 단계 2에서 다시 승인받는다.
@@ -304,7 +304,7 @@ erDiagram
 | `away_score` | `integer` | NULL | 같은 규칙 |
 | `is_neutral` | `boolean` | NOT NULL | `isNeutral`. 중립 경기장(NBA컵 결승, 해외 경기) |
 | `if_necessary` | `boolean` | NOT NULL | `ifNecessary`. 일정에서는 문자열 `"false"`, 스코어보드에서는 불리언으로 와서 어댑터가 불리언으로 통일 |
-| `source` | `text` | NOT NULL | 현재 값을 준 엔드포인트(`scheduleleaguev2`, `scoreboardv3`, `live_scoreboard`) |
+| `source` | `text` | NOT NULL | 현재 값을 준 엔드포인트(`scheduleleaguev2`, `scoreboardv3`, `live_scoreboard`, `leaguegamelog`) |
 | `fetched_at` | `timestamptz` | NOT NULL | 1-3 참고 |
 | `created_at` | `timestamptz` | NOT NULL, 기본 `now()` | 1-3 참고 |
 | `raw_response_id` | `bigint` | NOT NULL, FK → `raw_api_responses` | 1-3 참고 |
@@ -316,18 +316,18 @@ erDiagram
 
 **소스별 갱신 컬럼 표 (1-4 규칙 적용):** `games`는 일정과 스코어보드가 같이 채운다. 스코어보드 응답에는 `seasonYear`와 `postponedStatus`가 없다(`scoreboardv3__*.json`, `live_scoreboard__*.json` 픽스처 확인). 각 소스는 자기가 주는 컬럼만 `DO UPDATE SET`에 넣는다.
 
-| 컬럼 | `scheduleleaguev2` | `scoreboardv3`, `live_scoreboard` |
-| --- | --- | --- |
-| `game_id` | 키 | 키 |
-| `season` | 넣기·갱신 (`seasonYear`) | INSERT 때만 `game_id`에서 계산해 넣음, 갱신 안 함 |
-| `game_subtype` | 넣기·갱신 | 넣기·갱신 (`gameSubtype`) |
-| `start_time_utc`, `is_time_tbd` | 넣기·갱신 (`gameDateTimeUTC`, `gameStatusText`) | 넣기·갱신 (`gameTimeUTC`, `gameStatusText`) |
-| `status_code`, `status_text` | 넣기·갱신 | 넣기·갱신 |
-| `postponed_status` | 넣기·갱신 | **소스에 없음 → 갱신 안 함(기존 값 유지).** 스코어보드가 처음 넣은 경기는 NULL로 시작해 다음 일정 재수집 때 채워진다 |
-| `home_team_id`, `away_team_id` | 넣기·갱신 (0이면 NULL) | 넣기·갱신 (0이면 NULL) |
-| `home_score`, `away_score` | 넣기·갱신 (종료일 때만) | 넣기·갱신 (종료일 때만) |
-| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언) | 넣기·갱신 (불리언) |
-| `source`, `fetched_at`, `raw_response_id` | 넣기·갱신 | 넣기·갱신 |
+| 컬럼 | `scheduleleaguev2` | `scoreboardv3`, `live_scoreboard` | `leaguegamelog` (v1.2) |
+| --- | --- | --- | --- |
+| `game_id` | 키 | 키 | 키. **갱신만**(시작 시각이 없어 INSERT 불가). `games`에 없는 경기는 실패 항목 |
+| `season` | 넣기·갱신 (`seasonYear`) | INSERT 때만 `game_id`에서 계산해 넣음, 갱신 안 함 | 갱신 안 함 |
+| `game_subtype` | 넣기·갱신 | 넣기·갱신 (`gameSubtype`) | 갱신 안 함 |
+| `start_time_utc`, `is_time_tbd` | 넣기·갱신 (`gameDateTimeUTC`, `gameStatusText`) | 넣기·갱신 (`gameTimeUTC`, `gameStatusText`) | 갱신 안 함 |
+| `status_code`, `status_text` | 넣기·갱신 | 넣기·갱신 | 갱신 (`WL`이 있으면 `3`. 문구는 이미 종료면 유지, 아니면 `"Final"`) |
+| `postponed_status` | 넣기·갱신 | **소스에 없음 → 갱신 안 함(기존 값 유지).** 스코어보드가 처음 넣은 경기는 NULL로 시작해 다음 일정 재수집 때 채워진다 | 갱신 안 함 |
+| `home_team_id`, `away_team_id` | 넣기·갱신 (0이면 NULL) | 넣기·갱신 (0이면 NULL) | 갱신 안 함 (팀이 일정과 다르면 품질 이슈, 그 경기는 갱신 안 함) |
+| `home_score`, `away_score` | 넣기·갱신 (종료일 때만) | 넣기·갱신 (종료일 때만) | 갱신 (`PTS`를 **팀 ID 기준**으로. 이미 종료인데 점수가 다르면 품질 이슈, 갱신 안 함) |
+| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언) | 넣기·갱신 (불리언) | 갱신 안 함 |
+| `source`, `fetched_at`, `raw_response_id` | 넣기·갱신 | 넣기·갱신 | 갱신 |
 
 - 두 소스 모두 `WHERE games.fetched_at <= EXCLUDED.fetched_at` 가드를 쓴다. 그래서 "스코어보드가 더 최근이면 상태·점수를 스코어보드 값으로", "주기적 일정 재수집이 더 최근이면 일정 값으로" 맞춰진다.
 - 이 표는 스키마가 아니라 **적재 규칙**이다. 바꿔도 마이그레이션이 필요 없다. P-014/P-017이 이 표대로 구현하고 테스트한다(부록 A 컨테이너에서 "스코어보드가 먼저 넣은 경기", "스코어보드 갱신 후 `postponed_status` 유지"를 확인했다, 12장).
@@ -580,6 +580,9 @@ erDiagram
 ---
 
 ## 13. 변경 기록
+
+### v1.2 (2026-10-22, P-014 PR #12 리뷰 반영)
+6-1 "소스별 갱신 컬럼 표"에 `leaguegamelog` 열 추가(상태·점수·`source`·`fetched_at`·`raw_response_id`만 갱신, INSERT 없음), `games.source` 값 목록에 `leaguegamelog` 추가. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
 
 ### v1.1 (2026-10-22, PR #7 리뷰 반영)
 표 구조와 키는 바꾸지 않았다. 바뀐 DDL은 `odds_closing_lines` 뷰 하나다.

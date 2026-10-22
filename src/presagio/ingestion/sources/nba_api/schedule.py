@@ -46,7 +46,10 @@ def parse_utc(value: Any, where: str) -> datetime:
     """Parse an ISO-8601 time that must carry an offset, returned in UTC."""
     if not isinstance(value, str):
         raise SourceFormatError(f"{where}: expected an ISO time string, got {value!r}")
-    parsed = datetime.fromisoformat(value)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise SourceFormatError(f"{where}: {value!r} is not an ISO time") from None
     if parsed.tzinfo is None:
         raise SourceFormatError(f"{where}: time {value!r} has no UTC offset")
     return parsed.astimezone(UTC)
@@ -68,6 +71,13 @@ def team_id_or_none(value: Any, where: str) -> int | None:
     return value or None
 
 
+def score(value: Any, where: str) -> int:
+    """A final score: a non-negative integer (ck_games_* would reject anything else)."""
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise SourceFormatError(f"{where}: expected a non-negative score, got {value!r}")
+    return value
+
+
 def parse_schedule_game(game: Any) -> GameRecord:
     """One ScheduleLeagueV2 game object -> GameRecord (the caller filters by game type)."""
     game_id = require(game, "gameId", "schedule game")
@@ -80,8 +90,13 @@ def parse_schedule_game(game: Any) -> GameRecord:
     away = require(game, "awayTeam", where)
     home_id = team_id_or_none(require(home, "teamId", where), f"{where} homeTeam")
     away_id = team_id_or_none(require(away, "teamId", where), f"{where} awayTeam")
+    # Reject here what a games CHECK would reject, so one odd game cannot fail the season.
+    if (home_id is None) != (away_id is None):
+        raise SourceFormatError(f"{where}: only one team decided ({home_id} vs {away_id})")
+    if home_id is not None and home_id == away_id:
+        raise SourceFormatError(f"{where}: home and away are the same team {home_id}")
     final = status_code == STATUS_FINAL
-    if final and (home_id is None or away_id is None):
+    if final and home_id is None:
         raise SourceFormatError(f"{where}: final game without both teams")
     return GameRecord(
         game_id=game_id,
@@ -95,27 +110,28 @@ def parse_schedule_game(game: Any) -> GameRecord:
         home_team_id=home_id,
         away_team_id=away_id,
         # The schedule sends 0 for games not played yet; 0 points and "no score" differ.
-        home_score=require(home, "score", where) if final else None,
-        away_score=require(away, "score", where) if final else None,
+        home_score=score(require(home, "score", where), f"{where} homeTeam") if final else None,
+        away_score=score(require(away, "score", where), f"{where} awayTeam") if final else None,
         is_neutral=parse_bool(require(game, "isNeutral", where), where),
         if_necessary=parse_bool(require(game, "ifNecessary", where), where),
     )
 
 
 def parse_schedule(data: Any, season: str, provenance: Provenance) -> ScheduleBatch:
-    """ScheduleLeagueV2 JSON -> stored-type games, skipped-type counts and quality issues."""
+    """ScheduleLeagueV2 JSON -> stored-type games, skipped types, rejected games and issues."""
     schedule = require(data, "leagueSchedule", "scheduleleaguev2")
     season_year = require(schedule, "seasonYear", "scheduleleaguev2")
     if season_year != season:
         raise SourceFormatError(f"scheduleleaguev2: asked for {season}, got {season_year!r}")
     games: dict[str, GameRecord] = {}
     skipped: Counter[str] = Counter()
+    rejected: dict[str, str] = {}
     issues: list[QualityIssue] = []
     for game_date in require(schedule, "gameDates", "scheduleleaguev2"):
         for game in require(game_date, "games", "scheduleleaguev2 gameDate"):
             game_id = require(game, "gameId", "schedule game")
             if not isinstance(game_id, str) or not GAME_ID_PATTERN.match(game_id):
-                issues.append(QualityIssue("invalid_game_id", str(game_id), "skipped"))
+                rejected[str(game_id)] = "invalid game id"
                 continue
             game_type = game_type_of(game_id)
             if game_type not in STORED_GAME_TYPES:
@@ -124,7 +140,7 @@ def parse_schedule(data: Any, season: str, provenance: Provenance) -> ScheduleBa
             try:
                 record = parse_schedule_game(game)
             except SourceFormatError as exc:
-                issues.append(QualityIssue("unusable_game", game_id, str(exc)))
+                rejected[game_id] = str(exc)
                 continue
             if record.season != season_year:
                 issues.append(
@@ -138,7 +154,12 @@ def parse_schedule(data: Any, season: str, provenance: Provenance) -> ScheduleBa
                 # One upsert statement cannot touch the same key twice; the last one wins.
                 issues.append(QualityIssue("duplicate_game", game_id, "listed twice; kept last"))
             games[game_id] = record
-    return ScheduleBatch(season, tuple(games.values()), provenance, dict(skipped), tuple(issues))
+    # A game rejected in one listing but valid in another is stored, so it has not failed.
+    for game_id in games:
+        rejected.pop(game_id, None)
+    return ScheduleBatch(
+        season, tuple(games.values()), provenance, dict(skipped), rejected, tuple(issues)
+    )
 
 
 def parse_game_log(data: Any, season: str, season_type: str, provenance: Provenance) -> ResultBatch:

@@ -125,12 +125,17 @@ class GameRecord:
 
 @dataclass(frozen=True)
 class ScheduleBatch:
-    """A season schedule: games to store, counts of skipped game types, and issues."""
+    """A season schedule: games to store, skipped types, rejected games, and issues.
+
+    skipped counts game types we never store (A-4); rejected maps a game the source listed
+    but we could not use to the reason, so the run can report it as a failed item.
+    """
 
     season: str
     games: tuple[GameRecord, ...]
     provenance: Provenance
     skipped: Mapping[str, int] = field(default_factory=dict)
+    rejected: Mapping[str, str] = field(default_factory=dict)
     issues: tuple[QualityIssue, ...] = ()
 
 

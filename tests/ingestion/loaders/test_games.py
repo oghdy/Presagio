@@ -21,7 +21,7 @@ from presagio.ingestion.loaders import (
 from presagio.ingestion.sources.base import Provenance
 from presagio.ingestion.sources.nba_api import parse_game_log, parse_schedule
 
-from ..helpers import T0, fixture_json
+from ..helpers import BROKEN_GAMES, T0, edit_game, fixture_json, with_allstar_and_club_games
 from .conftest import NbaApiStub
 
 SCHEDULE_2026 = "scheduleleaguev2__2026-27"
@@ -276,7 +276,7 @@ def test_score_or_team_disagreement_is_reported_not_written(db: Engine, loaded: 
         ("score_mismatch", "0022600001"),
         ("team_mismatch", "0022600006"),
     ]
-    assert result.updated == 0
+    assert (result.updated, result.conflicting) == (0, 2)
     assert game(db, "0022600001")["home_score"] == 121
     assert game(db, "0022600006")["status_code"] == 1
 
@@ -342,3 +342,70 @@ def test_full_season_pipeline(db: Engine, nba: NbaApiStub) -> None:
         ("gamelog", "partial"),
     ]
     assert scalar(db, "SELECT sum(api_calls) FROM ingestion_runs") == 5
+
+
+@pytest.mark.parametrize("case", sorted(BROKEN_GAMES))
+def test_one_broken_game_does_not_fail_the_season(db: Engine, nba: NbaApiStub, case: str) -> None:
+    """The other games are stored and the run ends partial with the game as a failed item."""
+    game_id, changes, _ = BROKEN_GAMES[case]
+    data = fixture_json(SCHEDULE_2026)
+    edit_game(data, game_id, **changes)
+    nba.overrides[SCHEDULE_2026] = encode(data)
+    load_teams(nba.teams, db)
+    result = load_season_schedule(nba.schedule, db, "2026-27")
+    assert list(result.failed) == [game_id]
+    assert scalar(db, "SELECT count(*) FROM games") == 4
+    run = runs(db)[-1]
+    assert (run["status"], run["items_total"], run["items_succeeded"], run["items_failed"]) == (
+        "partial",
+        5,
+        4,
+        1,
+    )
+    assert run["error_detail"]["failed_items"][0]["key"] == game_id
+
+
+def test_game_missing_its_time_fails_the_item_not_the_run(db: Engine, nba: NbaApiStub) -> None:
+    """Review K: a game without gameDateTimeUTC must not leave the run 'succeeded' (resume)."""
+    data = fixture_json(SCHEDULE_2026)
+    del schedule_game(data, "0022601201")["gameDateTimeUTC"]
+    nba.overrides[SCHEDULE_2026] = encode(data)
+    load_teams(nba.teams, db)
+    load_season_schedule(nba.schedule, db, "2026-27")
+    run = runs(db)[-1]
+    assert (run["status"], run["items_total"], run["items_failed"]) == ("partial", 5, 1)
+    assert scalar(db, "SELECT count(*) FROM games") == 4
+
+
+def test_allstar_and_club_games_are_not_stored(db: Engine, nba: NbaApiStub) -> None:
+    """A-4: their team IDs are not in teams, yet nothing fails because they are skipped."""
+    data = with_allstar_and_club_games(fixture_json("scheduleleaguev2__2025-26"))
+    nba.overrides["scheduleleaguev2__2025-26"] = encode(data)
+    load_teams(nba.teams, db)
+    result = load_season_schedule(nba.schedule, db, "2025-26")
+    assert result.skipped == {"preseason": 2, "allstar": 1}
+    assert result.failed == {}
+    assert scalar(db, "SELECT count(*) FROM games WHERE game_type IN ('preseason', 'allstar')") == 0
+    run = runs(db)[-1]
+    assert run["status"] == "succeeded"
+    assert run["error_detail"]["skipped_game_types"] == {"preseason": 2, "allstar": 1}
+
+
+def test_game_log_counts_only_applied_results_as_succeeded(db: Engine, loaded: NbaApiStub) -> None:
+    """Stale and conflicting results are not successes; they are counted in the detail."""
+    data = fixture_json(LOG_2026)
+    headers = data["resultSets"][0]["headers"]
+    for row in data["resultSets"][0]["rowSet"]:
+        if row[headers.index("TEAM_ID")] == DET:
+            row[headers.index("PTS")] = 99  # conflicts with the schedule's 121
+    data["resultSets"][0]["rowSet"] += [
+        log_row(data, GAME_ID="0022600006", TEAM_ID=PHI, MATCHUP="PHI vs. CLE", WL="W", PTS=110),
+        log_row(data, GAME_ID="0022600006", TEAM_ID=CLE, MATCHUP="CLE @ PHI", WL="L", PTS=101),
+    ]
+    loaded.overrides[LOG_2026] = encode(data)
+    loaded.clock.advance(60)
+    load_season_results(loaded.schedule, db, "2026-27", "regular")
+    run = runs(db)[-1]
+    assert (run["items_total"], run["items_succeeded"], run["items_failed"]) == (3, 1, 1)
+    assert run["rows_written"] == 1
+    assert run["error_detail"]["skipped"] == {"stale": 0, "conflicting": 1}

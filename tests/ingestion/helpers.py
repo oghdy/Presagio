@@ -1,5 +1,6 @@
 """Test helpers for ingestion: fake clock, in-memory raw store, canned HTTP responses."""
 
+import copy
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -157,3 +158,42 @@ def nba_fixture_handler(overrides: dict[str, bytes] | None = None) -> Handler:
 def fixture_json(name: str) -> Any:
     """Parsed copy of a fixture, for tests that edit a response."""
     return json.loads(fixture_bytes(name))
+
+
+def schedule_games(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every game object in a ScheduleLeagueV2 response."""
+    return [g for day in data["leagueSchedule"]["gameDates"] for g in day["games"]]
+
+
+def edit_game(data: dict[str, Any], game_id: str, **changes: Any) -> None:
+    """Apply changes to one schedule game; 'home'/'away' dicts update the team objects."""
+    game = next(g for g in schedule_games(data) if g["gameId"] == game_id)
+    game["homeTeam"].update(changes.pop("home", {}))
+    game["awayTeam"].update(changes.pop("away", {}))
+    game.update(changes)
+
+
+# Each case would break a games CHECK (or the time parser) if it reached the database.
+BROKEN_GAMES = {
+    "one_team_decided": ("0022600006", {"away": {"teamId": 0}}, "only one team"),
+    "same_team_twice": ("0022600006", {"away": {"teamId": 1610612755}}, "same team"),
+    "final_without_score": ("0022600001", {"home": {"score": None}}, "non-negative score"),
+    "final_negative_score": ("0022600001", {"away": {"score": -1}}, "non-negative score"),
+    "time_not_iso": ("0022600006", {"gameDateTimeUTC": "10/22/2026 23:00"}, "not an ISO time"),
+}
+
+
+def with_allstar_and_club_games(data: dict[str, Any]) -> dict[str, Any]:
+    """2025-26 schedule plus an all-star game and a preseason game against a foreign club.
+
+    Team IDs are the ones the real 2025-26 schedule uses for these (not in teams).
+    """
+    day = data["leagueSchedule"]["gameDates"][0]["games"]
+    allstar = copy.deepcopy(day[0])
+    allstar["gameId"] = "0032500001"
+    allstar["homeTeam"]["teamId"], allstar["awayTeam"]["teamId"] = 1610616859, 1610616860
+    club = copy.deepcopy(day[0])
+    club["gameId"] = "0012500099"
+    club["awayTeam"]["teamId"] = 15016  # Melbourne United
+    day.extend([allstar, club])
+    return data
