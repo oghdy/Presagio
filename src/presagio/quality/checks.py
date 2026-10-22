@@ -281,6 +281,25 @@ def check_points_match_score(conn: Connection, scope: Scope, cfg: CheckSettings)
     return Outcome(len(rows), [r.game_id for r in rows if not r.ok])
 
 
+def check_stat_arithmetic(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """Every stat row adds up: reb = oreb + dreb and pts = 2*fgm + fg3m + ftm (schema 6-2)."""
+    where, params = scope.games_where()
+    rows = _rows(
+        conn,
+        f"""
+        SELECT s.game_id, coalesce(tm.tricode, s.team_id::text) AS team, s.source,
+               s.reb = s.oreb + s.dreb AND s.pts = 2 * s.fgm + s.fg3m + s.ftm AS ok
+        FROM team_game_stats s
+        JOIN games g ON g.game_id = s.game_id
+        LEFT JOIN teams tm ON tm.team_id = s.team_id
+        WHERE true {where}
+        ORDER BY s.game_id, team, s.source
+        """,
+        params,
+    )
+    return Outcome(len(rows), [f"{r.game_id}:{r.team}:{r.source}" for r in rows if not r.ok])
+
+
 def check_final_scores_present(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
     """No final game (status_code 3) has a NULL score; a DB CHECK guards it, this catches drift."""
     where, params = scope.games_where()
@@ -614,6 +633,12 @@ CHECKS: tuple[Check, ...] = (
         "final games with both stat rows",
         "home pts + away pts = final score, home pts = home score",
         check_points_match_score,
+    ),
+    Check(
+        "stat_arithmetic",
+        "team stat rows (all sources)",
+        "reb = oreb + dreb, pts = 2*fgm + fg3m + ftm",
+        check_stat_arithmetic,
     ),
     Check(
         "final_scores_present",

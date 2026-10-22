@@ -66,6 +66,7 @@ def test_baseline_passes_every_check(conn: Connection, baseline: Baseline) -> No
     assert checked["team_rows_per_game"] == 1232  # 1,230 regular + 2 playoffs, not the Cup final
     assert checked["points_match_score"] == 1232
     assert checked["final_scores_present"] == 1233
+    assert checked["stat_arithmetic"] == 2 * 1232
     assert checked["regular_season_games"] == 1
     assert checked["one_game_per_team_day"] == 2 * 1233
     assert checked["gamelog_vs_schedule_score"] == 1232
@@ -127,6 +128,26 @@ def test_points_not_adding_up_fail_with_the_game_ids(conn: Connection, baseline:
     result = one(conn, "points_match_score")
     assert (result.status, result.failed) == (FAIL, 2)
     assert result.examples == tuple(sorted([off, swapped]))
+
+
+def test_stat_rows_that_do_not_add_up_fail(conn: Connection, baseline: Baseline) -> None:
+    """reb != oreb + dreb on one row, and pts != 2*fgm + fg3m + ftm on another."""
+    reb_game, pts_game = baseline.regular_games[11], baseline.regular_games[12]
+    sql(conn, "UPDATE team_game_stats SET reb = reb + 1 WHERE game_id = :g AND is_home", g=reb_game)
+    sql(
+        conn,
+        "UPDATE team_game_stats SET fg3m = fg3m + 1 WHERE game_id = :g AND NOT is_home",
+        g=pts_game,
+    )
+    home = baseline.tricodes[baseline.games[reb_game]["home_team_id"]]
+    away = baseline.tricodes[baseline.games[pts_game]["away_team_id"]]
+    result = one(conn, "stat_arithmetic")
+    assert (result.status, result.failed) == (FAIL, 2)
+    assert result.examples == (
+        f"{reb_game}:{home}:leaguegamelog",
+        f"{pts_game}:{away}:leaguegamelog",
+    )
+    assert one(conn, "points_match_score").status == PASS  # pts itself did not change
 
 
 def test_final_game_without_score_fails(conn: Connection, baseline: Baseline) -> None:

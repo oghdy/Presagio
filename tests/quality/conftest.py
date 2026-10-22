@@ -31,11 +31,22 @@ DAYS = 82
 PLAYOFF_GAMES = ("0042300101", "0042300102")
 CUP_FINAL = "0062300001"
 ODDS_EVENT = "evt-baseline"
-# Box score columns the checks never read; filled with one constant.
+# Box score columns other than pts; filler values that keep reb = oreb + dreb and
+# pts = 2*fgm + fg3m + ftm true (see stat_values).
 STAT_COLUMNS = (
     "fgm", "fga", "fg3m", "fg3a", "ftm", "fta", "oreb", "dreb", "reb", "ast", "stl", "blk", "tov",
     "pf",
 )  # fmt: skip
+
+
+def stat_values(pts: int) -> dict[str, int]:
+    """Filler box score for a team that scored pts, consistent with the arithmetic check."""
+    ftm = 10 + pts % 2
+    fgm = (pts - 10 - ftm) // 2
+    values = dict.fromkeys(STAT_COLUMNS, 10)
+    values.update(fgm=fgm, fga=fgm + 40, fg3m=10, fg3a=30, ftm=ftm, fta=ftm + 5)
+    values.update(oreb=10, dreb=30, reb=40)
+    return values
 
 
 @dataclass(frozen=True)
@@ -146,7 +157,7 @@ def insert_stats(
                 "opponent": opponent,
                 "is_home": is_home,
                 "pts": pts,
-                **dict.fromkeys(STAT_COLUMNS, 10),
+                **stat_values(pts),
                 "pm": 0,
                 "fetched_at": FETCHED,
                 "raw_id": raw_id,
