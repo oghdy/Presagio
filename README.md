@@ -158,6 +158,47 @@ uv run alembic downgrade base
 echo "SELECT format('DROP DATABASE %I WITH (FORCE)', datname) FROM pg_database WHERE datname LIKE 'presagio\_test\_%' \gexec" | docker compose exec -T postgres psql -U presagio -d postgres
 ```
 
+### 7. 백필 (과거 시즌 채우기)
+
+`presagio backfill`은 nba_api에서 과거 시즌의 팀, 경기 일정·결과, 팀 박스스코어를 받아 DB에 넣는다. 5~6단계(DB와 마이그레이션)를 먼저 해 둔다.
+
+**먼저 `--dry-run`으로 무엇을 할지 본다.** 할 일 목록, 호출 수, 예상 시간을 표로 보여 주고 DB에는 아무것도 쓰지 않는다(외부 호출도 0번).
+
+```bash
+uv run presagio backfill --season 2023-24 --dry-run
+```
+
+실제로 받는다. 시즌 하나에 호출은 일정 1번 + 게임로그 3번(정규, 플레이인, 플레이오프)이고, 처음 한 번은 팀 목록 1번이 더 붙는다. 호출 사이에는 1초씩 쉰다(D-024).
+
+```bash
+uv run presagio backfill --season 2023-24
+```
+
+여러 시즌은 `--season`을 여러 번 쓴다. 게임로그 종류를 줄이려면 `--season-type`(`regular`, `playin`, `playoffs`)을 쓴다.
+
+```bash
+uv run presagio backfill --season 2023-24 --season 2024-25 --season-type playoffs
+```
+
+날짜 범위(미국 동부 날짜)도 된다. 다만 nba_api는 시즌 단위로만 주므로, **범위가 걸친 시즌을 통째로 받는다**(호출 수는 시즌 지정과 같다). 끝나면 그 범위의 경기 수를 보여 준다.
+
+```bash
+uv run presagio backfill --from 2024-01-01 --to 2024-01-31
+```
+
+알아 두면 좋은 것:
+
+- **끊겨도 다시 돌리면 이어서 한다.** 끝난 단위(시즌의 일정 1개, 게임로그 1개)는 건너뛴다. 판단은 그 단위의 **가장 최근 실행** 하나로 한다. 최근 실행이 실패(`failed`), 일부 실패(`partial`), 차단(`aborted`)이면 예전에 성공한 적이 있어도 다시 받는다. 아직 끝나지 않은 시즌(10월 15일 기준)은 데이터가 바뀌므로 매번 다시 받는다. 전부 다시 받으려면 `--force`. 다시 받아도 행 수는 같다(upsert).
+- **일부가 실패해도 끝까지 간다.** 마지막에 단위별 결과 표와 실패 목록을 출력한다. 종료 코드: 전부 성공 `0`, 하나라도 실패 `1`, 403/429 차단으로 즉시 멈춤 `2`, 인자 오류 `64`. 차단되면 바로 다시 돌리지 말고 기다린다.
+- 진행 기록은 `ingestion_runs` 표에 남는다. 실행 1번이 부모 행(`job_type = 'backfill'`) 1개, 단위마다 자식 행 1개다.
+
+```bash
+docker compose exec -T postgres psql -U presagio -d presagio -c "SELECT run_id, parent_run_id, job_type, scope_key, status, api_calls FROM ingestion_runs ORDER BY run_id DESC LIMIT 10"
+```
+
+- 프로세스가 죽어 `running`으로 남은 행은 `STALE_RUN_HOURS`(기본 6시간)가 지나면 다음 실행이 `aborted`로 닫고 진행한다. 그 전에 다시 돌리면 "already running"으로 거부된다. 확실히 죽었으면 `--stale-after-hours 0.1`처럼 줄여서 돌린다.
+- `-v`를 붙이면 우리 로그만 자세히 나온다. `-v`는 `presagio -v backfill --season 2023-24`처럼 **`backfill` 앞에** 쓴다(뒤에 쓰면 인자 오류, 종료 코드 64). `httpx` 로그는 요청 주소(배당 API 키 포함)를 찍기 때문에 항상 꺼 둔다(D-031).
+
 ## 기술 스택 (기본안)
 
 Python 3.12 · uv · PostgreSQL · SQLAlchemy 2 + Alembic · nba_api + httpx · scikit-learn + LightGBM · FastAPI · pytest + ruff

@@ -1,14 +1,26 @@
 """ingestion_runs: job type, start/finish, status transitions, counts and errors are recorded."""
 
+import re
+from collections.abc import Callable, Iterator
 from datetime import date
+from importlib import metadata
 
 import pytest
 from sqlalchemy import Engine, insert, select, text
 from sqlalchemy.orm import Session
 
+from presagio import config
 from presagio.db.models import IngestionRun
+from presagio.ingestion import runs as runs_module
 from presagio.ingestion.errors import BlockedError, RunAlreadyRunningError
-from presagio.ingestion.runs import abort_stale_runs, has_succeeded, start_run, track_run
+from presagio.ingestion.runs import (
+    JOB_TYPES,
+    abort_stale_runs,
+    current_code_version,
+    has_succeeded,
+    start_run,
+    track_run,
+)
 
 
 def _row(engine: Engine, run_id: int) -> IngestionRun:
@@ -171,3 +183,133 @@ def test_has_succeeded_drives_resume(engine: Engine) -> None:
     assert has_succeeded(engine, "schedule", "season=2025-26")
     with engine.connect() as conn:
         assert conn.execute(select(IngestionRun.status)).scalars().all() == ["succeeded"]
+
+
+def _insert_running(engine: Engine, job_type: str, scope_key: str, hours_ago: float) -> int:
+    """A 'running' row started hours_ago (as a dead process would leave it)."""
+    with engine.begin() as conn:
+        return conn.execute(
+            insert(IngestionRun)
+            .values(
+                job_type=job_type,
+                scope_key=scope_key,
+                status="running",
+                started_at=text(f"now() - interval '{hours_ago} hours'"),
+            )
+            .returning(IngestionRun.run_id)
+        ).scalar_one()
+
+
+@pytest.fixture
+def stale_run_hours(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[str], None]]:
+    """Set STALE_RUN_HOURS for get_settings(); the cached settings are reset afterwards."""
+
+    def _set(value: str) -> None:
+        """Change the environment variable and drop the cached Settings."""
+        monkeypatch.setenv("STALE_RUN_HOURS", value)
+        config.get_settings.cache_clear()
+
+    yield _set
+    config.get_settings.cache_clear()
+
+
+def test_dead_running_row_does_not_block_with_default_limit(engine: Engine) -> None:
+    """Without stale_after_hours, track_run uses STALE_RUN_HOURS (6): a 7 h old row is closed."""
+    dead = _insert_running(engine, "schedule", "season=2025-26", hours_ago=7)
+    with track_run(engine, "schedule", "season=2025-26") as run:  # no stale_after_hours given
+        pass
+    assert _row(engine, dead).status == "aborted"
+    assert _row(engine, run.run_id).status == "succeeded"
+
+
+def test_default_limit_is_read_from_settings(engine: Engine, stale_run_hours) -> None:
+    """STALE_RUN_HOURS=2 closes a 3 h old row; the default 6 would have refused the new run."""
+    _insert_running(engine, "gamelog", "season=2024-25;season_type=Playoffs", hours_ago=3)
+    with (
+        pytest.raises(RunAlreadyRunningError),
+        track_run(engine, "gamelog", "season=2024-25;season_type=Playoffs"),
+    ):
+        pass
+    stale_run_hours("2")
+    with track_run(engine, "gamelog", "season=2024-25;season_type=Playoffs") as run:
+        pass
+    assert _row(engine, run.run_id).status == "succeeded"
+
+
+def test_finish_does_not_revive_a_row_closed_by_stale_cleanup(engine: Engine) -> None:
+    """finish() only updates 'running' rows: a row aborted meanwhile stays aborted (D-032 b)."""
+    with track_run(engine, "schedule", "season=2023-24") as run:
+        # Another process decides this run is dead and closes it (backdated so it counts as old).
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE ingestion_runs SET started_at = now() - interval '7 hours' "
+                    "WHERE run_id = :id"
+                ),
+                {"id": run.run_id},
+            )
+        assert abort_stale_runs(engine, 6) == 1
+        run.item_succeeded(rows_written=5)
+    row = _row(engine, run.run_id)
+    assert row.status == "aborted" and row.error_message.startswith("stale:")
+    assert row.rows_written == 0  # the late finish wrote nothing
+    assert run.status == "aborted"
+    assert not has_succeeded(engine, "schedule", "season=2023-24")
+
+
+def test_finish_reports_whether_it_closed_the_row(engine: Engine) -> None:
+    """finish() returns True when it closed the row, False when someone else already had."""
+    run = start_run(engine, "teams", "nba_api")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE ingestion_runs SET status = 'aborted', finished_at = now() "
+                "WHERE run_id = :id"
+            ),
+            {"id": run.run_id},
+        )
+    assert run.finish("succeeded") is False
+    assert _row(engine, run.run_id).status == "aborted"
+    other = start_run(engine, "teams", "nba_api")
+    assert other.finish("succeeded") is True
+
+
+def test_nested_runs_become_children_and_record_code_version(engine: Engine) -> None:
+    """A track_run inside another is its child by default; every row gets code_version."""
+    with track_run(engine, "backfill", "seasons=2025-26") as parent:
+        with track_run(engine, "schedule", "season=2025-26") as child:
+            pass
+        with track_run(engine, "teams", "nba_api", parent=None) as orphan:  # explicit None wins
+            pass
+    with track_run(engine, "schedule", "season=2024-25") as after:  # outside: no parent
+        pass
+    assert _row(engine, child.run_id).parent_run_id == parent.run_id
+    assert _row(engine, orphan.run_id).parent_run_id is None
+    assert _row(engine, after.run_id).parent_run_id is None
+    versions = {_row(engine, r.run_id).code_version for r in (parent, child, orphan, after)}
+    assert versions == {current_code_version()} and None not in versions
+
+
+def test_unknown_job_type_is_refused(engine: Engine) -> None:
+    """job_type must be one of the documented values (a typo would break resume silently)."""
+    assert {"teams", "schedule", "gamelog", "boxscore", "backfill", "incremental"} <= JOB_TYPES
+    with pytest.raises(ValueError, match="unknown job_type"):
+        start_run(engine, "schedules", "season=2025-26")
+
+
+def test_code_version_is_git_commit_or_package_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Short git hash in a checkout; the installed package version when git fails."""
+    current_code_version.cache_clear()
+    try:
+        commit = current_code_version()
+        assert commit is not None and re.fullmatch(r"[0-9a-f]{7,40}", commit)
+
+        def no_git(*args: object, **kwargs: object) -> None:
+            """Behave as if git is not installed."""
+            raise FileNotFoundError("git")
+
+        monkeypatch.setattr(runs_module.subprocess, "run", no_git)
+        current_code_version.cache_clear()
+        assert current_code_version() == metadata.version("presagio")
+    finally:
+        current_code_version.cache_clear()

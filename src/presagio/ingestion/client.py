@@ -30,6 +30,7 @@ from presagio.config import Settings, get_settings
 from presagio.ingestion.errors import (
     BlockedError,
     ClientRequestError,
+    IngestionError,
     InvalidResponseError,
     RetriesExhaustedError,
     TransientTransportError,
@@ -85,7 +86,10 @@ class RawResponse:
 
 
 class Transport(Protocol):
-    """Sends one request; raises TransientTransportError when no HTTP response arrives."""
+    """Sends one request; raises TransientTransportError when no HTTP response arrives.
+
+    Any other failure to get a usable response is raised as IngestionError (never retried).
+    """
 
     def __call__(self, request: ApiRequest, timeout: float) -> RawResponse:
         """Send the request once, without retries."""
@@ -115,6 +119,12 @@ class HttpxTransport:
         except httpx.TransportError as exc:
             raise TransientTransportError(
                 f"{request.source}/{request.endpoint}: {type(exc).__name__}", timeout=False
+            ) from None
+        except (httpx.HTTPError, httpx.InvalidURL, httpx.StreamError, httpx.CookieConflict) as exc:
+            # Not transient (D-032 3): e.g. DecodingError for a body that fails its
+            # Content-Encoding, TooManyRedirects. No bytes to store; fail the run, never retry.
+            raise IngestionError(
+                f"{request.source}/{request.endpoint}: {type(exc).__name__}, not retried"
             ) from None
         return RawResponse(response.status_code, response.content, dict(response.headers))
 
