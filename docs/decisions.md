@@ -267,6 +267,19 @@
 - **영향:** 단계 0~1과 스키마 v1(D-028)은 변경 없음. 단계 2 모델링 레이어 승인 때 `predictions`에 `as_of`·참조 배당 스냅숏을 두고 경기당 여러 스냅숏을 허용한다. 단계 4에 `recommendations`, `bankroll_ledger` 표 초안을 승인받는다. 과거 3시즌 배당 백필($59, D-026에서 보류)은 추천 전략 백테스트에 필요해지므로 **단계 4 시작 전에 다시 결정**한다(지금 결제 불필요).
 - **다시 볼 때:** 단계 2 시작 시 세부 계획을 세울 때, 단계 4 시작 시 과거 배당 결정.
 
+## D-034 games 적재 규칙: 일정이 진실, 게임로그는 상태·점수만, 이상한 경기는 빼고 partial
+- **날짜:** 2026-10-22 (P-014, PR #12의 결정 제안 1~6 + 리뷰어 발견을 PM이 채택)
+- **무엇을:**
+  1. **일정(`ScheduleLeagueV2`)이 경기의 진실 소스.** 게임로그(`LeagueGameLog`)는 UPDATE 전용으로 `status_code`, `status_text`, `home_score`, `away_score`, `source`, `fetched_at`, `raw_response_id`만 갱신한다(설계안 6-1 표에 `leaguegamelog` 열 추가, v1.2). 일정에 없는 경기는 INSERT하지 않고 실패 항목 → `partial`.
+  2. **두 소스가 다르면 일정을 믿는다.** 팀 집합이 다르면 갱신 안 함(`team_mismatch`), 홈/원정만 반대면 점수를 **팀 ID 기준**으로 붙이고 홈/원정은 일정대로(`home_away_mismatch`), 이미 종료인데 점수가 다르면 갱신 안 함(`score_mismatch`). 예외가 아니라 `ingestion_runs.error_detail.quality_issues`에 기록.
+  3. **한 경기의 값이 이상하면 그 경기만 제외하고 나머지는 저장, run은 `partial`.** 한 팀만 미정(`teamId=0`)이면 둘 다 NULL 또는 제외, 홈=원정은 제외, 종료인데 점수 없음은 제외, 시각이 ISO가 아니면 제외. 원본에 있는데 저장 못 한 경기는 `items_failed`에 세어 재개 시 다시 받는다. 저장은 된 이슈(`season_mismatch`, `duplicate_game`)는 `succeeded` 유지.
+  4. 게임로그로 종료가 된 경기의 `status_text`는 `"Final"`(연장 표시는 다음 일정 재수집 때). `games.fetched_at`은 그 응답을 받은 시각. `teams`는 static 30팀 + `CommonTeamYears` 검증, 불일치면 `partial`. `team_aliases`에 nba_api 이름·약어(`source='nba_api'`).
+  5. job_type `teams`/`schedule`/`gamelog`, scope_key `nba_api`/`season=<시즌>`/`season=<시즌>;season_type=<값>` (최종 확정 P-016).
+- **왜:** 일정은 `homeTeam/awayTeam`으로 명확하고 게임로그는 `MATCHUP` 문자열 해석이라 신뢰도가 다르다. 한 경기 때문에 시즌 전체가 멈추면(리뷰어 재현: 플레이오프 대진 반만 확정된 4월에 현실적) 매일 운영이 끊기고, 반대로 누락을 `succeeded`로 닫으면 P-016 재개 로직이 그 경기를 영구히 빠뜨린다. 둘 다 시끄럽게 하되 멈추지 않는 쪽(`partial`)으로 정했다.
+- **다른 선택지:** 예외로 실행 중단(한 경기가 시즌을 막음), 게임로그 우선(문자열 해석을 믿게 됨), 게임로그로 임시 시각을 만들어 INSERT(추측), 누락을 `succeeded`(재개 누락).
+- **검증:** 리뷰어가 실제 일정 1회(2,529경기)로 UTC·유형·season 전부 일치, 픽스처 가공으로 J1~J3·K·홈/원정 반대·stale 가드 재현. 수정 후 124 passed.
+- **참고:** `teams.city`의 static 값(GSW `San Francisco`, LAC `Los Angeles`)은 NBA 일정 표기(`Golden State`, `LA`)와 다르다. 설계안(출처 `nba_api.static`)대로 두고, 배당 매핑 별칭은 P-019에서 `team_aliases`로 해결한다.
+
 ---
 
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)
