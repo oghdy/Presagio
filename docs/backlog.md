@@ -16,8 +16,8 @@
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | DONE | P-001 |
-| P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | REVIEW | P-010 |
-| P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
+| P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | DONE | P-010 |
+| P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | IN PROGRESS | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | TODO | P-010, P-013 |
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
@@ -28,7 +28,7 @@
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
-| P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | TODO | P-002 |
+| P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | IN PROGRESS | P-002 |
 
 병렬로 돌릴 수 있는 것: P-001 다음에 **P-002, P-003, P-010, P-018**은 서로 다른 파일을 건드리므로 동시에 가능하다. 단, 같은 역할(data-engineer)이 두 티켓을 동시에 하지는 않는다. P-003은 platform-engineer가 한다.
 
@@ -158,7 +158,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O(리뷰어가 실제 호출 5번과 픽스처로 재현, 5,470경기 ID·시간대 규칙 위반 0). 발견 [중간] 1건: 조사 스크립트가 HTML 403에서 즉시 멈추지 않음(JSON 파싱 후 검사) → 제품 코드가 아니므로 수정 없이 수락, P-013 기준 보강으로 반영(Q-008, D-024). [낮음] 2건(호출 수 표기, 픽스처 단계 경로)은 일회성 스크립트라 무시. 결정 D-023~D-025 기록. 사람 머지 대기.
 
 ### P-011 🧑 raw/clean 스키마 설계안 v1
-- **상태:** REVIEW (2026-10-22 PR #7 열림, 브랜치 `docs/P-011-schema-v1`)
+- **상태:** DONE (2026-10-22, PR #7 squash merge. 사람 승인 A-1~A-11 전부 추천안대로, D-028)
 - **담당 역할:** data-engineer (설계안 작성) → PM → 사람 승인
 - **단계:** 1
 - **의존:** P-010
@@ -181,10 +181,10 @@
   - 2026-10-22 PM: v1.1(`35b97b9`) 재리뷰 "수락 가능". [중간] 1~3은 리뷰어가 시나리오(S3 연기, C5/S2 scoreboard 선적재, S6 TOV)를 임시 DB에서 다시 돌려 해결 확인. 표 구조·키 변경 없음, 뷰 1개만 변경. PM 수락. **사람 승인 대기: A-1~A-11**(decisions.md Q-009). 승인되면 PR #7 머지 + D-번호 기록 + P-012/P-013/P-023 시작.
 
 ### P-012 SQLAlchemy 모델 + Alembic 초기 마이그레이션
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-012-db-models-migrations`)
 - **담당 역할:** data-engineer
 - **단계:** 1
-- **의존:** P-002, P-011 승인
+- **의존:** P-002(DONE), P-011 승인(D-028, 2026-10-22)
 - **목표:** 승인된 스키마 v1을 코드와 마이그레이션으로 만든다.
 - **범위:** `src/presagio/db/models.py`(또는 패키지), `alembic/`, `alembic.ini`, `tests/db/test_migrations.py`
 - **범위 밖:** 데이터 넣는 코드.
@@ -196,6 +196,8 @@
   4. DB 설정이 있는데 틀린 경우(인증 실패, DB 없음)는 테스트가 skip이 아니라 실패한다(D-020, D-022). `PRESAGIO_REQUIRE_DB=1`로 로컬 실제 DB에서 전체 테스트가 통과한다.
   5. CI에서 실제 PostgreSQL로 마이그레이션 테스트가 돈다. 워크플로 수정은 P-023(platform-engineer)에서 하고, 이 티켓은 P-023과 함께 머지되거나 P-023 머지 후 CI 초록으로 증명한다(D-022).
 - **확인 방법:** 위 명령.
+- **메모:**
+  - 2026-10-22 PM: 사람 지시(D-028 승인)로 data-engineer 세션 시작(Opus 5.5 높음). 설계안 부록 DDL이 기준. P-023과 병렬. P-013은 이 티켓 뒤에.
 
 ### P-013 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs
 - **상태:** TODO
@@ -209,7 +211,7 @@
 - **완료 기준:**
   1. 요청 간 최소 딜레이, 지수 백오프 재시도 횟수, 타임아웃이 설정값(`config.py`)이고 기본값이 문서화되어 있다.
   2. 재시도는 일시적 오류(타임아웃, 5xx)에만 하고, 403/429를 포함한 4xx는 재시도 없이 즉시 실패한다. HTTP 상태 코드는 **JSON 파싱보다 먼저** 검사한다(nba_api는 4xx에서 예외를 던지지 않고 HTML 본문을 돌려준다). 비JSON 차단 응답(HTML 403)을 mock으로 테스트한다. (2026-10-22 D-024, Q-008 승인으로 보강)
-  3. 모든 응답이 `raw_api_responses`에 저장되고, 같은 요청을 다시 해도 중복 행이 생기지 않는다(테스트).
+  3. 모든 응답이 `raw_api_responses`에 저장되고, 같은 요청을 다시 했을 때 **내용(바이트 sha256)이 같으면** 새 행이 생기지 않고 `last_fetched_at`·`fetch_count`만 갱신된다. 내용이 다르면 새 버전 행이 생긴다(테스트, D-028 A-1/A-2).
   4. `ingestion_runs`에 작업 종류, 시작/종료, 상태, 처리 건수, 에러 메시지가 기록된다(테스트).
   5. 테스트는 네트워크를 타지 않는다(httpx MockTransport 또는 동등한 방식).
 - **확인 방법:** `uv run pytest tests/ingestion -q`
@@ -335,7 +337,7 @@
 - **확인 방법:** 사람이 로컬 DB에서 보고서의 쿼리를 직접 실행.
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-023-ci-postgres-service`)
 - **담당 역할:** platform-engineer (단계 1 예외 활성, D-022)
 - **단계:** 1
 - **의존:** P-002 (DONE). P-012와 같은 시기에 진행.
@@ -349,7 +351,9 @@
   3. `concurrency.cancel-in-progress`가 `pull_request`에서만 true이고 `push: main`에서는 취소되지 않는다(연속 머지 2회로 증명하거나 표현식 동작을 문서로 확인).
   4. 2회차 실행이 여전히 캐시를 복원하고 2분 이내다.
 - **확인 방법:** PR의 Checks 탭, Actions 로그.
-- **메모:** 2026-10-22 PM: D-022(Q-005 승인)와 P-003 리뷰어 [낮음] 발견으로 생성.
+- **메모:**
+  - 2026-10-22 PM: D-022(Q-005 승인)와 P-003 리뷰어 [낮음] 발견으로 생성.
+  - 2026-10-22 PM: 사람 지시로 platform-engineer 세션 시작(Opus 5.5 높음). P-012와 병렬(파일 겹침 없음: ci.yml만).
 
 ### P-022 단계 0~1 학습 노트 + 회고
 - **상태:** TODO
