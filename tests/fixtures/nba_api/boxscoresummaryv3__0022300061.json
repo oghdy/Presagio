@@ -1,0 +1,1212 @@
+{
+ "meta": {
+  "version": 1,
+  "request": "http://nba.cloud/games/0022300061/boxscoresummary?Format=json",
+  "time": "2025-08-11T11:30:02.302Z"
+ },
+ "boxScoreSummary": {
+  "gameId": "0022300061",
+  "gameCode": "20231024/LALDEN",
+  "gameStatus": 3,
+  "gameStatusText": "Final",
+  "period": 4,
+  "gameClock": "PT00M00.00S",
+  "gameTimeUTC": "2023-10-24T23:30:00Z",
+  "gameEt": "2023-10-24T19:30:00Z",
+  "awayTeamId": 1610612747,
+  "homeTeamId": 1610612743,
+  "duration": "2:17",
+  "attendance": 19842,
+  "sellout": 1,
+  "seriesGameNumber": "",
+  "gameLabel": "",
+  "gameSubLabel": "",
+  "seriesText": "",
+  "ifNecessary": false,
+  "isNeutral": false,
+  "arena": {
+   "arenaId": 1000046,
+   "arenaName": "Ball Arena",
+   "arenaCity": "Denver",
+   "arenaState": "CO",
+   "arenaCountry": "US",
+   "arenaTimezone": "Mountain",
+   "arenaStreetAddress": "",
+   "arenaPostalCode": ""
+  },
+  "officials": [
+   {
+    "personId": 201246,
+    "name": "Kevin Cutler",
+    "nameI": "K. Cutler",
+    "firstName": "Kevin",
+    "familyName": "Cutler",
+    "jerseyNum": "34  ",
+    "assignment": ""
+   },
+   {
+    "personId": 202053,
+    "name": "Scott Twardoski",
+    "nameI": "S. Twardoski",
+    "firstName": "Scott",
+    "familyName": "Twardoski",
+    "jerseyNum": "52  ",
+    "assignment": ""
+   },
+   {
+    "personId": 202058,
+    "name": "James Williams",
+    "nameI": "J. Williams",
+    "firstName": "James",
+    "familyName": "Williams",
+    "jerseyNum": "60  ",
+    "assignment": ""
+   }
+  ],
+  "broadcasters": {
+   "internationalBroadcasters": [
+    {
+     "broadcasterId": 11,
+     "broadcastDisplay": "TSN",
+     "broadcasterDisplay": "TSN",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": 1610612761,
+     "regionId": 2
+    },
+    {
+     "broadcasterId": 1209,
+     "broadcastDisplay": "Elta",
+     "broadcasterDisplay": "ELTA TV",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 32
+    },
+    {
+     "broadcasterId": 1210,
+     "broadcastDisplay": "Videoland",
+     "broadcasterDisplay": "Videoland",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 32
+    },
+    {
+     "broadcasterId": 1220,
+     "broadcastDisplay": "SportTVPor",
+     "broadcasterDisplay": "Sport TV 1",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 28
+    },
+    {
+     "broadcasterId": 1221,
+     "broadcastDisplay": "Canal+Pol",
+     "broadcasterDisplay": "Canal+Sport",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 27
+    },
+    {
+     "broadcasterId": 1228,
+     "broadcastDisplay": "beIN_MENA",
+     "broadcasterDisplay": "beIN Sports",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 25
+    },
+    {
+     "broadcasterId": 1250,
+     "broadcastDisplay": "Sport5_Isr",
+     "broadcasterDisplay": "Sport 5",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 18
+    },
+    {
+     "broadcasterId": 1283,
+     "broadcastDisplay": "ESPN_Aus",
+     "broadcasterDisplay": "ESPN",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 9
+    },
+    {
+     "broadcasterId": 1306,
+     "broadcastDisplay": "QQ",
+     "broadcasterDisplay": "Tencent",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 8
+    },
+    {
+     "broadcasterId": 1338,
+     "broadcastDisplay": "WOWOW",
+     "broadcasterDisplay": "WOWOW",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 20
+    },
+    {
+     "broadcasterId": 1342,
+     "broadcastDisplay": "Now TV",
+     "broadcasterDisplay": "Now TV",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 7
+    },
+    {
+     "broadcasterId": 1399,
+     "broadcastDisplay": "AstroMalay",
+     "broadcasterDisplay": "Astro SuperSport",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 45
+    },
+    {
+     "broadcasterId": 1410,
+     "broadcastDisplay": "ESPN_I_NZ",
+     "broadcasterDisplay": "ESPN",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 41
+    },
+    {
+     "broadcasterId": 1428,
+     "broadcastDisplay": "Cosmote TV",
+     "broadcasterDisplay": "Cosmote TV",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 15
+    },
+    {
+     "broadcasterId": 1440,
+     "broadcastDisplay": "beIN_FRA",
+     "broadcasterDisplay": "beIN Sports",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 13
+    },
+    {
+     "broadcasterId": 1492,
+     "broadcastDisplay": "Eclat",
+     "broadcasterDisplay": "SPOTV ON2",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 21
+    },
+    {
+     "broadcasterId": 1528,
+     "broadcastDisplay": "C+Afrique",
+     "broadcasterDisplay": "Canal+Afrique",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 24
+    },
+    {
+     "broadcasterId": 1553,
+     "broadcastDisplay": "Eleven_BEL",
+     "broadcasterDisplay": "Eleven Sports",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 10
+    },
+    {
+     "broadcasterId": 1636,
+     "broadcastDisplay": "S Sport",
+     "broadcasterDisplay": "S Sport",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 33
+    },
+    {
+     "broadcasterId": 1671,
+     "broadcastDisplay": "Ruutu",
+     "broadcasterDisplay": "Ruutu",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 47
+    },
+    {
+     "broadcasterId": 1683,
+     "broadcastDisplay": "TV2",
+     "broadcasterDisplay": "TV2",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 51
+    },
+    {
+     "broadcasterId": 1000023,
+     "broadcastDisplay": "SkySportNBA_Italy",
+     "broadcasterDisplay": "Sky Sport NBA",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 19
+    },
+    {
+     "broadcasterId": 1000158,
+     "broadcastDisplay": "Arena Sport",
+     "broadcasterDisplay": "Arena Sport",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 36
+    },
+    {
+     "broadcasterId": 1000278,
+     "broadcastDisplay": "Champions TV 3",
+     "broadcasterDisplay": "Champions TV 3",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 17
+    },
+    {
+     "broadcasterId": 1000697,
+     "broadcastDisplay": "ESPN Netherlands",
+     "broadcasterDisplay": "ESPN",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 23
+    },
+    {
+     "broadcasterId": 1000739,
+     "broadcastDisplay": "Viacom_Sports 18",
+     "broadcasterDisplay": "Sports 18",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 16
+    },
+    {
+     "broadcasterId": 1000887,
+     "broadcastDisplay": "Amazon Brazil",
+     "broadcasterDisplay": "Prime Video",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 11
+    },
+    {
+     "broadcasterId": 1000890,
+     "broadcastDisplay": "Cyta",
+     "broadcasterDisplay": "Cyta",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 29
+    },
+    {
+     "broadcasterId": 1000893,
+     "broadcastDisplay": "All Media",
+     "broadcasterDisplay": "All Media",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 50
+    },
+    {
+     "broadcasterId": 1000901,
+     "broadcastDisplay": "VG+Sport",
+     "broadcasterDisplay": "VG+Sport",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 48
+    },
+    {
+     "broadcasterId": 1000918,
+     "broadcastDisplay": "FPT Play",
+     "broadcasterDisplay": "FPT Play",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 49
+    },
+    {
+     "broadcasterId": 1000982,
+     "broadcastDisplay": "Line Today",
+     "broadcasterDisplay": "Line Today",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 32
+    },
+    {
+     "broadcasterId": 1001044,
+     "broadcastDisplay": "TV4_Sweden",
+     "broadcasterDisplay": "TV4",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 46
+    },
+    {
+     "broadcasterId": 1001053,
+     "broadcastDisplay": "PSN",
+     "broadcasterDisplay": "PSN",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 42
+    },
+    {
+     "broadcasterId": 1001074,
+     "broadcastDisplay": "Movistar Plus +",
+     "broadcasterDisplay": "Movistar Plus+",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 31
+    },
+    {
+     "broadcasterId": 1001076,
+     "broadcastDisplay": "ProSeiben",
+     "broadcasterDisplay": "ProSieben",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 14
+    },
+    {
+     "broadcasterId": 1001078,
+     "broadcastDisplay": "Setanta Sport (Philippines)",
+     "broadcasterDisplay": "Setanta Sport",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 26
+    },
+    {
+     "broadcasterId": 1001082,
+     "broadcastDisplay": "TNT Sports 2 UK",
+     "broadcasterDisplay": "TNT Sports 2",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 34
+    },
+    {
+     "broadcasterId": 1001100,
+     "broadcastDisplay": "Viacom_JioCinema",
+     "broadcasterDisplay": "JioCinema",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 16
+    }
+   ],
+   "internationalRadioBroadcasters": [],
+   "internationalOttBroadcasters": [
+    {
+     "broadcasterId": 1605,
+     "broadcastDisplay": "DAZN_GER",
+     "broadcasterDisplay": "DAZN",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 14
+    },
+    {
+     "broadcasterId": 1675,
+     "broadcastDisplay": "Rakuten",
+     "broadcasterDisplay": "NBA Rakuten",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 20
+    },
+    {
+     "broadcasterId": 1000723,
+     "broadcastDisplay": "Star+ (Argentina)",
+     "broadcasterDisplay": "Star+",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 6
+    },
+    {
+     "broadcasterId": 1000724,
+     "broadcastDisplay": "Star+ (Dominican Republic)",
+     "broadcasterDisplay": "Star+",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 12
+    },
+    {
+     "broadcasterId": 1000725,
+     "broadcastDisplay": "Star+ (Mexico)",
+     "broadcasterDisplay": "Star+",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 22
+    },
+    {
+     "broadcasterId": 1000726,
+     "broadcastDisplay": "Star+ (Venezuela)",
+     "broadcasterDisplay": "Star+",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 35
+    },
+    {
+     "broadcasterId": 1000727,
+     "broadcastDisplay": "Star+ (Pan-Latin America)",
+     "broadcasterDisplay": "Star+",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 37
+    }
+   ],
+   "nationalBroadcasters": [
+    {
+     "broadcasterId": 10,
+     "broadcastDisplay": "TNT",
+     "broadcasterDisplay": "TNT",
+     "broadcasterVideoLink": "https://www.tntdrama.com/nba-on-tnt",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 1
+    }
+   ],
+   "nationalRadioBroadcasters": [
+    {
+     "broadcasterId": 3,
+     "broadcastDisplay": "ESPNR",
+     "broadcasterDisplay": "ESPN Radio",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": -1,
+     "regionId": 1
+    }
+   ],
+   "nationalOttBroadcasters": [],
+   "homeTvBroadcasters": [],
+   "homeRadioBroadcasters": [
+    {
+     "broadcasterId": 1730,
+     "broadcastDisplay": "KKSE-FM",
+     "broadcasterDisplay": "Altitude Sports Radio 92.5 FM",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": 1610612743,
+     "regionId": 1
+    }
+   ],
+   "homeOttBroadcasters": [],
+   "awayTvBroadcasters": [],
+   "awayRadioBroadcasters": [
+    {
+     "broadcasterId": 1000286,
+     "broadcastDisplay": "KSPN/KWKW-LAL",
+     "broadcasterDisplay": "ESPN LA 710/1330 KWKW",
+     "broadcasterVideoLink": "",
+     "broadcasterDescription": "",
+     "broadcasterTeamId": 1610612747,
+     "regionId": 1
+    }
+   ],
+   "awayOttBroadcasters": []
+  },
+  "homeTeam": {
+   "teamId": 1610612743,
+   "teamName": "Nuggets",
+   "teamCity": "Denver",
+   "teamTricode": "DEN",
+   "teamSlug": "nuggets",
+   "teamWins": 1,
+   "teamLosses": 0,
+   "score": 119,
+   "inBonus": "",
+   "timeoutsRemaining": 0,
+   "seed": 0,
+   "statistics": {
+    "dummyKey": "dummyValue"
+   },
+   "periods": [
+    {
+     "period": 1,
+     "periodType": "REGULAR",
+     "score": 34
+    },
+    {
+     "period": 2,
+     "periodType": "REGULAR",
+     "score": 29
+    },
+    {
+     "period": 3,
+     "periodType": "REGULAR",
+     "score": 24
+    },
+    {
+     "period": 4,
+     "periodType": "REGULAR",
+     "score": 32
+    }
+   ],
+   "players": [
+    {
+     "personId": 201599,
+     "name": "DeAndre Jordan",
+     "nameI": "D. Jordan",
+     "firstName": "DeAndre",
+     "familyName": "Jordan",
+     "jerseyNum": "6"
+    },
+    {
+     "personId": 202704,
+     "name": "Reggie Jackson",
+     "nameI": "R. Jackson",
+     "firstName": "Reggie",
+     "familyName": "Jackson",
+     "jerseyNum": "7"
+    },
+    {
+     "personId": 203200,
+     "name": "Justin Holiday",
+     "nameI": "J. Holiday",
+     "firstName": "Justin",
+     "familyName": "Holiday",
+     "jerseyNum": "9"
+    },
+    {
+     "personId": 203484,
+     "name": "Kentavious Caldwell-Pope",
+     "nameI": "K. Caldwell-Pope",
+     "firstName": "Kentavious",
+     "familyName": "Caldwell-Pope",
+     "jerseyNum": "5"
+    },
+    {
+     "personId": 203932,
+     "name": "Aaron Gordon",
+     "nameI": "A. Gordon",
+     "firstName": "Aaron",
+     "familyName": "Gordon",
+     "jerseyNum": "50"
+    },
+    {
+     "personId": 203999,
+     "name": "Nikola Jokić",
+     "nameI": "N. Jokić",
+     "firstName": "Nikola",
+     "familyName": "Jokić",
+     "jerseyNum": "15"
+    },
+    {
+     "personId": 1627750,
+     "name": "Jamal Murray",
+     "nameI": "J. Murray",
+     "firstName": "Jamal",
+     "familyName": "Murray",
+     "jerseyNum": "27"
+    },
+    {
+     "personId": 1629008,
+     "name": "Michael Porter Jr.",
+     "nameI": "M. Porter Jr.",
+     "firstName": "Michael",
+     "familyName": "Porter Jr.",
+     "jerseyNum": "1"
+    },
+    {
+     "personId": 1629618,
+     "name": "Jalen Pickett",
+     "nameI": "J. Pickett",
+     "firstName": "Jalen",
+     "familyName": "Pickett",
+     "jerseyNum": "24"
+    },
+    {
+     "personId": 1630192,
+     "name": "Zeke Nnaji",
+     "nameI": "Z. Nnaji",
+     "firstName": "Zeke",
+     "familyName": "Nnaji",
+     "jerseyNum": "22"
+    },
+    {
+     "personId": 1630296,
+     "name": "Braxton Key",
+     "nameI": "B. Key",
+     "firstName": "Braxton",
+     "familyName": "Key",
+     "jerseyNum": "11"
+    },
+    {
+     "personId": 1631124,
+     "name": "Julian Strawther",
+     "nameI": "J. Strawther",
+     "firstName": "Julian",
+     "familyName": "Strawther",
+     "jerseyNum": "3"
+    },
+    {
+     "personId": 1631128,
+     "name": "Christian Braun",
+     "nameI": "C. Braun",
+     "firstName": "Christian",
+     "familyName": "Braun",
+     "jerseyNum": "0"
+    },
+    {
+     "personId": 1631212,
+     "name": "Peyton Watson",
+     "nameI": "P. Watson",
+     "firstName": "Peyton",
+     "familyName": "Watson",
+     "jerseyNum": "8"
+    },
+    {
+     "personId": 1631221,
+     "name": "Collin Gillespie",
+     "nameI": "C. Gillespie",
+     "firstName": "Collin",
+     "familyName": "Gillespie",
+     "jerseyNum": "21"
+    }
+   ],
+   "inactives": [
+    {
+     "personId": 1630643,
+     "firstName": "Jay",
+     "familyName": "Huff",
+     "jerseyNum": "30  "
+    },
+    {
+     "personId": 1628427,
+     "firstName": "Vlatko",
+     "familyName": "Cancar",
+     "jerseyNum": "31  "
+    },
+    {
+     "personId": 1641816,
+     "firstName": "Hunter",
+     "familyName": "Tyson",
+     "jerseyNum": "4   "
+    }
+   ]
+  },
+  "awayTeam": {
+   "teamId": 1610612747,
+   "teamName": "Lakers",
+   "teamCity": "Los Angeles",
+   "teamTricode": "LAL",
+   "teamSlug": "lakers",
+   "teamWins": 0,
+   "teamLosses": 1,
+   "score": 107,
+   "inBonus": "",
+   "timeoutsRemaining": 0,
+   "seed": 0,
+   "statistics": {
+    "dummyKey": "dummyValue"
+   },
+   "periods": [
+    {
+     "period": 1,
+     "periodType": "REGULAR",
+     "score": 20
+    },
+    {
+     "period": 2,
+     "periodType": "REGULAR",
+     "score": 34
+    },
+    {
+     "period": 3,
+     "periodType": "REGULAR",
+     "score": 26
+    },
+    {
+     "period": 4,
+     "periodType": "REGULAR",
+     "score": 27
+    }
+   ],
+   "players": [
+    {
+     "personId": 2544,
+     "name": "LeBron James",
+     "nameI": "L. James",
+     "firstName": "LeBron",
+     "familyName": "James",
+     "jerseyNum": "23"
+    },
+    {
+     "personId": 203076,
+     "name": "Anthony Davis",
+     "nameI": "A. Davis",
+     "firstName": "Anthony",
+     "familyName": "Davis",
+     "jerseyNum": "3"
+    },
+    {
+     "personId": 1626156,
+     "name": "D'Angelo Russell",
+     "nameI": "D. Russell",
+     "firstName": "D'Angelo",
+     "familyName": "Russell",
+     "jerseyNum": "1"
+    },
+    {
+     "personId": 1626174,
+     "name": "Christian Wood",
+     "nameI": "C. Wood",
+     "firstName": "Christian",
+     "familyName": "Wood",
+     "jerseyNum": "35"
+    },
+    {
+     "personId": 1627752,
+     "name": "Taurean Prince",
+     "nameI": "T. Prince",
+     "firstName": "Taurean",
+     "familyName": "Prince",
+     "jerseyNum": "12"
+    },
+    {
+     "personId": 1629060,
+     "name": "Rui Hachimura",
+     "nameI": "R. Hachimura",
+     "firstName": "Rui",
+     "familyName": "Hachimura",
+     "jerseyNum": "28"
+    },
+    {
+     "personId": 1629216,
+     "name": "Gabe Vincent",
+     "nameI": "G. Vincent",
+     "firstName": "Gabe",
+     "familyName": "Vincent",
+     "jerseyNum": "7"
+    },
+    {
+     "personId": 1629629,
+     "name": "Cam Reddish",
+     "nameI": "C. Reddish",
+     "firstName": "Cam",
+     "familyName": "Reddish",
+     "jerseyNum": "5"
+    },
+    {
+     "personId": 1629637,
+     "name": "Jaxson Hayes",
+     "nameI": "J. Hayes",
+     "firstName": "Jaxson",
+     "familyName": "Hayes",
+     "jerseyNum": "11"
+    },
+    {
+     "personId": 1630559,
+     "name": "Austin Reaves",
+     "nameI": "A. Reaves",
+     "firstName": "Austin",
+     "familyName": "Reaves",
+     "jerseyNum": "15"
+    },
+    {
+     "personId": 1631108,
+     "name": "Max Christie",
+     "nameI": "M. Christie",
+     "firstName": "Max",
+     "familyName": "Christie",
+     "jerseyNum": "10"
+    },
+    {
+     "personId": 1641721,
+     "name": "Maxwell Lewis",
+     "nameI": "M. Lewis",
+     "firstName": "Maxwell",
+     "familyName": "Lewis",
+     "jerseyNum": "21"
+    }
+   ],
+   "inactives": [
+    {
+     "personId": 1630658,
+     "firstName": "Colin",
+     "familyName": "Castleton",
+     "jerseyNum": "14  "
+    },
+    {
+     "personId": 1641720,
+     "firstName": "Jalen",
+     "familyName": "Hood-Schifino",
+     "jerseyNum": "0   "
+    },
+    {
+     "personId": 1641788,
+     "firstName": "Alex",
+     "familyName": "Fudge",
+     "jerseyNum": "17  "
+    },
+    {
+     "personId": 1641793,
+     "firstName": "D'Moi",
+     "familyName": "Hodge",
+     "jerseyNum": "55  "
+    },
+    {
+     "personId": 1629020,
+     "firstName": "Jarred",
+     "familyName": "Vanderbilt",
+     "jerseyNum": "2   "
+    }
+   ]
+  },
+  "lastFiveMeetings": {
+   "meetings": [
+    {
+     "recencyOrder": 1,
+     "gameId": "0042200314",
+     "gameTimeUTC": "2023-05-23T00:30:00Z",
+     "gameEt": "2023-05-22T20:30:00Z",
+     "gameStatus": 3,
+     "gameStatusText": "Final",
+     "gameClock": "PT00M00.00S",
+     "broadcasterVideoLink": "",
+     "awayTeam": {
+      "teamId": 1610612743,
+      "teamCity": "Denver",
+      "teamName": "Nuggets",
+      "teamTricode": "DEN",
+      "teamSlug": "nuggets",
+      "score": 113,
+      "wins": 4,
+      "losses": 0
+     },
+     "homeTeam": {
+      "teamId": 1610612747,
+      "teamCity": "Los Angeles",
+      "teamName": "Lakers",
+      "teamTricode": "LAL",
+      "teamSlug": "lakers",
+      "score": 111,
+      "wins": 0,
+      "losses": 4
+     }
+    },
+    {
+     "recencyOrder": 2,
+     "gameId": "0042200313",
+     "gameTimeUTC": "2023-05-21T00:30:00Z",
+     "gameEt": "2023-05-20T20:30:00Z",
+     "gameStatus": 3,
+     "gameStatusText": "Final",
+     "gameClock": "PT00M00.00S",
+     "broadcasterVideoLink": "",
+     "awayTeam": {
+      "teamId": 1610612743,
+      "teamCity": "Denver",
+      "teamName": "Nuggets",
+      "teamTricode": "DEN",
+      "teamSlug": "nuggets",
+      "score": 119,
+      "wins": 3,
+      "losses": 0
+     },
+     "homeTeam": {
+      "teamId": 1610612747,
+      "teamCity": "Los Angeles",
+      "teamName": "Lakers",
+      "teamTricode": "LAL",
+      "teamSlug": "lakers",
+      "score": 108,
+      "wins": 0,
+      "losses": 3
+     }
+    },
+    {
+     "recencyOrder": 3,
+     "gameId": "0042200312",
+     "gameTimeUTC": "2023-05-19T00:30:00Z",
+     "gameEt": "2023-05-18T20:30:00Z",
+     "gameStatus": 3,
+     "gameStatusText": "Final",
+     "gameClock": "PT00M00.00S",
+     "broadcasterVideoLink": "",
+     "awayTeam": {
+      "teamId": 1610612747,
+      "teamCity": "Los Angeles",
+      "teamName": "Lakers",
+      "teamTricode": "LAL",
+      "teamSlug": "lakers",
+      "score": 103,
+      "wins": 0,
+      "losses": 2
+     },
+     "homeTeam": {
+      "teamId": 1610612743,
+      "teamCity": "Denver",
+      "teamName": "Nuggets",
+      "teamTricode": "DEN",
+      "teamSlug": "nuggets",
+      "score": 108,
+      "wins": 2,
+      "losses": 0
+     }
+    },
+    {
+     "recencyOrder": 4,
+     "gameId": "0042200311",
+     "gameTimeUTC": "2023-05-17T00:30:00Z",
+     "gameEt": "2023-05-16T20:30:00Z",
+     "gameStatus": 3,
+     "gameStatusText": "Final",
+     "gameClock": "PT00M00.00S",
+     "broadcasterVideoLink": "",
+     "awayTeam": {
+      "teamId": 1610612747,
+      "teamCity": "Los Angeles",
+      "teamName": "Lakers",
+      "teamTricode": "LAL",
+      "teamSlug": "lakers",
+      "score": 126,
+      "wins": 0,
+      "losses": 1
+     },
+     "homeTeam": {
+      "teamId": 1610612743,
+      "teamCity": "Denver",
+      "teamName": "Nuggets",
+      "teamTricode": "DEN",
+      "teamSlug": "nuggets",
+      "score": 132,
+      "wins": 1,
+      "losses": 0
+     }
+    },
+    {
+     "recencyOrder": 5,
+     "gameId": "0022200609",
+     "gameTimeUTC": "2023-01-10T02:00:00Z",
+     "gameEt": "2023-01-09T21:00:00Z",
+     "gameStatus": 3,
+     "gameStatusText": "Final",
+     "gameClock": "PT00M00.00S",
+     "broadcasterVideoLink": "",
+     "awayTeam": {
+      "teamId": 1610612747,
+      "teamCity": "Los Angeles",
+      "teamName": "Lakers",
+      "teamTricode": "LAL",
+      "teamSlug": "lakers",
+      "score": 109,
+      "wins": 19,
+      "losses": 22
+     },
+     "homeTeam": {
+      "teamId": 1610612743,
+      "teamCity": "Denver",
+      "teamName": "Nuggets",
+      "teamTricode": "DEN",
+      "teamSlug": "nuggets",
+      "score": 122,
+      "wins": 27,
+      "losses": 13
+     }
+    }
+   ]
+  },
+  "pregameCharts": {
+   "homeTeam": {
+    "teamId": 1610612743,
+    "teamCity": "Denver",
+    "teamName": "Nuggets",
+    "teamTricode": "DEN",
+    "statistics": {
+     "points": 114.9,
+     "reboundsTotal": 44.4,
+     "assists": 29.5,
+     "steals": 7.1,
+     "blocks": 5.6,
+     "turnovers": 12.6,
+     "fieldGoalsPercentage": 0.496,
+     "threePointersPercentage": 0.374,
+     "freeThrowsPercentage": 0.762,
+     "pointsInThePaint": 53.5,
+     "pointsSecondChance": 13.7,
+     "pointsFastBreak": 14.3,
+     "playerPtsLeaderFirstName": "Nikola",
+     "playerPtsLeaderFamilyName": "Jokić",
+     "playerPtsLeaderId": 203999,
+     "playerPtsLeaderPts": 26.4,
+     "playerRebLeaderFirstName": "Nikola",
+     "playerRebLeaderFamilyName": "Jokić",
+     "playerRebLeaderId": 203999,
+     "playerRebLeaderReb": 12.4,
+     "playerAstLeaderFirstName": "Nikola",
+     "playerAstLeaderFamilyName": "Jokić",
+     "playerAstLeaderId": 203999,
+     "playerAstLeaderAst": 9.0,
+     "playerBlkLeaderFirstName": "Peyton",
+     "playerBlkLeaderFamilyName": "Watson",
+     "playerBlkLeaderId": 1631212,
+     "playerBlkLeaderBlk": 1.1
+    }
+   },
+   "awayTeam": {
+    "teamId": 1610612747,
+    "teamCity": "Los Angeles",
+    "teamName": "Lakers",
+    "teamTricode": "LAL",
+    "statistics": {
+     "points": 118.0,
+     "reboundsTotal": 43.1,
+     "assists": 28.5,
+     "steals": 7.4,
+     "blocks": 5.5,
+     "turnovers": 14.0,
+     "fieldGoalsPercentage": 0.499,
+     "threePointersPercentage": 0.377,
+     "freeThrowsPercentage": 0.782,
+     "pointsInThePaint": 55.6,
+     "pointsSecondChance": 10.5,
+     "pointsFastBreak": 17.0,
+     "playerPtsLeaderFirstName": "LeBron",
+     "playerPtsLeaderFamilyName": "James",
+     "playerPtsLeaderId": 2544,
+     "playerPtsLeaderPts": 25.7,
+     "playerRebLeaderFirstName": "Anthony",
+     "playerRebLeaderFamilyName": "Davis",
+     "playerRebLeaderId": 203076,
+     "playerRebLeaderReb": 12.6,
+     "playerAstLeaderFirstName": "LeBron",
+     "playerAstLeaderFamilyName": "James",
+     "playerAstLeaderId": 2544,
+     "playerAstLeaderAst": 8.3,
+     "playerBlkLeaderFirstName": "Anthony",
+     "playerBlkLeaderFamilyName": "Davis",
+     "playerBlkLeaderId": 203076,
+     "playerBlkLeaderBlk": 2.34
+    }
+   }
+  },
+  "postgameCharts": {
+   "homeTeam": {
+    "teamId": 1610612743,
+    "teamCity": "Denver",
+    "teamName": "Nuggets",
+    "teamTricode": "DEN",
+    "statistics": {
+     "points": 119.0,
+     "reboundsTotal": 42.0,
+     "assists": 29.0,
+     "steals": 9.0,
+     "blocks": 6.0,
+     "turnovers": 11.0,
+     "fieldGoalsPercentage": 0.527,
+     "threePointersPercentage": 0.412,
+     "freeThrowsPercentage": 0.75,
+     "pointsInThePaint": 52.0,
+     "pointsSecondChance": 17.0,
+     "pointsFastBreak": 20.0,
+     "biggestLead": 18.0,
+     "leadChanges": 1.0,
+     "timesTied": 1.0,
+     "biggestScoringRun": 9.0,
+     "turnoversTeam": 1.0,
+     "turnoversTotal": 12.0,
+     "reboundsTeam": 6.0,
+     "pointsFromTurnovers": 20.0,
+     "benchPoints": 22.0,
+     "playerPtsLeaderFirstName": "Nikola",
+     "playerPtsLeaderFamilyName": "Jokić",
+     "playerPtsLeaderId": 203999,
+     "playerPtsLeaderPts": 29.0,
+     "playerRebLeaderFirstName": "Nikola",
+     "playerRebLeaderFamilyName": "Jokić",
+     "playerRebLeaderId": 203999,
+     "playerRebLeaderReb": 13.0,
+     "playerAstLeaderFirstName": "Nikola",
+     "playerAstLeaderFamilyName": "Jokić",
+     "playerAstLeaderId": 203999,
+     "playerAstLeaderAst": 11.0,
+     "playerBlkLeaderFirstName": "Kentavious",
+     "playerBlkLeaderFamilyName": "Caldwell-Pope",
+     "playerBlkLeaderId": 203484,
+     "playerBlkLeaderBlk": 1.0
+    }
+   },
+   "awayTeam": {
+    "teamId": 1610612747,
+    "teamCity": "Los Angeles",
+    "teamName": "Lakers",
+    "teamTricode": "LAL",
+    "statistics": {
+     "points": 107.0,
+     "reboundsTotal": 44.0,
+     "assists": 23.0,
+     "steals": 5.0,
+     "blocks": 4.0,
+     "turnovers": 11.0,
+     "fieldGoalsPercentage": 0.456,
+     "threePointersPercentage": 0.345,
+     "freeThrowsPercentage": 0.75,
+     "pointsInThePaint": 58.0,
+     "pointsSecondChance": 4.0,
+     "pointsFastBreak": 20.0,
+     "biggestLead": 4.0,
+     "leadChanges": 1.0,
+     "timesTied": 1.0,
+     "biggestScoringRun": 13.0,
+     "turnoversTeam": 1.0,
+     "turnoversTotal": 12.0,
+     "reboundsTeam": 8.0,
+     "pointsFromTurnovers": 18.0,
+     "benchPoints": 26.0,
+     "playerPtsLeaderFirstName": "LeBron",
+     "playerPtsLeaderFamilyName": "James",
+     "playerPtsLeaderId": 2544,
+     "playerPtsLeaderPts": 21.0,
+     "playerRebLeaderFirstName": "Austin",
+     "playerRebLeaderFamilyName": "Reaves",
+     "playerRebLeaderId": 1630559,
+     "playerRebLeaderReb": 8.0,
+     "playerAstLeaderFirstName": "D'Angelo",
+     "playerAstLeaderFamilyName": "Russell",
+     "playerAstLeaderId": 1626156,
+     "playerAstLeaderAst": 7.0,
+     "playerBlkLeaderFirstName": "Anthony",
+     "playerBlkLeaderFamilyName": "Davis",
+     "playerBlkLeaderId": 203076,
+     "playerBlkLeaderBlk": 2.0
+    }
+   }
+  },
+  "videoAvailableFlag": 1,
+  "ptAvailable": 1,
+  "ptXYZAvailable": 0,
+  "whStatus": 1,
+  "hustleStatus": 1,
+  "historicalStatus": 0,
+  "gameSubtype": ""
+ }
+}
