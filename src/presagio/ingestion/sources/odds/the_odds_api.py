@@ -41,9 +41,9 @@ SPORT_KEY = "basketball_nba"
 ODDS_ENDPOINT = "odds"
 EVENTS_ENDPOINT = "events"
 # team_aliases seed for source 'the_odds_api': tricode -> the name in home_team/away_team.
-# NOT yet confirmed against a real NBA response (no public NBA sample, odds_api.md ch. 7):
-# these are nba_api static full names. Unknown names never stop a load; the event stays
-# unmatched with a quality issue. Confirm with one free /events call and fix here.
+# Confirmed 2026-10-22: the real /events response (41 events) used exactly these 30 names,
+# which equal nba_api static full names. Unknown names never stop a load; the event stays
+# unmatched with a quality issue.
 TEAM_NAME_SEED: Mapping[str, str] = {
     "ATL": "Atlanta Hawks",
     "BKN": "Brooklyn Nets",
@@ -76,7 +76,7 @@ TEAM_NAME_SEED: Mapping[str, str] = {
     "UTA": "Utah Jazz",
     "WAS": "Washington Wizards",
 }
-TEAM_NAME_SEED_NOTE = "P-019 seed (nba_api full name), not yet confirmed by a /events response"
+TEAM_NAME_SEED_NOTE = "P-019 seed, confirmed by the 2026-10-22 /events response (30 names)"
 # Usage headers the API returns on every response (v4 guide); kept in the run record.
 QUOTA_HEADERS = ("x-requests-remaining", "x-requests-used", "x-requests-last")
 

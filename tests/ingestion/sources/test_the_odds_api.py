@@ -19,6 +19,7 @@ from presagio.ingestion.sources.odds import (
     parse_odds,
 )
 from presagio.ingestion.sources.odds.base import OddsOutcomeRecord
+from presagio.ingestion.sources.odds.the_odds_api import TEAM_NAME_SEED
 
 from ..helpers import T0, FakeStore
 from ..odds_helpers import (
@@ -29,6 +30,9 @@ from ..odds_helpers import (
     FAKE_KEY,
     ODDS_FIXTURES,
     QUOTA,
+    REAL_EVENTS_FIXTURE,
+    REAL_ODDS_FIXTURE,
+    REAL_PHI_CLE,
     as_american,
     event_of,
     odds_handler,
@@ -278,3 +282,40 @@ def test_odds_fixtures_carry_no_key() -> None:
         # Event ids are 32 hex too, so only flag hex strings outside an "id" field.
         for match in re.finditer(r'"(\w+)":\s*"[0-9a-f]{32}"', content):
             assert match.group(1) == "id", f"{path.name}: {match.group(0)}"
+
+
+def test_real_response_parses_without_issues() -> None:
+    """The 2026-10-22 /odds response: 3 events, 3+3+1 bookmakers x 3 markets x 2 sides."""
+    batch = parse(odds_json(REAL_ODDS_FIXTURE))
+    assert [len(e.outcomes) for e in batch.events] == [18, 18, 6]
+    assert batch.issues == () and dict(batch.rejected) == {}
+    assert dict(batch.skipped) == {
+        "started_events": 0,
+        "started_outcomes": 0,
+        "rejected_outcomes": 0,
+    }
+    phi = batch.events[0]
+    assert (phi.source_event_id, phi.home_team_name, phi.away_team_name) == (
+        REAL_PHI_CLE,
+        "Philadelphia 76ers",
+        "Cleveland Cavaliers",
+    )
+    assert phi.commence_time == datetime(2026, 10, 22, 23, 10, tzinfo=UTC)
+    outcomes = by_key(phi)
+    # The real h2h lists the away team first; sides come from names, not positions.
+    assert outcomes[("draftkings", "h2h", "away")].price_decimal == Decimal("2.2400")
+    assert outcomes[("draftkings", "h2h", "home")].price_decimal == Decimal("1.6800")
+    assert outcomes[("draftkings", "spreads", "home")].point == Decimal("-3.5")
+    assert outcomes[("draftkings", "totals", "over")].point == Decimal("235.5")
+    assert outcomes[("draftkings", "h2h", "home")].bookmaker_last_update == datetime(
+        2026, 10, 22, 12, 38, 11, tzinfo=UTC
+    )
+    assert {o.bookmaker_key for o in phi.outcomes} == {"draftkings", "bovada", "betmgm"}
+
+
+def test_real_team_names_are_the_seed() -> None:
+    """Every team name in the real /events response is a seeded the_odds_api alias."""
+    events = odds_json(REAL_EVENTS_FIXTURE)
+    names = {e["home_team"] for e in events} | {e["away_team"] for e in events}
+    assert names <= set(TEAM_NAME_SEED.values())
+    assert len(parse(events).events) == 3

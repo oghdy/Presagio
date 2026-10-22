@@ -14,6 +14,12 @@ from presagio.ingestion.odds_math import decimal_to_american
 ODDS_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "odds"
 ODDS_FIXTURE = "the_odds_api_nba_odds_synthetic"
 EVENTS_FIXTURE = "the_odds_api_nba_events_synthetic"
+# Real responses (2026-10-22 12:39Z), trimmed to 3 events and at most 3 bookmakers each.
+REAL_ODDS_FIXTURE = "the_odds_api_nba_odds_2026-10-22"
+REAL_EVENTS_FIXTURE = "the_odds_api_nba_events_2026-10-22"
+REAL_PHI_CLE = "110e33c79c5ec8c0377702aff685f83b"  # 23:10Z, NBA says 23:00Z (0022600006)
+REAL_OKC_DEN = "223b2883b9b05a67329ef246384b85f1"  # 2026-10-23 01:40Z
+REAL_SAS_LAL = "13d9ca3bcb664829c603755d31401002"  # 2026-11-28 02:40Z, one bookmaker
 # Not a real key: long and unusual so a substring search over any output finds every leak.
 FAKE_KEY = "p019FAKEoddsKEY0123456789abcdef"
 # Event ids in the synthetic fixture.

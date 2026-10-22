@@ -38,6 +38,10 @@ from ..odds_helpers import (
     EVENTS_FIXTURE,
     FAKE_KEY,
     PHI_CLE_GAME,
+    REAL_ODDS_FIXTURE,
+    REAL_OKC_DEN,
+    REAL_PHI_CLE,
+    REAL_SAS_LAL,
     as_american,
     bump_prices,
     event_of,
@@ -269,6 +273,29 @@ def test_mapping_fills_game_id_only_for_a_single_candidate(odds_db: Engine, odds
     odds.bodies["odds"] = bump_prices(odds_json(), 0.01)
     assert load_odds(odds.source, odds_db).mapping.checked == 2
     assert scalar(odds_db, "SELECT matched_at FROM odds_events WHERE game_id IS NOT NULL") == before
+
+
+def test_real_response_loads_and_maps(odds_db: Engine, odds: OddsStub) -> None:
+    """Real 2026-10-22 /odds: 42 prices; PHI-CLE maps although commence is 10 min later."""
+    odds.bodies["odds"] = odds_json(REAL_ODDS_FIXTURE)
+    result = load_odds(odds.source, odds_db)
+    assert (result.events.inserted, result.snapshots_inserted) == (3, 42)
+    assert result.mapping.as_dict() == {
+        "checked": 3,
+        "matched": 1,
+        "unmatched": 2,
+        "max_time_diff_seconds": 600.0,
+    }
+    assert (
+        scalar(
+            odds_db, "SELECT game_id FROM odds_events WHERE source_event_id = :e", e=REAL_PHI_CLE
+        )
+        == PHI_CLE_GAME
+    )
+    # The schedule fixture holds only a few 2026-27 games, so these two have no game here.
+    issues = {i["key"]: i["kind"] for i in last_detail(odds_db)["quality_issues"]}
+    assert issues == {REAL_OKC_DEN: "no_matching_game", REAL_SAS_LAL: "no_matching_game"}
+    assert scalar(odds_db, "SELECT count(*) FROM odds_closing_lines") == 42
 
 
 def test_unmappable_events_stay_null(odds_db: Engine, odds: OddsStub) -> None:

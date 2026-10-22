@@ -1,0 +1,403 @@
+[
+ {
+  "id": "110e33c79c5ec8c0377702aff685f83b",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-10-22T23:10:00Z",
+  "home_team": "Philadelphia 76ers",
+  "away_team": "Cleveland Cavaliers",
+  "bookmakers": [
+   {
+    "key": "draftkings",
+    "title": "DraftKings",
+    "last_update": "2026-10-22T12:38:11Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:38:08Z",
+      "outcomes": [
+       {
+        "name": "Cleveland Cavaliers",
+        "price": 2.24
+       },
+       {
+        "name": "Philadelphia 76ers",
+        "price": 1.68
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:38:08Z",
+      "outcomes": [
+       {
+        "name": "Cleveland Cavaliers",
+        "price": 1.87,
+        "point": 3.5
+       },
+       {
+        "name": "Philadelphia 76ers",
+        "price": 1.95,
+        "point": -3.5
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:38:08Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.89,
+        "point": 235.5
+       },
+       {
+        "name": "Under",
+        "price": 1.93,
+        "point": 235.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "bovada",
+    "title": "Bovada",
+    "last_update": "2026-10-22T12:38:48Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:38:48Z",
+      "outcomes": [
+       {
+        "name": "Cleveland Cavaliers",
+        "price": 2.3
+       },
+       {
+        "name": "Philadelphia 76ers",
+        "price": 1.67
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:38:48Z",
+      "outcomes": [
+       {
+        "name": "Cleveland Cavaliers",
+        "price": 1.95,
+        "point": 3.0
+       },
+       {
+        "name": "Philadelphia 76ers",
+        "price": 1.87,
+        "point": -3.0
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:38:48Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.91,
+        "point": 236.0
+       },
+       {
+        "name": "Under",
+        "price": 1.91,
+        "point": 236.0
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "betmgm",
+    "title": "BetMGM",
+    "last_update": "2026-10-22T12:39:04Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:39:04Z",
+      "outcomes": [
+       {
+        "name": "Cleveland Cavaliers",
+        "price": 2.25
+       },
+       {
+        "name": "Philadelphia 76ers",
+        "price": 1.67
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:39:04Z",
+      "outcomes": [
+       {
+        "name": "Cleveland Cavaliers",
+        "price": 1.87,
+        "point": 3.5
+       },
+       {
+        "name": "Philadelphia 76ers",
+        "price": 1.95,
+        "point": -3.5
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:39:04Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.91,
+        "point": 235.5
+       },
+       {
+        "name": "Under",
+        "price": 1.91,
+        "point": 235.5
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "223b2883b9b05a67329ef246384b85f1",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-10-23T01:40:00Z",
+  "home_team": "Oklahoma City Thunder",
+  "away_team": "Denver Nuggets",
+  "bookmakers": [
+   {
+    "key": "draftkings",
+    "title": "DraftKings",
+    "last_update": "2026-10-22T12:38:11Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:38:08Z",
+      "outcomes": [
+       {
+        "name": "Denver Nuggets",
+        "price": 3.85
+       },
+       {
+        "name": "Oklahoma City Thunder",
+        "price": 1.28
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:38:08Z",
+      "outcomes": [
+       {
+        "name": "Denver Nuggets",
+        "price": 1.89,
+        "point": 9.5
+       },
+       {
+        "name": "Oklahoma City Thunder",
+        "price": 1.93,
+        "point": -9.5
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:38:08Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.95,
+        "point": 236.5
+       },
+       {
+        "name": "Under",
+        "price": 1.87,
+        "point": 236.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "bovada",
+    "title": "Bovada",
+    "last_update": "2026-10-22T12:38:48Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:38:48Z",
+      "outcomes": [
+       {
+        "name": "Denver Nuggets",
+        "price": 3.7
+       },
+       {
+        "name": "Oklahoma City Thunder",
+        "price": 1.29
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:38:48Z",
+      "outcomes": [
+       {
+        "name": "Denver Nuggets",
+        "price": 1.95,
+        "point": 9.0
+       },
+       {
+        "name": "Oklahoma City Thunder",
+        "price": 1.87,
+        "point": -9.0
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:38:48Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.91,
+        "point": 236.0
+       },
+       {
+        "name": "Under",
+        "price": 1.91,
+        "point": 236.0
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "betmgm",
+    "title": "BetMGM",
+    "last_update": "2026-10-22T12:39:04Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:39:04Z",
+      "outcomes": [
+       {
+        "name": "Denver Nuggets",
+        "price": 3.8
+       },
+       {
+        "name": "Oklahoma City Thunder",
+        "price": 1.29
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:39:04Z",
+      "outcomes": [
+       {
+        "name": "Denver Nuggets",
+        "price": 1.95,
+        "point": 8.5
+       },
+       {
+        "name": "Oklahoma City Thunder",
+        "price": 1.87,
+        "point": -8.5
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:39:04Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.85,
+        "point": 235.5
+       },
+       {
+        "name": "Under",
+        "price": 1.91,
+        "point": 235.5
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "13d9ca3bcb664829c603755d31401002",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-28T02:40:00Z",
+  "home_team": "San Antonio Spurs",
+  "away_team": "Los Angeles Lakers",
+  "bookmakers": [
+   {
+    "key": "draftkings",
+    "title": "DraftKings",
+    "last_update": "2026-10-22T12:38:12Z",
+    "markets": [
+     {
+      "key": "h2h",
+      "last_update": "2026-10-22T12:38:10Z",
+      "outcomes": [
+       {
+        "name": "Los Angeles Lakers",
+        "price": 3.05
+       },
+       {
+        "name": "San Antonio Spurs",
+        "price": 1.4
+       }
+      ]
+     },
+     {
+      "key": "spreads",
+      "last_update": "2026-10-22T12:38:10Z",
+      "outcomes": [
+       {
+        "name": "Los Angeles Lakers",
+        "price": 1.87,
+        "point": 8.5
+       },
+       {
+        "name": "San Antonio Spurs",
+        "price": 1.95,
+        "point": -8.5
+       }
+      ]
+     },
+     {
+      "key": "totals",
+      "last_update": "2026-10-22T12:38:10Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "price": 1.91,
+        "point": 232.5
+       },
+       {
+        "name": "Under",
+        "price": 1.91,
+        "point": 232.5
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+]
