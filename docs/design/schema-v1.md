@@ -1,11 +1,11 @@
 # 스키마 설계안 v1: raw / clean 레이어 + ingestion_runs (P-011)
 
-- **작성:** Data Engineer, 2026-10-22
+- **작성:** Data Engineer, 2026-10-22 (v1.1: PR #7 리뷰 반영, 바뀐 곳은 13장)
 - **상태:** 🧑 사람 승인 대기. 승인 전에는 SQLAlchemy 모델도 Alembic 마이그레이션도 만들지 않는다(P-012에서 구현).
 - **이번 승인 대상:** `raw_api_responses`, `ingestion_runs`, `teams`, `team_aliases`, `games`, `team_game_stats`, `odds_events`, `odds_snapshots`, 뷰 2개(`team_game_stats_primary`, `odds_closing_lines`).
 - **승인 대상 아님:** 모델링 레이어(`features`, `model_versions`, `predictions`, `evaluations`). 9장에 초안만 두고 단계 2에서 다시 승인받는다.
 - **근거 자료:** `docs/research/nba_api.md`(P-010), `docs/research/odds_api.md`(P-018), `tests/fixtures/nba_api/` 21개 픽스처, `docs/decisions.md` D-004·D-019·D-023~D-026, `docs/team/risks.md` B1·B3·B5.
-- **확인 방법:** 컬럼 이름과 타입은 전부 픽스처에서 직접 읽어 확인했다(10장에 명령). 아래 DDL 스케치(부록 A)는 임시 `postgres:17-alpine` 컨테이너(PostgreSQL 17.11)에 실제로 적용해 제약과 upsert가 의도대로 동작하는지 확인했다. 확인하지 못한 것은 "(미확인)"이라고 적었다.
+- **확인 방법:** 컬럼 이름과 타입은 전부 픽스처에서 직접 읽어 확인했다(12장에 명령). 아래 DDL 스케치(부록 A)는 임시 `postgres:17-alpine` 컨테이너(PostgreSQL 17.11)에 실제로 적용해 제약과 upsert가 의도대로 동작하는지 확인했다. 확인하지 못한 것은 "(미확인)"이라고 적었다.
 
 ---
 
@@ -123,21 +123,26 @@ erDiagram
 
 ### 1-3. 모든 clean 테이블에 있는 컬럼 (완료 기준 2)
 
+`source`와 `fetched_at`은 clean 테이블 6개 전부에 있다. `created_at`과 `raw_response_id`는 아래 표의 예외가 있다.
+
 | 컬럼 | 타입 | NULL | 뜻 |
 | --- | --- | --- | --- |
 | `source` | `text` | NOT NULL | 이 행의 현재 값이 어느 소스·엔드포인트에서 왔는지(예: `scheduleleaguev2`, `leaguegamelog`, `the_odds_api`) |
 | `fetched_at` | `timestamptz` | NOT NULL | 이 행의 현재 값을 담은 원본 응답을 **우리가 받은 시각**(UTC). `now()`가 아니라 raw 행의 `fetched_at`을 그대로 옮긴다. 그래야 같은 raw를 다시 정제해도 값이 같다(멱등) |
-| `created_at` | `timestamptz` | NOT NULL, 기본 `now()` | 이 행이 우리 DB에 처음 생긴 시각. 예: 현재 시즌에 나중에 추가된 경기가 언제 처음 보였는지 |
+| `created_at` | `timestamptz` | NOT NULL, 기본 `now()` (`odds_snapshots`, `team_aliases` 제외) | 이 행이 우리 DB에 처음 생긴 시각. 예: 현재 시즌에 나중에 추가된 경기가 언제 처음 보였는지. `odds_snapshots`는 행이 갱신되지 않아(`DO NOTHING`) `fetched_at`이 곧 생성 시각이고, `team_aliases`는 `fetched_at`이 그 역할을 한다 |
 | `raw_response_id` | `bigint` FK | NOT NULL (`teams`, `team_aliases` 제외) | 현재 값을 만든 원본 응답. "이 숫자 어디서 왔어?"를 한 번에 추적한다 |
 
 ### 1-4. upsert 규칙 (멱등성)
 - 모든 clean 적재는 `INSERT ... ON CONFLICT (<유니크 키>) DO UPDATE` 또는 `DO NOTHING`이다. 그래서 **같은 입력을 두 번 넣으면 두 번째는 갱신(값 동일) 또는 무시**가 되고 행 수는 같다.
 - **값이 뒤로 가지 않게 한다:** `DO UPDATE ... WHERE <표>.fetched_at <= EXCLUDED.fetched_at`. 옛날 raw를 다시 정제해도 더 최근에 받은 값을 덮어쓰지 않는다. 부록 A 컨테이너에서 같은 경기를 두 번 upsert해 행 수가 그대로인 것을 확인했다.
-- clean 테이블은 **"가장 최근에 받은 값"**만 가진다. 과거 값의 이력은 raw에 남는다(2장).
+- **소스가 주지 않는 컬럼은 건드리지 않는다.** 여러 엔드포인트가 같은 표를 upsert할 때(예: `games`를 일정과 스코어보드가 같이 채움), 각 소스의 `DO UPDATE SET`에는 **그 소스가 실제로 주는 컬럼만** 넣는다. 결과적으로 `COALESCE(EXCLUDED.x, games.x)`와 같다(없는 값은 기존 값 유지). 컬럼 목록은 표마다 "소스별 갱신 컬럼 표"로 정한다(6-1). 모든 컬럼에 일괄 `COALESCE`를 쓰지 않는 이유: 소스가 "값이 비었다"고 **명시적으로** 준 경우(예: `gameSubtype = ""` → NULL)까지 무시하게 되기 때문이다.
+- **INSERT 경로에서 NOT NULL을 채울 수 없는 소스가 있으면, 계산 규칙을 정한다.** 예: 스코어보드에는 `seasonYear`가 없으므로 `games.season`을 `game_id`에서 계산한다(6-1).
+- **적재 순서는 FK 순서다:** `raw_api_responses` → `teams`(→ `team_aliases`) → `games` → `team_game_stats`, 그리고 `games` → `odds_events` → `odds_snapshots`. 앞 표에 없는 경기의 스탯·배당 매핑은 실패 목록으로 보고하고 다음 실행에서 다시 한다.
+- clean 테이블은 **"가장 최근에 받은 값"**만 가진다. 과거 값의 이력은 raw에 남는다(3장). `source`·`raw_response_id`는 **마지막으로 쓴 소스** 하나만 가리킨다. 컬럼별로 어느 소스가 마지막에 썼는지는 저장하지 않는다(필요하면 raw 버전으로 추적).
 
 ### 1-5. 시점 관리(누수 방지)와 이 스키마의 관계
 - `games`, `team_game_stats`는 최신 값을 담는다. 피처 함수(단계 2)는 `as_of`보다 **앞에 끝난 경기**만 써야 한다. 경기가 끝난 시각은 따로 저장하지 않으므로(소스에 없음, `BoxScoreSummaryV3.duration`만 있음), ML은 `start_time_utc < as_of - (여유 시간)` 같은 규칙을 단계 2에서 정한다. 이 스키마는 그 규칙에 필요한 `start_time_utc`, `status_code`를 준다.
-- 과거 경기 기록이 나중에 고쳐질 수 있다(`meta.time`이 2023 경기에 2025로 찍혀 있었다, `nba_api.md` 6장). clean은 고쳐진 최신 값을 쓰고, 고치기 전 값은 raw에 남는다. 이 정도 차이는 누수로 보지 않는다(경기 결과 자체는 경기 직후 알 수 있는 정보). 필요하면 raw로 "그 당시 값"을 다시 만들 수 있다.
+- 과거 경기 기록이 나중에 고쳐질 수 있다(`meta.time`이 2023 경기에 2025로 찍혀 있었다, `nba_api.md` 6장). clean은 고쳐진 최신 값을 쓰고, 고치기 전 값은 raw에 남는다. 이 정도 차이는 누수로 보지 않는다(경기 결과 자체는 경기 직후 알 수 있는 정보). 필요하면 raw로 "그 당시 값"을 다시 만들 수 있다. **단, 이것은 실시간으로 수집하는 2026-27 시즌부터만 맞다.** 2023-24 ~ 2025-26은 2026년에 백필하므로 raw에도 이미 고쳐진 값만 들어 있다.
 - 배당은 시점이 핵심이라 `odds_snapshots`에 시각을 두 개(`captured_at`, `bookmaker_last_update`) 남기고, 경기 시작 후 배당은 DB가 거부한다(7장).
 
 ---
@@ -156,7 +161,7 @@ erDiagram
 | Q6 | 매일 2단계: 전날 경기의 마감 배당 | 경기별·북메이커별·마켓별로 `captured_at < commence_time`인 마지막 스냅숏 (`odds_closing_lines` 뷰) | 유니크 `(odds_event_id, market_key, bookmaker_key, outcome_side, captured_at)` |
 | Q7 | 예측 저장 시: 예측 시점 배당 | 위와 같되 `captured_at <= :predicted_at` | 같은 유니크 인덱스 |
 | Q8 | 배당 매핑: 아직 `game_id`가 없는 배당 경기 | `WHERE game_id IS NULL` | 부분 인덱스 `odds_events (commence_time) WHERE game_id IS NULL` |
-| Q9 | 백필 재개 | 요청 범위 단위 중 `status = 'succeeded'`인 기록이 없는 것 | 부분 인덱스 `ingestion_runs (job_type, scope_key) WHERE status = 'succeeded'` |
+| Q9 | 백필·증분 재개 | 요청 범위 단위 중 `status = 'succeeded'`인 기록이 없는 것(성공 기준은 4장) | 부분 인덱스 `ingestion_runs (job_type, scope_key) WHERE status = 'succeeded'` |
 | Q10 | 수집 레이어: 같은 요청의 최신 원본 | `WHERE request_hash = :h ORDER BY last_fetched_at DESC LIMIT 1` | `raw_api_responses (request_hash, last_fetched_at DESC)` |
 | Q11 | 운영: 최근 실행 기록 | `ORDER BY started_at DESC LIMIT 20` | `ingestion_runs (started_at DESC)` |
 
@@ -176,9 +181,9 @@ erDiagram
 | `request_params` | `jsonb` | NOT NULL | 요청 파라미터. 키를 정렬한 정규형. **API 키(`apiKey` 등)는 빼고 저장한다** |
 | `request_hash` | `text` | NOT NULL | `sha256(정규형 JSON {source, endpoint, request_params})`의 16진수 64자 (CHECK 정규식) |
 | `http_status` | `integer` | NOT NULL | HTTP 상태 코드. 응답 자체가 없는 실패(타임아웃, 연결 오류)는 이 표에 넣지 않고 `ingestion_runs`에 기록한다 |
-| `response_json` | `jsonb` | NULL | JSON으로 파싱되는 응답 본문 |
-| `response_text` | `text` | NULL | JSON이 아닌 본문(예: 403 HTML 차단 페이지, D-024). 둘 중 정확히 하나만 채운다 (CHECK `num_nonnulls(...) = 1`) |
-| `response_sha256` | `text` | NOT NULL | 응답 **바이트**의 sha256(파싱 전). 내용이 바뀌었는지 판단하는 값 |
+| `response_json` | `jsonb` | NULL | JSON으로 파싱되고 jsonb가 받아들이는 응답 본문. jsonb는 키를 정렬하고 중복 키는 마지막 값만 남긴다(의미는 보존, 원본 바이트는 보존 안 함) |
+| `response_text` | `text` | NULL | JSON이 아니거나 jsonb가 거부하는 본문(예: 403 HTML 차단 페이지(D-024), `\u0000`이 든 문자열). 어댑터는 jsonb 변환이 실패하면 응답을 버리지 않고 여기에 원문을 넣는다. 둘 중 정확히 하나만 채운다 (CHECK `num_nonnulls(...) = 1`) |
+| `response_sha256` | `text` | NOT NULL | 응답 **바이트**의 sha256(파싱 전). 내용이 바뀌었는지 판단하는 값. 받은 바이트를 **기록**할 뿐, 저장된 jsonb에서 다시 계산해 같아지지는 않는다 |
 | `response_bytes` | `integer` | NOT NULL | 응답 바이트 수(일정 응답은 약 4.4MB) |
 | `source_meta_time` | `text` | NULL | 응답의 `meta.time` 문자열 **그대로**(원천 데이터가 만들어진 시각). `LeagueGameLog` 같은 v2 응답에는 `meta`가 없어 NULL |
 | `fetched_at` | `timestamptz` | NOT NULL | 이 내용을 **처음** 받은 시각 |
@@ -191,6 +196,7 @@ erDiagram
 - **`meta.time`을 `timestamptz`가 아니라 `text`로 두는 이유:** 시간대가 확실하지 않다. stats 응답은 `"2025-02-17T16:54:39.5439Z"`처럼 `Z`가 붙지만, nba_api의 다른 `*Est` 필드도 `Z`를 붙인 동부 시각이었다. 라이브 스코어보드는 `"2026-10-22 03:46:30.4630"`처럼 시간대 표시가 아예 없다. P-010 호출(07:45~07:47 UTC)에서 받은 `scoreboardv3` 응답의 `meta.time`이 `03:40:41Z`였는데, 이것이 "4시간 전 UTC 캐시"인지 "5분 전 동부 시각"인지 픽스처만으로 구분할 수 없다(미확인). 잘못 해석해 시각으로 저장하는 것보다 원문을 남기는 편이 안전하다. 필요해지면 P-013에서 호출 시각과 비교해 확인하고 컬럼을 추가한다.
 - **크기:** 일정 응답 4.4MB를 같은 시즌에 매일 다시 받으면, 점수가 매일 바뀌므로 매일 새 버전이 생긴다(시즌 약 240일 × 4.4MB ≈ 1GB, 압축 전). 그래서 매일 흐름(P-017)은 작은 `ScoreboardV3`(5~41KB)로 하고 전체 일정은 주기적으로만 다시 받는 것을 권한다(P-017에서 결정). JSONB는 2KB가 넘으면 TOAST로 압축 저장된다. 이 이미지의 기본 압축은 `pglz`이고 `lz4`도 쓸 수 있음을 확인했다(`SHOW default_toast_compression` → `pglz`, `SET ... 'lz4'` 성공). 실제 압축률은 미확인(P-012에서 진짜 일정 응답으로 재본다).
 - **알려진 한계:** 내용이 A → B → A로 돌아가면 세 번째 A는 첫 행의 `last_fetched_at`만 갱신된다(새 행이 안 생김). nba_api 데이터는 점수 확정·정정처럼 앞으로만 바뀌고, The Odds API 응답에는 북메이커별 `last_update`가 들어 있어 바이트가 똑같이 돌아올 가능성은 매우 낮다고 본다(추정). 실제로 문제가 되면 `version_no` 컬럼을 추가하는 방식으로 바꿀 수 있다.
+- **`live_scoreboard`는 "같은 내용이면 새 행 없음"이 걸리지 않는다:** 이 엔드포인트의 `meta.time`은 생성 시각이 아니라 **요청 시각**으로 보인다(픽스처 `"2026-10-22 03:46:30.4630"` = P-010 호출 시각 07:46 UTC를 동부 시각으로 쓴 값). 그래서 경기 상태가 그대로여도 바이트가 매번 달라 **부를 때마다 새 행**이 생긴다. 반면 `scoreboardv3`의 `meta.time`은 생성 시각이라 안정적이다(`scoreboardv3__2026-03-05.json`은 `2026-08-04T09:20:59.2059Z`). 그래서 매일 흐름은 `scoreboardv3`를 쓰고 `live_scoreboard`는 대체 소스로만 둔다. "휘발 필드(`meta.time` 등)를 빼고 정규화한 내용으로 해시"하는 대안도 있지만, 엔드포인트마다 휘발 필드 목록을 관리해야 해서 v1에서는 고르지 않았다(A-1 대안).
 
 ---
 
@@ -226,6 +232,7 @@ erDiagram
 - **유니크(멱등성·동시 실행 방지):** 부분 유니크 `(job_type, scope_key) WHERE status = 'running'`. 같은 단위를 동시에 두 번 돌리지 못한다(부록 A에서 두 번째 `running` 삽입이 거부됨을 확인). 실행 기록 자체는 "일지"라서 다시 돌리면 행이 하나 더 생기는 것이 맞다. 멱등성은 이 표가 아니라 데이터 표에서 지킨다. 프로세스가 죽어 `running`으로 남은 행은 다음 실행이 시작할 때 오래된 것(예: 6시간 초과)을 `aborted`로 바꾼다(P-013에서 구현).
 - **인덱스:** 부분 인덱스 `(job_type, scope_key) WHERE status = 'succeeded'`(Q9), `(started_at DESC)`(Q11), `(parent_run_id)`(FK).
 - **CHECK:** `(status = 'running') = (finished_at IS NULL)`, `finished_at >= started_at`, 카운트 컬럼 `>= 0`.
+- **날짜 단위 증분의 성공 기준:** `scope_key = date_et=D` 단위는 그 날짜 경기가 **전부 `status_code = 3`(종료)이고 스탯까지 적재됐을 때만** `succeeded`로 닫는다. 늦게 끝난 경기, 연기된 경기, 게임로그에 아직 반영되지 않은 경기가 남아 있으면 `partial`로 닫고 `error_detail`에 남은 `game_id`를 적는다. `partial`은 성공이 아니므로 다음 실행이 그 날짜를 다시 받는다. 연기된 경기가 스코어보드에 어떻게 표시되는지는 미확인이라, "며칠째 `partial`인 날짜"는 품질 보고에 올린다(구현은 P-013/P-017).
 
 ---
 
@@ -242,7 +249,7 @@ erDiagram
 | `city` | `text` | NOT NULL | 도시 (`teamCity`, `city`). 예 `Denver` |
 | `nickname` | `text` | NOT NULL | 팀 별칭 (`teamName`, `nickname`). 예 `Nuggets` |
 | `full_name` | `text` | NOT NULL | 전체 이름 (`static.teams`의 `full_name`). 예 `Denver Nuggets` |
-| `source` | `text` | NOT NULL | `nba_api.static` 또는 `commonteamyears` |
+| `source` | `text` | NOT NULL | `nba_api.static`(라이브러리 내장 목록). `commonteamyears`는 `TEAM_ID`, `ABBREVIATION`, 연도만 주고 `city`·`nickname`·`full_name`이 없어 이 표를 채우지 못한다. 팀 ID 범위를 검증할 때만 쓴다 |
 | `fetched_at` | `timestamptz` | NOT NULL | 이 값을 확인한 시각 |
 | `created_at` | `timestamptz` | NOT NULL, 기본 `now()` | 처음 넣은 시각 |
 
@@ -284,13 +291,13 @@ erDiagram
 | --- | --- | --- | --- |
 | `game_id` | `text` | PK | 10자리 경기 ID `gameId`/`GAME_ID`, 예 `"0022300061"`. **정수 금지**(앞자리 0이 사라짐). CHECK `^00[1-6][0-9]{7}$` |
 | `game_type` | `text` | NOT NULL, **생성 컬럼** | ID 3번째 자리에서 DB가 자동 계산(D-025): `1 preseason`, `2 regular`, `3 allstar`, `4 playoffs`, `5 playin`, `6 cup_final`. `GENERATED ALWAYS AS (CASE substr(game_id,3,1) ...) STORED` |
-| `season` | `text` | NOT NULL | `leagueSchedule.seasonYear`, 예 `"2023-24"`. CHECK 형식 + CHECK `substr(game_id,4,2) = substr(season,3,2)`(ID의 시즌 자리와 일치) |
+| `season` | `text` | NOT NULL | `leagueSchedule.seasonYear`, 예 `"2023-24"`. CHECK 형식 + CHECK `substr(game_id,4,2) = substr(season,3,2)`(ID의 시즌 자리와 일치). `seasonYear`가 없는 소스(스코어보드)는 `game_id` 4~5자리에서 계산한다: 시작 연도 y = 2000 + 두 자리, `season = f"{y}-{(y + 1) % 100:02d}"`(예 `23` → `2023-24`). CHECK가 둘의 일치를 강제하므로 계산이 틀리면 적재가 거부된다 |
 | `game_subtype` | `text` | NULL | `gameSubtype`. 관찰값 `in-season`, `in-season-knockout`(NBA컵), `Global Games`. 빈 문자열은 NULL로 |
 | `start_time_utc` | `timestamptz` | NOT NULL | `gameDateTimeUTC`(일정) 또는 `gameTimeUTC`(스코어보드). 시각 미정이면 소스가 준 자리표시 값(관찰값: 동부 자정 = `05:00Z`) |
 | `is_time_tbd` | `boolean` | NOT NULL | `gameStatusText = "TBD"`이면 true. true인 경기의 `start_time_utc`는 진짜 시작 시각이 아니다 |
 | `status_code` | `integer` | NOT NULL | `gameStatus`. 관찰값 `1` 예정, `3` 종료. `2`는 진행 중으로 추정(미확인). CHECK `IN (1,2,3)` |
 | `status_text` | `text` | NOT NULL | `gameStatusText` 원문. 예 `"Final"`, `"Final/OT2"`, `"7:00 pm ET"`, `"TBD"` |
-| `postponed_status` | `text` | NULL | `postponedStatus` 원문. 관찰값 `"A"`(2023-24 일정), `"N"`(이후). 뜻은 미확인이라 해석하지 않고 저장만 |
+| `postponed_status` | `text` | NULL | `postponedStatus` 원문. 관찰값 `"A"`(2023-24 일정), `"N"`(이후). 뜻은 미확인이라 해석하지 않고 저장만. **일정만 준다**(스코어보드에는 없음) |
 | `home_team_id` | `integer` | NULL, FK → `teams` | `homeTeam.teamId`. 소스가 `0`(팀 미정)이면 NULL |
 | `away_team_id` | `integer` | NULL, FK → `teams` | `awayTeam.teamId`. 같은 규칙 |
 | `home_score` | `integer` | NULL | `homeTeam.score`. **`status_code = 3`일 때만 채운다.** 예정 경기는 소스가 `0`을 주지만 NULL로 저장(0점과 "아직 없음"을 구분) |
@@ -307,7 +314,25 @@ erDiagram
 - **CHECK:** 홈·원정 팀은 둘 다 NULL이거나 둘 다 있음, 홈 ≠ 원정, 홈·원정 점수는 둘 다 NULL이거나 둘 다 있음, `status_code <> 3`이면 점수 NULL, `status_code = 3`이면 점수와 팀이 있음. 부록 A에서 "종료인데 점수 없음", "ID와 시즌 불일치"가 거부되는 것을 확인했다.
 - **저장하지 않는 소스 필드:** `gameLabel`, `gameSubLabel`, `seriesText`(시즌마다 문자열이 바뀌어 판단에 쓰면 안 됨, D-025), `*Est`/`gameEt`(가짜 `Z`), `gameCode`, `arenaName`, `broadcasters`, `pointsLeaders` 등. 모델에 필요 없고 raw에 남아 있으니 필요해지면 컬럼을 추가해 raw에서 다시 채운다.
 
-**경기 유형별 저장 규칙 (승인 요청 3번):**
+**소스별 갱신 컬럼 표 (1-4 규칙 적용):** `games`는 일정과 스코어보드가 같이 채운다. 스코어보드 응답에는 `seasonYear`와 `postponedStatus`가 없다(`scoreboardv3__*.json`, `live_scoreboard__*.json` 픽스처 확인). 각 소스는 자기가 주는 컬럼만 `DO UPDATE SET`에 넣는다.
+
+| 컬럼 | `scheduleleaguev2` | `scoreboardv3`, `live_scoreboard` |
+| --- | --- | --- |
+| `game_id` | 키 | 키 |
+| `season` | 넣기·갱신 (`seasonYear`) | INSERT 때만 `game_id`에서 계산해 넣음, 갱신 안 함 |
+| `game_subtype` | 넣기·갱신 | 넣기·갱신 (`gameSubtype`) |
+| `start_time_utc`, `is_time_tbd` | 넣기·갱신 (`gameDateTimeUTC`, `gameStatusText`) | 넣기·갱신 (`gameTimeUTC`, `gameStatusText`) |
+| `status_code`, `status_text` | 넣기·갱신 | 넣기·갱신 |
+| `postponed_status` | 넣기·갱신 | **소스에 없음 → 갱신 안 함(기존 값 유지).** 스코어보드가 처음 넣은 경기는 NULL로 시작해 다음 일정 재수집 때 채워진다 |
+| `home_team_id`, `away_team_id` | 넣기·갱신 (0이면 NULL) | 넣기·갱신 (0이면 NULL) |
+| `home_score`, `away_score` | 넣기·갱신 (종료일 때만) | 넣기·갱신 (종료일 때만) |
+| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언) | 넣기·갱신 (불리언) |
+| `source`, `fetched_at`, `raw_response_id` | 넣기·갱신 | 넣기·갱신 |
+
+- 두 소스 모두 `WHERE games.fetched_at <= EXCLUDED.fetched_at` 가드를 쓴다. 그래서 "스코어보드가 더 최근이면 상태·점수를 스코어보드 값으로", "주기적 일정 재수집이 더 최근이면 일정 값으로" 맞춰진다.
+- 이 표는 스키마가 아니라 **적재 규칙**이다. 바꿔도 마이그레이션이 필요 없다. P-014/P-017이 이 표대로 구현하고 테스트한다(부록 A 컨테이너에서 "스코어보드가 먼저 넣은 경기", "스코어보드 갱신 후 `postponed_status` 유지"를 확인했다, 12장).
+
+**경기 유형별 저장 규칙 (승인 요청 A-4):**
 
 | 유형 | `games`에 저장 | 모델 학습·평가 기본 대상 | 이유 |
 | --- | --- | --- | --- |
@@ -321,7 +346,7 @@ erDiagram
 - `game_type` CHECK는 6가지를 다 허용한다. 그래서 나중에 001/003을 넣기로 바꿔도 **스키마 변경 없이** 어댑터 규칙만 바꾸면 된다.
 - 학습에서 빼는 방법: ML은 `WHERE game_type IN ('regular', 'playin', 'playoffs')`처럼 **유형으로 거른다.** 별도의 "학습 대상" 플래그 컬럼은 두지 않는다(유형에서 바로 나오는 값이라 중복이고, 기준이 바뀔 때마다 데이터를 고쳐야 한다).
 
-**시각 미정·팀 미정 경기 규칙 (승인 요청 4번):**
+**시각 미정·팀 미정 경기 규칙 (승인 요청 A-5):**
 - 관찰: 2026-27 NBA컵 8강 `0022601201`은 `gameStatusText = "TBD"`, `05:00Z`, 팀 ID `0`. NBA컵 결승 `0062600001`은 시각은 정해졌는데(`"8:00 pm ET"`, `2026-12-12T01:00:00Z`) 팀 ID가 `0`이다. 즉 **"시각 미정"과 "팀 미정"은 따로 일어난다.**
 - 규칙: 저장한다. 시각 미정은 `is_time_tbd = true`, 팀 미정은 `home_team_id`/`away_team_id` NULL. 나중에 정해지면 같은 `game_id`로 upsert되어 채워진다.
 - 이유: 일정 경기 수를 소스와 맞춰 볼 수 있고(품질 체크), "언제 처음 일정에 보였는지"(`created_at`)가 남는다. 저장하지 않으면 팀이 정해진 날 갑자기 나타나서 그 사이에 무슨 일이 있었는지 모른다.
@@ -365,11 +390,15 @@ erDiagram
 - **저장하지 않는 소스 필드:** `FG_PCT`, `FG3_PCT`, `FT_PCT`(성공/시도로 계산 가능), `WL`(점수로 계산 가능), `SEASON_ID`, `GAME_DATE`, `TEAM_ABBREVIATION`, `TEAM_NAME`, `MATCHUP`(`games`·`teams`와 중복), `VIDEO_AVAILABLE`. 박스스코어의 `starters`/`bench`(벤치 `minutes`가 선발과 같은 값으로 나오는 버그, `nba_api.md` 6장)와 `players`도 v1에서는 저장하지 않는다.
 - **포제션은 저장하지 않는다.** 필요한 입력(FGA, FTA, OREB, TOV, 그리고 상대 행의 같은 값과 DREB, FGM)은 픽스처 두 소스 모두에 빠짐없이 있다. 공식(예: 0.96 계수, 상대 리바운드 반영 여부)은 ML이 피처 버전으로 관리할 일이라 단계 2에서 계산한다. 공식을 DB에 박으면 바꿀 때마다 마이그레이션이 필요하다.
 
-**두 소스와 `TOV` 차이 (승인 요청 5번):**
+**두 소스와 `TOV` 차이 (승인 요청 A-6):**
 - 관찰: `0022300061`에서 게임로그 `TOV`가 DEN 12·LAL 12, 박스스코어 `turnovers`가 DEN 11·LAL 11이었다(박스스코어는 선수 턴오버 합과 같고, 게임로그는 팀 턴오버를 포함한 값으로 추정, `nba_api.md` 6장). 다른 두 경기는 일치했다.
 - 규칙 1: `tov`에는 **소스가 준 값을 그대로** 넣는다. 고쳐서 맞추지 않는다. 소스가 키에 들어 있으니 두 정의가 한 행에 섞이지 않는다.
 - 규칙 2: **대표 소스 우선순위는 `leaguegamelog` > `boxscoretraditionalv3`.** 백필의 기본 소스가 게임로그이고(D-023) 거의 모든 경기에 있다. ML은 원본 표가 아니라 **뷰 `team_game_stats_primary`**(경기·팀마다 우선순위가 가장 높은 행 1개)를 읽는다. 그래서 ML 코드에 "어느 소스를 고를지"가 흩어지지 않는다.
-- 결과: 피처의 `tov`는 대부분 게임로그 정의(팀 턴오버 포함)가 된다. 게임로그에 없는 NBA컵 결승(`006`)만 박스스코어 정의가 쓰인다. 이 차이는 시즌당 1경기라 무시할 만하지만, ML이 알 수 있게 뷰에 `source` 컬럼이 그대로 보인다.
+- 규칙 3 (**전제**): **매일 흐름도 현재 시즌 스탯은 `LeagueGameLog`로 받는다.** 경기가 끝난 다음 날 현재 시즌 게임로그를 시즌 유형당 1번(정규시즌 기간엔 `Regular Season` 1호출, 플레이인·플레이오프 기간엔 해당 유형 추가) 다시 받아 적재한다. 백필과 같은 엔드포인트·같은 방식이다(D-023). `PRESAGIO_OVERVIEW.md` 3장 1단계의 "박스스코어 수집"은 이 **`LeagueGameLog` 팀 박스스코어**를 뜻한다고 정한다. `BoxScoreTraditionalV3` 단독 행은 게임로그에 없는 경기(`006` NBA컵 결승)에만 만든다.
+  - 게임로그에 전날 경기가 아직 반영되지 않았으면 박스스코어로 대신 채우지 **않고**, 그 날짜를 `partial`로 남겨 다음 실행에서 다시 받는다(4장). 게임로그가 경기 후 얼마 만에 반영되는지는 미확인(P-017에서 측정).
+  - 비용: 정규시즌 게임로그 응답은 약 390KB이고 매일 내용이 바뀌므로 raw가 하루 1행씩 는다(시즌 약 170일 × 390KB ≈ 66MB, 압축 전). 호출은 하루 1~2번이라 차단 위험(B1)에 영향이 거의 없다.
+- 결과: 학습(백필)과 실시간 예측의 `tov`가 **같은 정의**(게임로그, 팀 턴오버 포함)가 되고, 나중에 다른 소스가 들어와도 대표 행이 바뀌지 않는다. 예외는 `006`만이고 시즌당 1경기다. P-020 품질 체크에 "`006`이 아닌 경기에서 대표 행 `source = 'boxscoretraditionalv3'`인 수 = 0"을 넣는다.
+- **전제가 깨지면(매일 흐름을 박스스코어로 받으면) 생기는 일:** 과거 경기는 게임로그(예 TOV 12), 최근 경기는 박스스코어(TOV 11)가 대표가 되어 **한 팀 한 시즌 안에 두 정의가 섞인다**(리뷰어가 임시 DB에서 재현). 학습과 예측의 `tov`가 경기당 약 1개씩 체계적으로 어긋날 수 있고, 나중에 게임로그가 들어오면 대표 행이 바뀌어 같은 `as_of`로 다시 계산한 피처 값이 달라진다. 그래서 이 전제를 A-6 승인 항목에 함께 올린다. (지난 예측의 피처 재현성 자체는 단계 2 `features`가 계산 당시 값을 저장하는 것으로 지킨다, 9장.)
 
 ---
 
@@ -396,7 +425,7 @@ erDiagram
 
 - **유니크(멱등성):** `UNIQUE (source, source_event_id)`. 같은 이벤트가 하루 4번 응답에 나와도 1행이다.
 - **인덱스:** `(game_id)`(FK, 경기 → 배당 조인), 부분 인덱스 `(commence_time) WHERE game_id IS NULL`(Q8).
-- **매핑 규칙(P-019에서 구현):** ① `home_team_name`, `away_team_name`을 `team_aliases(source='the_odds_api')`로 `team_id`로 바꾼다. ② `games`에서 같은 홈·원정 팀이고 `start_time_utc`가 `commence_time`과 **±6시간 안**인 경기를 찾는다. ③ 후보가 정확히 1개면 매핑, 0개나 2개 이상이면 NULL로 두고 품질 보고에 올린다. ±6시간은 같은 두 팀이 하루에 두 번 붙지 않는다는 점과 두 소스의 시각 차이를 고려한 출발값이다(두 소스 시각이 실제로 얼마나 다른지는 미확인, P-019에서 측정).
+- **매핑 규칙(P-019에서 구현):** ① `home_team_name`, `away_team_name`을 `team_aliases(source='the_odds_api')`로 `team_id`로 바꾼다. ② `games`에서 같은 홈·원정 팀이고 `start_time_utc`가 `commence_time`과 **±6시간 안**인 경기를 찾는다. ③ 후보가 정확히 1개면 매핑, 0개나 2개 이상이면 NULL로 두고 품질 보고에 올린다. 이 규칙은 "같은 팀이 같은 동부 날짜에 두 경기를 하지 않는다"를 전제로 하므로, 그 전제를 P-020 품질 체크에 넣는다(DB 제약으로는 막지 않는다). ±6시간은 같은 두 팀이 하루에 두 번 붙지 않는다는 점과 두 소스의 시각 차이를 고려한 출발값이다(두 소스 시각이 실제로 얼마나 다른지는 미확인, P-019에서 측정).
 - `game_id`에 UNIQUE를 걸지 않는다: 연기된 경기를 The Odds API가 새 `id`로 다시 만들 가능성이 있다(미확인). 한 경기에 이벤트 2개가 붙으면 품질 체크로 잡는다. 유니크는 데이터를 본 뒤에 추가하는 편이 안전하다(추가할 때 위반 데이터가 있으면 바로 드러난다).
 
 ### 7-2. `odds_snapshots`
@@ -428,13 +457,18 @@ erDiagram
 - **인덱스:** 위 유니크 인덱스가 Q6·Q7(경기·마켓·북메이커별 마지막 스냅숏)을 그대로 처리한다(컬럼 순서를 그 조회에 맞춰 정했다). 추가로 `(captured_at)`(하루치 수집 확인), `(raw_response_id)`(FK).
 - **CHECK:** `captured_at < commence_time`(경기 시작 후 배당 거부), `totals` ↔ `over/under`, `h2h` ↔ `point IS NULL`, `captured_at <= fetched_at`. `bookmaker_last_update`에는 시각 CHECK를 걸지 않는다(북메이커 시계와 우리 시계가 몇 초만 어긋나도 적재가 실패하기 때문).
 
-**예측 시점 배당과 마감 배당 구분 (완료 기준 3, 승인 요청 8번)**
+**예측 시점 배당과 마감 배당 구분 (완료 기준 3, 승인 요청 A-8)**
 - 저장할 때 "이건 마감"이라고 **딱지를 붙이지 않는다.** 대신 **시각으로 정의**한다.
-  - **마감 배당** = 경기·북메이커·마켓·쪽마다 `captured_at < odds_events.commence_time`인 스냅숏 중 **가장 늦은 것.** DB 뷰 `odds_closing_lines`로 제공한다(부록 A).
+  - **마감 배당** = 경기·북메이커·마켓·쪽마다 아래 두 조건을 만족하는 스냅숏 중 **가장 늦은 것.** DB 뷰 `odds_closing_lines`로 제공한다(부록 A).
+    1. `captured_at < odds_events.commence_time`. 기준은 **이벤트의 최신 시작 시각**이다(스냅숏에 적힌 그 당시 시작 시각이 아니다).
+    2. 스냅숏의 `commence_time`이 이벤트 최신 시작 시각과 **1시간 이내**다. 즉 "다른 일정이었을 때 받은 배당"은 마감 후보가 아니다.
+  - **연기 예:** 12-05 00:30 경기가 12-07 00:30으로 연기되고 스냅숏이 12-04 23:00(그 당시 `commence_time` 12-05 00:30) 하나뿐이면, 조건 2에서 빠져서 그 경기는 **마감 배당 없음**이 된다. 옛 배당을 마감으로 내주지 않는다. 연기 후 새 스냅숏이 들어오면 그것이 마감 후보가 된다(부록 A 컨테이너에서 두 경우 모두 확인, 12장).
+  - 뷰는 스냅숏 컬럼에 더해 `event_commence_time`(이벤트 최신 시작 시각), `game_id`, `lead_time`(= `event_commence_time - captured_at`, 마감 배당이 시작 몇 시간 전 것인지)을 내보낸다. 간격 판단은 스냅숏의 `commence_time`이 아니라 **`lead_time`**으로 한다.
+  - 1시간 허용 이유: 연기가 아닌 작은 시각 조정(몇 분)에서 그전 스냅숏이 전부 빠지지 않게 하려는 것이다. 값은 P-019에서 실제 데이터를 보고 바꿀 수 있다(뷰 정의만 바뀐다).
   - **예측 시점 배당** = 예측 하나(`predictions.predicted_at`)에 대해 `captured_at <= predicted_at`인 스냅숏 중 가장 늦은 것. 예측 표가 단계 3에 생기므로 그때 뷰나 함수로 만든다(같은 유니크 인덱스를 쓴다).
 - 이유: 딱지는 수집 작업의 "의도"일 뿐이라 틀릴 수 있다. 마감 수집 작업이 늦게 돌았거나, 경기가 연기되었거나, 나중에 더 늦은 스냅숏이 들어오면 딱지가 거짓이 된다. 과거 API로 백필한 스냅숏에는 의도라는 것이 아예 없다. 시각으로 정의하면 언제나 같은 규칙으로 다시 계산된다.
 - `capture_label`은 사람이 운영 기록을 볼 때 편하라고 남기는 참고값이다.
-- "마감이 너무 오래전"인 경우(예: 마지막 스냅숏이 경기 6시간 전)는 단계 4에서 허용 간격을 정하고 "마감 배당 없음"으로 처리한다. 스키마는 그 판단에 필요한 `captured_at`과 `commence_time`을 준다.
+- "마감이 너무 오래전"인 경우(예: 마지막 스냅숏이 경기 6시간 전)는 단계 4에서 허용 간격을 정하고 "마감 배당 없음"으로 처리한다. 스키마는 그 판단에 필요한 `lead_time`을 뷰에서 준다.
 
 **경기 시작 후 배당(live) 처리**
 - The Odds API `/odds`는 진행 중인 경기 배당도 준다(`odds_api.md` 3-2). 어댑터가 `captured_at >= commence_time`인 outcome을 버리고, 혹시 새어도 DB CHECK가 거부한다(부록 A에서 거부 확인). 원본은 raw에 그대로 남아 있으니 버려도 잃는 것이 없다.
@@ -453,9 +487,9 @@ erDiagram
 | 뷰 | 정의 | 왜 |
 | --- | --- | --- |
 | `team_game_stats_primary` | `team_game_stats`에서 `(game_id, team_id)`마다 소스 우선순위(`leaguegamelog` 1, `boxscoretraditionalv3` 2)가 가장 높은 행 1개 | ML이 "대표 스탯"을 한 가지 규칙으로 읽게 한다(6-2) |
-| `odds_closing_lines` | `odds_snapshots`에서 `(odds_event_id, market_key, bookmaker_key, outcome_side)`마다 `captured_at < commence_time`인 가장 늦은 행 | 마감 배당 정의를 한 곳에 둔다(7-2) |
+| `odds_closing_lines` | `odds_snapshots`에서 `(odds_event_id, market_key, bookmaker_key, outcome_side)`마다 `captured_at < 이벤트 최신 commence_time`이고 스냅숏 `commence_time`이 이벤트 최신 값과 1시간 이내인 가장 늦은 행. `event_commence_time`, `game_id`, `lead_time`을 함께 내보냄 | 마감 배당 정의를 한 곳에 둔다. 연기 경기에서 옛 배당을 마감으로 주지 않는다(7-2) |
 
-두 뷰 모두 부록 A 컨테이너에서 만들고 조회해 봤다(`team_game_stats_primary` → `leaguegamelog` 행만, `odds_closing_lines` → 23:00Z 스냅숏만).
+두 뷰 모두 부록 A 컨테이너에서 만들고 조회해 봤다(`team_game_stats_primary` → `leaguegamelog` 행만, `odds_closing_lines` → 23:00Z 스냅숏만, 연기 시나리오 → 행 없음, 연기 후 새 스냅숏 → 그 행).
 
 ---
 
@@ -465,7 +499,7 @@ erDiagram
 
 | 표 | 한 행 | 키 초안 | 메모 |
 | --- | --- | --- | --- |
-| `features` | 경기 1개 × 기준 시각 1개 × 피처 버전 1개 | `UNIQUE (game_id, as_of, feature_version)` | 값은 `jsonb` 한 칸(피처가 자주 바뀌는 단계라서). 안정되면 정규화 검토 |
+| `features` | 경기 1개 × 기준 시각 1개 × 피처 버전 1개 | `UNIQUE (game_id, as_of, feature_version)` | 값은 `jsonb` 한 칸(피처가 자주 바뀌는 단계라서). 안정되면 정규화 검토. **피처 값은 계산할 때 저장하고 다시 계산해 덮어쓰지 않는다**(clean 표는 최신 값만 가지므로, 지난 예측의 재현성은 이 표가 맡는다. 리뷰어 권고) |
 | `model_versions` | 학습된 모델 1개 | `UNIQUE (model_name, version)` | 학습 데이터 범위, 하이퍼파라미터(`jsonb`), 피처 버전, 시드, 코드 버전 |
 | `predictions` | 경기 1개 × 모델 버전 1개 × 예측 시각 1개 | `UNIQUE (game_id, model_version_id, predicted_at)` | `predicted_at`이 7-2 "예측 시점 배당"의 기준 |
 | `evaluations` | 예측 1개의 평가 | `UNIQUE (prediction_id, metric_version)` | 실제 결과, 지표, 마감 배당 확률과 비교. 시장 비교 불가(D-026 기간)는 NULL + 사유 |
@@ -476,14 +510,14 @@ erDiagram
 
 | # | 결정할 것 | 고른 것 | 다른 선택지 | 안 고른 이유 |
 | --- | --- | --- | --- | --- |
-| 1 | raw 응답 본문 타입 | `jsonb` (JSON 아닌 본문만 `text`) | 전부 `text` / `bytea` | `text`는 원본 바이트를 그대로 지키지만 SQL로 `meta.time`이나 특정 경기를 꺼내 볼 수 없다. 원본 바이트의 동일성은 `response_sha256`(파싱 전 바이트 해시)으로 따로 지킨다. 4.4MB는 jsonb 한도(약 255MB)에 한참 못 미친다 |
+| 1 | raw 응답 본문 타입 | `jsonb` (JSON 아닌 본문만 `text`) | 전부 `text` / `bytea` | `text`는 원본 바이트를 그대로 지키지만 SQL로 `meta.time`이나 특정 경기를 꺼내 볼 수 없다. 대신 jsonb는 **의미(파싱 결과)는 보존하지만 바이트는 보존하지 않는다**(키 정렬, 중복 키는 마지막 값만, `\u0000` 거부). `response_sha256`은 받은 바이트를 기록할 뿐 저장값과 같다는 증명은 못 한다. 목적이 \"다시 파싱해 clean을 재현\"이라 의미 보존으로 충분하다고 본다. jsonb가 거부하는 본문은 `response_text`로 떨어뜨린다. 4.4MB는 jsonb 한도(약 255MB)에 한참 못 미친다 |
 | 2 | raw 응답을 정규화 컬럼으로 펼칠지 | 펼치지 않음(raw는 통째로, 펼치는 건 clean의 일) | raw에서부터 엔드포인트별 표로 펼치기 | 엔드포인트 응답 형식이 바뀌면 raw 적재부터 깨진다. raw의 목적(무엇이 와도 일단 보관)과 반대 |
-| 3 | 같은 요청 다시 했을 때 raw | 내용이 같으면 갱신만, 다르면 새 버전 행 | 항상 덮어쓰기 / 매번 새 행 | 덮어쓰기는 정정 전 값을 잃어 "그때 무엇을 보고 예측했는지" 재현이 안 된다(원칙 2). 매번 새 행은 같은 백필을 다시 돌릴 때마다 4MB씩 쌓이고 P-013 기준 3(같은 요청 반복 시 중복 행 없음)을 어긴다 |
+| 3 | 같은 요청 다시 했을 때 raw | 내용이 같으면 갱신만, 다르면 새 버전 행 | 항상 덮어쓰기 / 매번 새 행 / 휘발 필드를 뺀 정규화 내용 해시 | 덮어쓰기는 정정 전 값을 잃어 "그때 무엇을 보고 예측했는지" 재현이 안 된다(원칙 2). 매번 새 행은 같은 백필을 다시 돌릴 때마다 4MB씩 쌓이고 P-013 기준 3(같은 요청 반복 시 중복 행 없음)을 어긴다. 정규화 해시는 `live_scoreboard`(3장)까지 중복을 막지만 엔드포인트마다 휘발 필드 목록을 관리해야 하고, 목록이 틀리면 진짜 변경을 놓친다 |
 | 4 | 키 체계 | 소스에 안정된 ID가 있는 표(`games`, `teams`, `team_game_stats`)는 **자연키**를 PK로, 없는 표(raw, runs, odds)는 **대리키 + 자연키 UNIQUE** | 모든 표에 대리키(`id bigint`) | `game_id`는 NBA 전체가 쓰는 안정된 ID라 대리키를 두면 조인마다 한 번 더 바꿔야 하고, ML·API 코드가 "우리 id"와 "NBA id"를 헷갈린다. 반대로 배당 스냅숏의 자연키는 컬럼 5개라 FK로 쓰기 불편해서 대리키를 둔다. 어느 쪽이든 **멱등성은 자연키 UNIQUE가 보장한다** |
 | 5 | 팀 ID 체계 | nba_api `TEAM_ID`(정수) 그대로 PK, 외부 이름은 `team_aliases` | 세 글자 약어(`DEN`)를 키로 / 우리만의 팀 번호 | 약어는 소스마다·시대마다 다를 수 있다(예: 브루클린 `BKN`, 다른 사이트는 `BRK`). 우리만의 번호는 nba_api가 주 소스인데 매번 변환이 필요하다. `TEAM_ID`는 연고지 이전에도 유지된다(5-1) |
-| 6 | 같은 경기·팀 두 소스 | `(game_id, team_id, source)` 키로 둘 다 보관 + 대표 뷰 | 대표 행 하나만(`(game_id, team_id)` 키) | 하나만 두면 `TOV`처럼 정의가 다른 값이 소스 구분 없이 덮어써지고, 어느 정의인지 나중에 알 수 없다. 두 소스를 비교하는 품질 체크도 못 한다 |
+| 6 | 같은 경기·팀 두 소스 | `(game_id, team_id, source)` 키로 둘 다 보관 + 대표 뷰 + 매일 흐름도 게임로그 | 대표 행 하나만(`(game_id, team_id)` 키) / 매일 흐름은 박스스코어 | 하나만 두면 `TOV`처럼 정의가 다른 값이 소스 구분 없이 덮어써지고, 어느 정의인지 나중에 알 수 없다. 두 소스를 비교하는 품질 체크도 못 한다. 매일 흐름을 박스스코어로 하면 한 시즌 안에 `TOV` 정의가 섞인다(6-2) |
 | 7 | 배당 저장 형식 | 긴 형식(outcome당 1행) | 넓은 형식(스냅숏·북메이커당 1행에 `home_ml`, `away_ml`, `spread_point`, `total_over` ... 컬럼) | 넓은 형식은 마켓이 늘면 컬럼을 추가해야 하고, 응답에 일부 마켓만 있으면 NULL이 많다. 긴 형식은 응답 구조(마켓 → outcome)와 1:1이라 변환이 단순하다 |
-| 8 | 예측 시점/마감 구분 | 시각 규칙 + 뷰 | `snapshot_type` 컬럼(`prediction`/`closing`)을 저장 | 7-2 참고. 딱지는 작업 지연·연기·과거 백필에서 틀리거나 없다 |
+| 8 | 예측 시점/마감 구분 | 시각 규칙 + 뷰(이벤트 최신 시작 시각 기준, 일정이 바뀐 스냅숏 제외) | `snapshot_type` 컬럼(`prediction`/`closing`)을 저장 / 스냅숏 자신의 `commence_time` 기준 | 7-2 참고. 딱지는 작업 지연·연기·과거 백필에서 틀리거나 없다. 스냅숏 자신의 시작 시각 기준은 연기된 경기의 옛 배당을 "1시간 30분 전 마감"처럼 보이게 한다 |
 | 9 | `game_type` | ID에서 계산하는 **생성 컬럼** | 어댑터가 계산해 일반 컬럼에 저장 / 저장 안 하고 조회 때 계산 | 생성 컬럼은 DB가 항상 ID와 일치시킨다(D-025 규칙이 한 곳). 어댑터가 넣으면 버그로 어긋날 수 있다. 조회 때 계산은 모든 ML 쿼리에 `substr` 식이 퍼진다 |
 | 10 | 시각 미정·팀 미정 경기 | 저장 + `is_time_tbd`, 팀 NULL | 저장 안 함(정해지면 넣기) | 6-1 참고 |
 | 11 | 한국/동부 시간 컬럼 | 저장 안 함, 조회 때 변환 | `start_time_kst`, `game_date_et` 컬럼 | 같은 사실을 두 곳에 두면 어긋날 수 있다(서머타임 변환 버그 등). UTC 하나만 두고 변환은 `AT TIME ZONE`/`zoneinfo`로 |
@@ -497,15 +531,15 @@ erDiagram
 
 | 번호 | 결정할 것 | 추천안 | 대안 |
 | --- | --- | --- | --- |
-| A-1 | 같은 요청을 다시 했을 때 raw를 어떻게 하나 | **내용이 바뀔 때만 새 버전 행.** `UNIQUE (request_hash, response_sha256)`, 같은 내용이면 `last_fetched_at`·`fetch_count`만 갱신 (3장) | 항상 덮어쓰기(용량 작음, 이력 없음) |
-| A-2 | P-013 완료 기준 3 "같은 요청을 다시 해도 중복 행이 생기지 않는다"의 뜻 | A-1이 승인되면 **"같은 요청 + 같은 내용이면 새 행 없음"**으로 읽는다고 PM이 확인(문장 보강은 PM 판단) | 문장 그대로 두고 A-1을 "덮어쓰기"로 |
-| A-3 | raw 본문 타입 | **`jsonb`**, JSON이 아닌 본문(차단 HTML)만 `text`, 바이트 해시는 별도 컬럼 | 전부 `text` |
-| A-4 | `games`에 넣을 경기 유형 | **002·004·005·006 저장, 001(프리시즌)·003(올스타) 저장 안 함.** 학습·평가 기본 대상은 002·004·005, 006은 단계 2에서 결정 (6-1) | 6유형 전부 저장 |
+| A-1 | 같은 요청을 다시 했을 때 raw를 어떻게 하나 | **내용(받은 바이트)이 바뀔 때만 새 버전 행.** `UNIQUE (request_hash, response_sha256)`, 같은 내용이면 `last_fetched_at`·`fetch_count`만 갱신 (3장) | 항상 덮어쓰기(용량 작음, 이력 없음) / 휘발 필드(`meta.time` 등)를 뺀 정규화 내용 해시로 판정(`live_scoreboard`도 중복 제거, 대신 엔드포인트별 휘발 필드 목록 관리) |
+| A-2 | P-013 완료 기준 3 "같은 요청을 다시 해도 중복 행이 생기지 않는다"의 뜻 | A-1이 승인되면 **"같은 요청 + 같은 내용이면 새 행 없음"**으로 읽는다고 PM이 확인(문장 보강은 PM 판단). 단 `live_scoreboard`는 `meta.time`이 요청 시각이라 같은 요청이라도 **매번 새 행**이 된다(3장). 그래서 매일 흐름은 `scoreboardv3`를 쓴다 | 문장 그대로 두고 A-1을 "덮어쓰기"로 |
+| A-3 | raw 본문 타입 | **`jsonb`**(의미는 보존, 키 순서·중복 키·원본 바이트는 보존 안 함). JSON이 아니거나 jsonb가 거부하는 본문(차단 HTML, `\u0000`)은 `text`. 받은 바이트의 sha256은 기록용 별도 컬럼 | 전부 `text`(조회 때 `::jsonb`) / `text` 원문 + `jsonb` 둘 다(용량 약 2배) |
+| A-4 | `games`에 넣을 경기 유형 | **002·004·005·006 저장, 001(프리시즌)·003(올스타) 저장 안 함.** 학습·평가 기본 대상은 002·004·005, 006은 단계 2에서 결정 (6-1) | **001도 저장하고 학습에서만 제외**(CHECK가 이미 허용해 비용이 거의 없고, 나중에 넣으려면 과거 프리시즌을 다시 받아야 함. 해외 클럽 상대 경기는 팀 ID가 `teams`에 없으면 FK로 실패 목록에 빠짐, 미확인. 리뷰어는 이쪽을 더 안전하다고 봄) / 6유형 전부 저장 |
 | A-5 | 시각 미정·팀 미정 경기 | **저장한다.** `is_time_tbd = true`, 팀 ID NULL 허용, 예측은 둘 다 정해진 경기만 | 정해질 때까지 저장 안 함 |
-| A-6 | 같은 경기·팀의 스탯 두 소스 | **`(game_id, team_id, source)` 키로 둘 다 보관, 대표는 `leaguegamelog` > `boxscoretraditionalv3`, ML은 뷰 `team_game_stats_primary`를 읽는다.** `TOV`는 소스 값 그대로 | 대표 행 하나만 |
+| A-6 | 같은 경기·팀의 스탯 두 소스 | **`(game_id, team_id, source)` 키로 둘 다 보관, 대표는 `leaguegamelog` > `boxscoretraditionalv3`, ML은 뷰 `team_game_stats_primary`를 읽는다.** `TOV`는 소스 값 그대로. **전제: 매일 흐름도 현재 시즌 스탯은 `LeagueGameLog`로 받고(하루 1~2호출, OVERVIEW 3장 1단계의 "박스스코어" = 이것), 박스스코어 단독 행은 `006`만.** 게임로그 반영 전이면 박스스코어로 대신하지 않고 `partial` (6-2) | 대표 행 하나만 / 매일 흐름은 박스스코어(호출은 경기 수만큼, 한 시즌 안에 TOV 정의가 섞이고 나중에 대표 행이 바뀜) |
 | A-7 | 키와 팀 ID 체계 | **`game_id text`, `team_id integer`(nba_api ID)를 자연키 PK로.** 외부 팀 이름은 `team_aliases` | 전 표 대리키 / 약어 키 |
-| A-8 | 배당: 예측 시점·마감 구분과 경기 후 배당 | **시각 규칙 + 뷰 `odds_closing_lines`, `snapshot_type` 저장 안 함. `captured_at < commence_time` CHECK로 경기 시작 후 배당 거부.** 긴 형식, 소수식 `numeric(10,4)` | `snapshot_type` 컬럼 저장 |
-| A-9 | 배당 경기 ↔ 우리 경기 매핑 | **`odds_events` 표에서 한 번만 매핑**(팀 별칭 + 시작 시각 ±6시간, 후보 1개일 때만). 못 찾으면 NULL + 품질 보고 | 스냅숏마다 `game_id` 직접 저장 |
+| A-8 | 배당: 예측 시점·마감 구분과 경기 후 배당 | **시각 규칙 + 뷰 `odds_closing_lines`, `snapshot_type` 저장 안 함.** 마감은 **이벤트 최신 시작 시각** 기준이고, 스냅숏의 `commence_time`이 그와 1시간 넘게 다르면(연기 전 배당) 마감 후보에서 뺀다. 뷰는 `event_commence_time`·`lead_time`을 내보낸다. `captured_at < commence_time` CHECK로 경기 시작 후 배당 거부. 긴 형식, 소수식 `numeric(10,4)` (7-2) | `snapshot_type` 컬럼 저장 / 연기 전 배당도 마감 후보로 두고 `lead_time`만 보여 주기(단계 4가 걸러야 함) |
+| A-9 | 배당 경기 ↔ 우리 경기 매핑 | **`odds_events` 표에서 한 번만 매핑**(팀 별칭 + 시작 시각 ±6시간, 후보 1개일 때만). 못 찾으면 NULL + 품질 보고. "같은 팀 같은 날 2경기 없음" 전제는 P-020 품질 체크로 확인 | 스냅숏마다 `game_id` 직접 저장 |
 | A-10 | `meta.time` 저장 방식 | **`text` 원문.** 시간대가 확실하지 않아서(3장) | `timestamptz`로 UTC 해석 |
 | A-11 | 계약에 뷰 포함 | **뷰 2개(`team_game_stats_primary`, `odds_closing_lines`)를 P-012 마이그레이션에 포함** | 뷰 없이 ML 코드에서 규칙 구현 |
 
@@ -528,6 +562,9 @@ erDiagram
   - `team_game_stats` 두 소스 2행 저장, 같은 행 재적재 `INSERT 0 0`, 대표 뷰는 게임로그 행
   - `odds_snapshots` 경기 시작 후 배당 거부, `h2h`에 `point` 거부, 마감 뷰는 가장 늦은 경기 전 스냅숏
   - `ingestion_runs` 같은 단위 `running` 2개 거부
+  - (v1.1) 스코어보드가 일정보다 먼저 준 경기: `season`을 `game_id`에서 계산해 INSERT 성공. 이어서 일정이 `postponed_status = 'A'`를 넣은 뒤 스코어보드용 `DO UPDATE SET`(그 소스 컬럼만)으로 갱신 → `postponed_status` 'A' 유지, 점수·상태만 바뀜
+  - (v1.1) 연기: 이벤트 `commence_time`을 12-05 00:30 → 12-07 00:30으로 바꾸고 스냅숏이 12-04 23:00(그 당시 12-05 00:30) 하나뿐 → `odds_closing_lines` 0행. 연기 후 12-06 20:00 스냅숏 추가 → 그 행이 마감, `lead_time` = `04:30:00`(연기 전 시점의 같은 계산은 `01:30:00`)
+  - (v1.1) jsonb: `'{\"b\":1,\"a\":2,\"a\":3}'::jsonb` → `{\"a\": 3, \"b\": 1}`(정렬, 중복 키 소실), `'{\"s\":\"a\u0000b\"}'::jsonb` → 에러(그래서 `response_text`로 떨어뜨림)
   - `SHOW default_toast_compression` → `pglz`, `lz4` 설정 가능
 
 ### 확인 못 한 것
@@ -536,7 +573,29 @@ erDiagram
 - `meta.time`의 시간대 → P-013.
 - 올스타(003)·프리시즌(001) 경기의 팀 ID 형태(픽스처에 올스타 없음, 프리시즌은 NBA 팀끼리 경기만 있음).
 - 4.4MB 일정 응답의 실제 jsonb 압축률 → P-012.
+- `LeagueGameLog`에 전날 경기가 반영되기까지 걸리는 시간 → P-017(A-6 전제의 운영 조건).
+- 연기된 경기가 스코어보드·일정·The Odds API에 어떻게 표시되는지(새 시각으로 바뀌는지, 새 이벤트 `id`가 생기는지) → P-014/P-019.
 - 30팀 × 4시즌 전수의 팀 이름 변경 여부(픽스처는 20팀 샘플) → P-014.
+
+---
+
+## 13. 변경 기록
+
+### v1.1 (2026-10-22, PR #7 리뷰 반영)
+표 구조와 키는 바꾸지 않았다. 바뀐 DDL은 `odds_closing_lines` 뷰 하나다.
+
+| 리뷰 지적 | 바뀐 곳 |
+| --- | --- |
+| [중간] 1 연기 경기의 마감 배당 | 7-2 마감 정의(이벤트 최신 시작 시각 기준 + 일정이 바뀐 스냅숏 제외), 8장 뷰 설명, 부록 A 뷰(`event_commence_time`, `game_id`, `lead_time` 추가), 10장 #8, A-8 |
+| [중간] 2 `games` 소스별 upsert | 1-4(소스가 주지 않는 컬럼은 갱신 안 함, INSERT 계산 규칙, FK 적재 순서), 6-1(`season` 계산식, `postponed_status`는 일정만, 소스별 갱신 컬럼 표) |
+| [중간] 3 `TOV` 정의 섞임 | 6-2 규칙 3(매일 흐름도 `LeagueGameLog`, OVERVIEW 3장 "박스스코어"의 뜻, 반영 전이면 `partial`), 전제가 깨질 때의 trade-off, 10장 #6, A-6, 9장 `features` 메모 |
+| [낮음] 4 jsonb 바이트 동일성 과장 | 3장 `response_json`·`response_text`·`response_sha256` 설명(`\u0000` 등은 `text`로), 10장 #1, A-3 |
+| [낮음] 5 `live_scoreboard` `meta.time` | 3장 알려진 한계, 10장 #3, A-1 대안, A-2 |
+| [낮음] 6 사실 오류 | 머리말(12장), 1-3(`created_at` 예외), 1-5(raw 재현은 2026-27부터), 5-1(`teams.source`는 `nba_api.static`) |
+| [낮음] 7 증분 성공 기준 | 4장 "날짜 단위 증분의 성공 기준", 2장 Q9 |
+| [낮음] 8 A-4 대안, A-8 연기 | A-4 대안 칸, A-8 |
+| (참고) 같은 팀 같은 날 2경기 | 7-1 매핑 규칙, A-9 |
+| (작성자 발견) 본문의 "승인 요청 N번"이 11장 번호와 어긋남 | 6-1, 6-2, 7-2를 A-4, A-5, A-6, A-8로 수정 |
 
 ---
 
@@ -740,9 +799,15 @@ CREATE INDEX ix_odds_snapshots_captured ON odds_snapshots (captured_at);
 CREATE INDEX ix_odds_snapshots_raw ON odds_snapshots (raw_response_id);
 
 CREATE VIEW odds_closing_lines AS
-SELECT DISTINCT ON (s.odds_event_id, s.market_key, s.bookmaker_key, s.outcome_side) s.*
+SELECT DISTINCT ON (s.odds_event_id, s.market_key, s.bookmaker_key, s.outcome_side)
+       s.*,
+       e.commence_time                 AS event_commence_time,
+       e.game_id,
+       e.commence_time - s.captured_at AS lead_time
 FROM odds_snapshots s
 JOIN odds_events e USING (odds_event_id)
 WHERE s.captured_at < e.commence_time
+  AND s.commence_time BETWEEN e.commence_time - interval '1 hour'
+                          AND e.commence_time + interval '1 hour'
 ORDER BY s.odds_event_id, s.market_key, s.bookmaker_key, s.outcome_side, s.captured_at DESC;
 ```
