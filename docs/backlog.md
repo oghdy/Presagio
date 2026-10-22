@@ -20,11 +20,11 @@
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | DONE | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | DONE | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | DONE | P-010, P-013 |
-| P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | REVIEW | P-014 |
-| P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
+| P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | DONE | P-014 |
+| P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | IN PROGRESS | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
-| P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | REVIEW | P-012, P-018 승인 |
+| P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
@@ -247,7 +247,7 @@
   - 2026-10-22 PM: 수정 커밋 `c23ed6b`(7파일, 스키마 변경 없음, 설계안 v1.2). 재리뷰 "수락 가능", 1차 발견 1~5 전부 해결, 124 passed, 멱등성 재확인. 결정 D-034 기록. PM 수락. 사람 머지 대기.
 
 ### P-015 nba_api 어댑터: 팀 박스스코어 → team_game_stats
-- **상태:** REVIEW (2026-10-22 PR #13 열림, 브랜치 `feat/P-015-team-game-stats`)
+- **상태:** DONE (2026-10-22, PR #13 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-014
@@ -267,7 +267,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 기준 1~4 O(리뷰어 SQL 독립 확인, 실제 85경기 불일치 0). [낮음] 3건: 정수 상한 미검사(비현실적), 매일 흐름에서 득점 검증이 자기 자신과 비교됨 → P-020 체크 항목으로, 게임로그 응답의 동점 정렬 순서가 호출마다 바뀌어 raw 새 버전이 생길 수 있음 → P-017 참고. PM 수락. 사람 머지 대기.
 
 ### P-016 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등)
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-016-backfill-cli`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-014, P-015
@@ -281,6 +281,8 @@
   4. 일부 날짜가 실패해도 전체가 멈추지 않고 실패 목록을 마지막에 출력한다.
   5. (2026-10-22 추가, D-032 후속) `track_run`에 `stale_after_hours`를 설정값(`STALE_RUN_HOURS`)으로 넘겨 죽은 프로세스의 `running` 행이 이후 실행을 영구 거부하지 않는다(테스트). `RunTracker.finish()`는 `WHERE status='running'`으로만 갱신한다(테스트). `httpx.DecodingError` 등 `TransportError` 밖의 httpx 예외도 `IngestionError`로 감싼다. `job_type` 값 목록과 `code_version`(git 해시) 자동 기록을 확정한다. CLI 로깅 설정이 `httpx` 로거를 INFO로 내리지 않는다(쿼리스트링에 키가 찍힘, D-031).
 - **확인 방법:** 픽스처 기반 테스트 + `--dry-run` 실행.
+- **메모:**
+  - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-016-briefing.md`. 호출 단위는 시즌×시즌 유형, 재개는 scope_key + has_succeeded, 차단은 즉시 전체 중단.
 
 ### P-017 증분 수집 CLI (전날 결과 + 오늘 일정)
 - **상태:** TODO
@@ -317,7 +319,7 @@
   - 2026-10-22 PM: 보완 커밋 `ecd418d`(문서만, PM이 diff 확인: 스냅숏 상한 5회, Odds-API.io 약관 채움, 되돌리기·시간 민감성 추가). CI 초록. PM 수락. 사람 결정 대기(decisions.md Q-006, Q-007).
 
 ### P-019 배당 어댑터 인터페이스 + odds_snapshots 저장
-- **상태:** REVIEW (2026-10-22 PR #14 열림, 브랜치 `feat/P-019-odds-adapter`)
+- **상태:** DONE (2026-10-22, PR #14 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-012, P-018 승인(D-026으로 완료: The Odds API 무료 플랜)
