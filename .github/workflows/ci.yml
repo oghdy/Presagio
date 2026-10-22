@@ -59,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Full history, so every commit is scanned, not just the tip.
+          # Full history of every remote branch and tag, not just the tip.
           fetch-depth: 0
           persist-credentials: false
 
@@ -73,4 +73,7 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Scan full git history
+        # Scans the history of every ref the checkout fetched (all remote branches), because
+        # gitleaks git defaults to `git log --all`. A secret on any branch fails this job on
+        # every PR. To narrow it to the PR's own history, pass --log-opts=HEAD.
         run: gitleaks git --redact --verbose --no-banner .
