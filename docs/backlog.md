@@ -96,6 +96,7 @@
   - 2026-10-22 PM: PR #4(https://github.com/oghdy/Presagio/pull/4) 도착. README에서 PR #2와 충돌 예정(해결법은 PR 본문). reviewer 카드 올림. 머지 순서: #2 먼저, 그 다음 #4 충돌 해결 후.
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~4 전부 O. 발견 [중간] 1건(비밀번호 틀려도 조용히 skip, 사유 오표시), [낮음] 4건. PM이 작업자에게 [중간]과 [낮음] 2건(make_engine 타임아웃 함정, healthy 대기 안내) 수정 요청. 나머지는 단계 1로. 결정 D-019 기록.
   - 2026-10-22 PM: 수정 커밋 3개(HEAD `1b5539c`, 테스트 15→19) 도착. 리뷰어에게 재리뷰 요청. README 충돌은 PR #2 머지 후 해결.
+  - 2026-10-22 PM: 재리뷰 판정 "수정 후 재리뷰"(반려 1회차). 1차 발견 1~3은 고쳐짐, 완료 기준 전부 O 유지. 새 발견 [중간]: fail 경로의 pytest traceback에 `DATABASE_URL` 비밀번호 평문 노출(`grep -c WRONGPW` → 4). 작업자에게 그것만 수정 요청(`__tracebackhide__` 또는 URL 객체). fixture session 범위는 단계 1로.
 
 ### P-003 GitHub Actions CI (lint + test)
 - **상태:** REVIEW (2026-10-22 PR #2 열림, 브랜치 `feat/P-003-github-actions-ci`)
