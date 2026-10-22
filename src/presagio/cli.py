@@ -1,4 +1,4 @@
-"""`presagio` command line: ingestion commands (backfill, ingest-daily).
+"""`presagio` command line: ingestion commands (backfill, ingest-daily) and quality-check.
 
 Exit codes: 0 everything done, 1 some unit not done (or an error before starting), 2 stopped by
 a block (HTTP 403/429), 64 bad arguments (sysexits EX_USAGE, so it never reads as "blocked").
@@ -33,6 +33,8 @@ from presagio.ingestion.client import IngestionClient, db_raw_store
 from presagio.ingestion.errors import RunAlreadyRunningError
 from presagio.ingestion.incremental import add_ingest_daily_parser
 from presagio.ingestion.runs import error_line
+from presagio.quality.cli import COMMAND as QUALITY_CHECK
+from presagio.quality.cli import add_quality_check_parser, cmd_quality_check
 
 logger = logging.getLogger("presagio.cli")
 
@@ -143,6 +145,7 @@ def build_parser() -> ArgumentParser:
         help="close 'running' rows older than H hours as aborted first (default STALE_RUN_HOURS)",
     )
     add_ingest_daily_parser(commands)  # P-017
+    add_quality_check_parser(commands)
     return parser
 
 
@@ -316,6 +319,10 @@ def main(
     """Entry point (`presagio`); engine, sources and now are injectable for tests."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == QUALITY_CHECK:
+        if setup_logging:
+            configure_logging(args.verbose)
+        return cmd_quality_check(args, engine=engine)
     if hasattr(args, "run"):  # subcommands that bring their own runner (set_defaults(run=...))
         if setup_logging:
             configure_logging(args.verbose)

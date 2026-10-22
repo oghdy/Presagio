@@ -22,10 +22,10 @@
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | DONE | P-010, P-013 |
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | DONE | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | DONE | P-014, P-015 |
-| P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | IN PROGRESS | P-016 |
+| P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | REVIEW | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
-| P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | IN PROGRESS | P-015 |
+| P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | DONE | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
 | P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | DONE | P-002 |
@@ -288,7 +288,7 @@
   - 2026-10-22 PM: 수정 커밋 `759f3b1`(재개는 최신 run 기준, 옵션 양수 검사, README). 재리뷰 "수락 가능", 새 발견 0, 305 passed. PM 수락. 사람 머지 대기.
 
 ### P-017 증분 수집 CLI (전날 결과 + 오늘 일정)
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-017-ingest-daily`)
+- **상태:** REVIEW (2026-10-22 PR #17 열림, 브랜치 `feat/P-017-ingest-daily`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-016
@@ -302,6 +302,9 @@
 - **메모:**
   - 2026-10-22 PM(P-015·P-019 리뷰 이관): (1) D-027 배당 하루 최대 4회의 정확한 시각(예측 시점 1회 + tip-off 시간대별 마감)을 여기서 정한다. (2) 배당 응답에 중복 `event id`가 있으면 그 이벤트만 제외(지금은 전체 실패). (3) 게임로그는 동점 날짜 정렬 순서가 호출마다 바뀌어 raw 새 버전이 생길 수 있다(A-1 보장 안 됨, clean은 멱등). 매일 게임로그 재수집 비용에 참고. (4) 스코어보드(`scoreboardv3`) 갱신 경로는 설계안 6-1 표대로 여기서 구현.
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-017-briefing.md`. P-020과 병렬(`cli.py`는 서브커맨드 등록 줄만). The Odds API 실제 호출 0회(필요 시 PM 경유).
+  - 2026-10-22 PM: PR #17(https://github.com/oghdy/Presagio/pull/17) 도착. 실제 실행 1회(nba_api 3회, 배당 skipped, exit 0). reviewer 카드 올림.
+  - 2026-10-22 PM: 리뷰 판정 "수락 가능", 기준 1~3 O(서머타임 경계·자정·예정→종료·멱등·재시도 창 재현, 실제 3호출). [낮음] 3건(README 호출 수, get_settings 위치, 테스트 주석) + 팀 갱신 20h → **7일**로 결정 + P-020 체크 연결 요청. 수집 시각 D-038 승인. 결정 D-039 기록. 조건부 수락: #16 머지 후 main 합치고 재확인.
+  - 2026-10-22 PM: 수정 `f482fb3` 1차 재확인 "수락 가능"(팀 7일, 설정 오류 한 줄, 테스트 값, 운영 메모. 365 passed). 남은 것: #16 머지 후 main 합치기 + 품질 체크 연결 → 2차 재확인.
 
 ### P-018 🧑 배당 API 후보 조사 (스파이크)
 - **상태:** DONE (2026-10-22, PR #5 squash merge. 사람 결정 D-026: The Odds API 무료 플랜, 과거 백필 보류. 무료 키 발급 완료, `.env`에 보관)
@@ -341,7 +344,7 @@
   - 2026-10-22 PM: 사람 승인으로 실제 호출 2회(`/events` 무료, `/odds` 3크레딧, 잔여 497). 커밋 `d4b2704`: 실제 픽스처 2개(경기 3개로 자름, 키 없음), 팀 이름 시드 30개 확인, 41/41 매핑(시각 차이 최대 600초). 리뷰 판정 "수락 가능", 기준 1~4 O(가짜 키 누출 0회를 pg_dump 10.5MB까지 grep). [낮음] 4건(중복 event id 시 전체 실패 → P-017, 쿼터는 성공 run에만 기록, D-027 4회 시각 미정 → P-017). 결정 D-036 기록. PM 수락. 사람 머지 대기.
 
 ### P-020 데이터 품질 체크 모듈 + CLI
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-020-quality-checks`)
+- **상태:** DONE (2026-10-22, PR #16 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-015
@@ -355,6 +358,9 @@
 - **메모:**
   - 2026-10-22 PM(P-015 리뷰 이관): 체크 항목에 "`games` 점수 출처가 `leaguegamelog`인 경기는 일정/스코어보드 재수집 값과 대조"를 넣는다(매일 흐름에서는 득점 검증이 자기 자신과 비교되기 때문). 배당 쪽: `odds_events.game_id` NULL 비율과 사유별 개수.
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-020-briefing.md`. P-017과 병렬(`cli.py`는 서브커맨드 등록 줄만, `loaders/`·`sources/` 금지).
+  - 2026-10-22 PM: PR #16(https://github.com/oghdy/Presagio/pull/16) 도착. 읽기 전용 체크 14개, 355 passed. reviewer 카드 올림.
+  - 2026-10-22 PM: 리뷰 판정 "수락 가능", 기준 1~3 O(읽기 전용·14개 정상/고장·종료 코드 재현, 심각·중간 0). [낮음] 3건 중 L1(raw 없으면 조용히 PASS → skip/warn), L2(이벤트 시작 시각 기준 warn 추가) 머지 전 수정 요청. 결정 D-040 기록. 조건부 수락, 재확인 후 **#16 먼저 머지**.
+  - 2026-10-22 PM: 수정 `4435e21` 재리뷰 "수락 가능"(L1 skip/warn, L2 이벤트 기준 warn 재현, 357 passed). PM 수락. 사람 머지 대기.
 
 ### P-021 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고
 - **상태:** TODO

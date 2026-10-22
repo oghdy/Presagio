@@ -235,6 +235,50 @@ uv run presagio ingest-daily --odds-only
 - 종료 코드는 백필과 같다: 전부 성공 `0`, 하나라도 성공 아님(`partial` 포함) `1`, 403/429 차단으로 즉시 멈춤 `2`, 인자 오류 `64`.
 - 기록은 `ingestion_runs`에 부모 행(`job_type = 'incremental'`, `scope_key = 'date_kst=<D>'`) 1개와 단계별 자식 행으로 남는다. 어제 날짜의 결과 단위는 `job_type = 'schedule'`, `scope_key = 'date_et=<D-1>'`이다.
 
+### 9. 품질 체크 (데이터가 상식에 맞는지 보기)
+
+`presagio quality-check`는 DB에 들어 있는 데이터가 말이 되는지 검사하고 체크마다 한 줄씩 표로 보여 준다. **읽기만 한다**(DB를 고치지 않고, 외부 호출도 0번). 체크는 읽기 전용 트랜잭션 안에서 돌아서, 실수로 쓰려고 해도 DB가 거부한다.
+
+```bash
+uv run presagio quality-check --season 2023-24
+```
+
+표의 칸: 체크 이름, 대상 범위, 상태, 통과 수, 실패 수, 실패 예시 ID(최대 5개), 한 줄 설명. 표 아래 "Notes"에 시즌별 경기 수 같은 보충 설명이 나온다.
+
+무엇을 보나(전부 14개):
+
+| 체크 | 실패하면 무슨 뜻인가 |
+| --- | --- |
+| `team_rows_per_game` | 끝난 경기(정규·플레이인·플레이오프)에 팀 스탯 행이 홈 1 + 원정 1이 아니다. NBA컵 결승은 박스스코어를 필요할 때만 받으므로 빠진다 |
+| `points_match_score` | 두 팀 득점 합이 최종 점수와 다르거나, 홈 팀 득점이 홈 점수와 다르다 |
+| `stat_arithmetic` | 팀 스탯 한 행 안에서 `reb = oreb + dreb` 또는 `pts = 2×fgm + fg3m + ftm`이 안 맞는다(설계안 6-2에서 품질 체크로 넘긴 산술 관계) |
+| `final_scores_present` | 끝난 경기인데 점수가 비어 있다(DB 제약이 막지만 혹시 대비) |
+| `regular_season_games` | 끝난 시즌의 정규시즌 경기 수가 1,230(30팀 × 82 ÷ 2)이 아니다. **진행 중 시즌**은 예정 경기까지 센 수를 보여 주고 실패로 치지 않는다(30경기 넘게 모자라면 경고만) |
+| `one_game_per_team_day` | 같은 팀이 같은 미국 동부 날짜에 두 경기를 한다(배당 매핑의 전제, D-036) |
+| `gamelog_vs_schedule_score` | 게임로그로 넣은 점수가 일정·스코어보드 원본(raw)의 최종 점수와 다르다(매일 흐름에서 득점 검증이 자기 자신과 비교되는 것을 보완). 원본에 아직 종료 점수가 없어 비교 못 한 경기는 경고, 하나도 비교 못 하면 `SKIP` |
+| `primary_stats_source` | NBA컵 결승이 아닌 경기의 대표 스탯이 게임로그가 아니라 박스스코어다(D-028 A-6) |
+| `teams_and_aliases` | 팀이 30개가 아니거나, 어떤 팀에 `nba_api`·`the_odds_api` 별칭이 없다 |
+| `odds_after_start` | 실패: 스냅숏이 **자기에게 적힌** 시작 시각 이후에 잡혔거나(DB 제약이 막으므로 제약이 사라졌을 때만), 마감 배당 뷰가 이벤트 시작 후 배당을 내준다. 경고: 이벤트의 **최신** 시작 시각(예: 경기가 앞당겨짐) 이후에 잡힌 스냅숏 |
+| `odds_unmatched_events` (경고) | 우리 경기와 이어지지 않은 배당 이벤트 비율과 사유별 개수 |
+| `odds_events_per_game` (경고) | 한 경기에 배당 이벤트가 2개 이상 붙었다 |
+| `past_games_not_final` (경고) | 시작한 지 하루가 지났는데 아직 "종료"가 아닌 경기 |
+| `recent_failed_runs` (경고) | 최근 7일 수집 실행 중 `partial`/`failed`/`aborted`로 끝났고 나중에 다시 성공하지 않은 것 |
+
+상태는 `PASS`(통과), `FAIL`(데이터가 틀림), `WARN`(볼 만한 것, 종료 코드에 영향 없음), `ERROR`(체크 자체가 못 돎), `SKIP`(이 범위에서는 의미 없음) 다섯 가지다. **종료 코드: `FAIL`이나 `ERROR`가 하나도 없으면 `0`, 있으면 `1`, 인자 오류는 `64`.** 체크 하나가 오류로 죽어도 나머지는 끝까지 돈다.
+
+범위와 옵션:
+
+```bash
+uv run presagio quality-check                                  # 전체 시즌
+uv run presagio quality-check --date 2026-10-22                # 그 미국 동부 날짜의 경기만
+uv run presagio quality-check --check points_match_score --check team_rows_per_game
+uv run presagio quality-check --season 2025-26 --json          # 기계가 읽는 JSON (단계 6 알림용)
+```
+
+- `--games-tolerance N`: 끝난 시즌의 경기 수가 1,230에서 N경기까지 달라도 통과(기본 0). 단축 시즌을 다룰 때 쓴다.
+- `--recent-days N`: 수집 실행을 며칠치 볼지(기본 7).
+- 코드에서 부를 때는 `presagio.quality.run_checks(engine, season=..., date_et=...)`가 결과 객체(`QualityReport`)를 돌려준다. `report.exit_code`, `report.as_dict()`를 쓴다.
+
 ## 기술 스택 (기본안)
 
 Python 3.12 · uv · PostgreSQL · SQLAlchemy 2 + Alembic · nba_api + httpx · scikit-learn + LightGBM · FastAPI · pytest + ruff
