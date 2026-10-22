@@ -386,6 +386,9 @@
 단계 1이 끝나면 PM이 사람 확인을 받고 티켓으로 만든다. 지금은 제목만.
 
 - 단계 2: 피처 모듈(as_of), 롤링 효율/페이스, 휴식일/백투백, Elo, 단순 기준선, 누수 테스트, features 테이블 승인
+  - (D-033) predictions는 경기당 여러 `as_of` 스냅숏 허용 + 참조 배당 스냅숏. 전 경기 승패 확률과 총점(언더/오버) 둘 다. 예측 시각 결정.
+- 단계 4 (D-033 추가): edge 계산, 스테이킹(정액 vs 분수 Kelly), 가상 자금 시뮬레이터, ROI·CLV·낙폭 백테스트, `recommendations`·`bankroll_ledger` 표 승인, 과거 배당 백필($59) 재결정
+- 단계 5 (D-033 추가): `GET /recommendations/today`, 대시보드에 오늘의 추천과 가상 자금 곡선
 - 단계 3: 로지스틱 회귀, LightGBM, 총점 회귀, model_versions, 보정
 - 단계 4: walk-forward 백테스트 명령, 지표, reliability diagram, 시장 확률 변환과 비교, experiments.md
 - 단계 5: FastAPI 5개 엔드포인트, 테스트, 대시보드 기술 결정
