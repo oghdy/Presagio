@@ -284,10 +284,8 @@ def test_gamelog_score_with_home_away_swapped_raw_is_compared_by_team(
     assert one(conn, "gamelog_vs_schedule_score").status == PASS
 
 
-def test_gamelog_game_without_raw_final_is_not_counted(
-    conn: Connection, baseline: Baseline
-) -> None:
-    """No final score in any schedule/scoreboard response: not comparable, noted, not failed."""
+def test_gamelog_game_without_raw_final_warns(conn: Connection, baseline: Baseline) -> None:
+    """One game has no final score in any schedule/scoreboard response: a warning with its ID."""
     sql(
         conn,
         """
@@ -296,9 +294,25 @@ def test_gamelog_game_without_raw_final_is_not_counted(
         WHERE endpoint = 'scheduleleaguev2'
         """,
     )
+    report = run_checks(conn, checks=["gamelog_vs_schedule_score"])
+    (result,) = report.results
+    assert (result.status, result.checked, result.passed) == (WARN, 1232, 1231)
+    assert result.examples == (baseline.regular_games[0],)
+    assert result.note.startswith("1 of 1232 game-log game(s) have no final score")
+    assert report.exit_code == 0
+
+
+def test_gamelog_scores_with_nothing_to_compare_are_skipped(conn: Connection) -> None:
+    """No usable raw at all (the daily flow before a final scoreboard): skip, not a silent pass."""
+    sql(
+        conn,
+        "UPDATE raw_api_responses SET response_json = '{}' WHERE endpoint = 'scheduleleaguev2'",
+    )
     result = one(conn, "gamelog_vs_schedule_score")
-    assert (result.status, result.checked) == (PASS, 1231)
-    assert result.note.startswith("1 game-log game(s) have no final score")
+    assert (result.status, result.checked) == (SKIP, 0)
+    assert result.note == (
+        "none of 1232 game-log game(s) has a final score in a schedule or scoreboard response yet"
+    )
 
 
 def test_scoreboard_raw_newer_than_schedule_is_used(conn: Connection, baseline: Baseline) -> None:
@@ -380,6 +394,29 @@ def test_snapshot_after_start_fails(conn: Connection, baseline: Baseline) -> Non
     assert (result.status, result.examples) == (FAIL, (str(bad),))
 
 
+def test_snapshot_after_the_events_moved_start_warns(conn: Connection, baseline: Baseline) -> None:
+    """The event moves 3 h earlier: the snapshot taken 2 h before the old start is now 1 h late.
+
+    Its own commence_time still passes the DB CHECK, and the closing view leaves it out, so this
+    is a warning (a late capture to look at), not a failure.
+    """
+    event = first_odds_event(conn)
+    snapshot = conn.execute(
+        text("SELECT odds_snapshot_id FROM odds_snapshots WHERE odds_event_id = :e"), {"e": event}
+    ).scalar_one()
+    assert one(conn, "odds_after_start").status == PASS
+    sql(
+        conn,
+        "UPDATE odds_events SET commence_time = commence_time - interval '3 hours' "
+        "WHERE odds_event_id = :e",
+        e=event,
+    )
+    report = run_checks(conn, checks=["odds_after_start"])
+    (result,) = report.results
+    assert (result.status, result.examples) == (WARN, (f"event_start:{snapshot}",))
+    assert report.exit_code == 0
+
+
 def test_closing_line_view_change_is_caught(conn: Connection, baseline: Baseline) -> None:
     """If odds_closing_lines lost its 'before the start' rule, the post-start row shows up."""
     from .conftest import insert_snapshot
@@ -394,7 +431,9 @@ def test_closing_line_view_change_is_caught(conn: Connection, baseline: Baseline
         timedelta(minutes=-5),
         raw,
     )
-    assert one(conn, "odds_after_start").status == PASS  # the real view excludes it
+    # The real view excludes it; it is only a warning for being late against the event start.
+    before = one(conn, "odds_after_start")
+    assert (before.status, before.examples) == (WARN, (f"event_start:{late}",))
     sql(
         conn,
         """
@@ -408,7 +447,7 @@ def test_closing_line_view_change_is_caught(conn: Connection, baseline: Baseline
         """,
     )
     result = one(conn, "odds_after_start")
-    assert (result.status, result.examples) == (FAIL, (f"closing:{late}",))
+    assert (result.status, result.examples) == (FAIL, (f"closing:{late}", f"event_start:{late}"))
 
 
 def insert_event(conn: Connection, event: str, game_id: str | None, start: Any) -> int:

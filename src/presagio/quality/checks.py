@@ -442,11 +442,22 @@ def check_gamelog_vs_schedule_score(conn: Connection, scope: Scope, cfg: CheckSe
         {**params, "endpoints": tuple(SCORE_SOURCES)},
     )
     comparable = [r for r in rows if r.comparable]
-    outcome = Outcome(len(comparable), [r.game_id for r in comparable if not r.ok])
-    if len(comparable) < len(rows):
+    missing = [r.game_id for r in rows if not r.comparable]
+    if rows and not comparable:
+        # Nothing to compare with (e.g. the daily flow before a final scoreboard is stored):
+        # say so instead of passing silently.
+        return Outcome(
+            0,
+            note=f"none of {len(rows)} game-log game(s) has a final score in a schedule or "
+            "scoreboard response yet",
+            skipped=True,
+        )
+    # Games that could not be compared are warnings, so a partial comparison never looks clean.
+    outcome = Outcome(len(rows), [r.game_id for r in comparable if not r.ok], missing)
+    if missing:
         outcome.note = (
-            f"{len(rows) - len(comparable)} game-log game(s) have no final score in a schedule "
-            "or scoreboard response yet (not counted)"
+            f"{len(missing)} of {len(rows)} game-log game(s) have no final score in a schedule "
+            "or scoreboard response yet (listed as warnings)"
         )
     return outcome
 
@@ -538,12 +549,17 @@ def check_teams_and_aliases(conn: Connection, scope: Scope, cfg: CheckSettings) 
 
 
 def check_odds_after_start(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
-    """No snapshot captured at or after its start, and no closing line after the event start."""
+    """No snapshot at/after its own start or closing line after the event start (fail); no
+    snapshot at/after the event's latest start, e.g. the event moved earlier (warn).
+
+    The first condition is also a DB CHECK, so it only fails if that CHECK is gone.
+    """
     where, params = scope.time_where("e.commence_time")
     snapshots = _rows(
         conn,
         f"""
-        SELECT s.odds_snapshot_id, s.captured_at < s.commence_time AS ok
+        SELECT s.odds_snapshot_id, s.captured_at < s.commence_time AS ok,
+               s.captured_at < e.commence_time AS before_event_start
         FROM odds_snapshots s
         JOIN odds_events e ON e.odds_event_id = s.odds_event_id
         WHERE true {where}
@@ -566,6 +582,11 @@ def check_odds_after_start(conn: Connection, scope: Scope, cfg: CheckSettings) -
         len(snapshots),
         [str(r.odds_snapshot_id) for r in snapshots if not r.ok]
         + [f"closing:{r.odds_snapshot_id}" for r in closing],
+        [
+            f"event_start:{r.odds_snapshot_id}"
+            for r in snapshots
+            if r.ok and not r.before_event_start
+        ],
     )
 
 
@@ -680,7 +701,7 @@ CHECKS: tuple[Check, ...] = (
     Check(
         "odds_after_start",
         "odds snapshots",
-        "no snapshot or closing line at/after the start",
+        "no snapshot at/after its start, no closing line after the event start",
         check_odds_after_start,
     ),
     Check(
