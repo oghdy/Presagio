@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 0 완료 (2026-10-22) → 단계 1 시작은 사람 확인 대기
+## 현재 단계: 1 (데이터 파이프라인, 2026-10-22 시작. 단계 0은 2026-10-22 완료)
 
 ### 보드 한눈에 보기
 
@@ -15,7 +15,7 @@
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
-| P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
+| P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | IN PROGRESS | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
@@ -23,7 +23,7 @@
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
-| P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | TODO | P-001 |
+| P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | IN PROGRESS | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | TODO | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
@@ -133,7 +133,7 @@
 ## 단계 1. 데이터 파이프라인
 
 ### P-010 nba_api 엔드포인트 조사 (스파이크)
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `docs/P-010-nba-api-research`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-001
@@ -151,6 +151,8 @@
   4. 요청 간 딜레이 권장값과 근거(실제로 몇 번 호출해서 차단/지연이 있었는지)를 적는다.
   5. nba_api가 막혔을 때의 대체 소스 후보를 2개 이상 이름만이라도 적는다.
 - **확인 방법:** 보고서 읽기, 픽스처 존재 확인.
+- **메모:**
+  - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). P-018과 병렬(파일 겹침 없음). 브리핑에서 `nba_api`는 dev 그룹에만 추가, `scripts/explore_nba_api.py` 1개만 예외 허용.
 
 ### P-011 🧑 raw/clean 스키마 설계안 v1
 - **상태:** TODO
@@ -264,7 +266,7 @@
 - **확인 방법:** 테스트 + 수동 1회 실행 로그.
 
 ### P-018 🧑 배당 API 후보 조사 (스파이크)
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `docs/P-018-odds-api-research`)
 - **담당 역할:** data-engineer (조사) → PM → 사람 결정
 - **단계:** 1
 - **의존:** P-001
@@ -276,6 +278,8 @@
   2. 하루 2회 수집(예측 시점, 마감 직전) 기준으로 한 시즌에 필요한 호출 수와 비용 추정.
   3. 추천안 1개와 이유, 차선책 1개.
 - **확인 방법:** 사람이 표를 보고 결정.
+- **메모:**
+  - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). P-010과 병렬. 실제 API 호출·키 발급 금지, 가격·약관은 공식 URL과 확인 날짜 필수.
 
 ### P-019 배당 어댑터 인터페이스 + odds_snapshots 저장
 - **상태:** TODO
