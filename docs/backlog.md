@@ -14,7 +14,7 @@
 | P-000 | 회사 구조 셋업 | (창업 세션) | DONE | - |
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | REVIEW | P-001 |
-| P-003 | GitHub Actions CI (lint + test) | platform-engineer | REVIEW | P-001 |
+| P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
@@ -98,9 +98,10 @@
   - 2026-10-22 PM: 수정 커밋 3개(HEAD `1b5539c`, 테스트 15→19) 도착. 리뷰어에게 재리뷰 요청. README 충돌은 PR #2 머지 후 해결.
   - 2026-10-22 PM: 재리뷰 판정 "수정 후 재리뷰"(반려 1회차). 1차 발견 1~3은 고쳐짐, 완료 기준 전부 O 유지. 새 발견 [중간]: fail 경로의 pytest traceback에 `DATABASE_URL` 비밀번호 평문 노출(`grep -c WRONGPW` → 4). 작업자에게 그것만 수정 요청(`__tracebackhide__` 또는 URL 객체). fixture session 범위는 단계 1로.
   - 2026-10-22 PM: 수정 커밋 `91bc7df`, 리뷰어 재확인 판정 "수락 가능"(6가지 traceback 옵션에서 비밀번호 0회, 변이 검사로 누출 테스트가 실제 누출을 잡음 확인). 결정 D-020 기록. 남은 것: PR #2 머지 후 README 충돌 해결 → PM 확인 → 사람 머지.
+  - 2026-10-22 PM: PR #2 머지됨. 작업자에게 README 충돌 해결 + PR #4 CI 확인 요청.
 
 ### P-003 GitHub Actions CI (lint + test)
-- **상태:** REVIEW (2026-10-22 PR #2 열림, 브랜치 `feat/P-003-github-actions-ci`)
+- **상태:** DONE (2026-10-22, PR #2 squash merge → main `84c46ec`)
 - **담당 역할:** platform-engineer (단계 0 예외 활성)
 - **단계:** 0
 - **의존:** P-001
@@ -123,6 +124,7 @@
   - 2026-10-22 PM: PR #2(https://github.com/oghdy/Presagio/pull/2) 도착. CI 2개 잡 초록, 카나리 PR #3으로 실패 증명 후 삭제. 브랜치 보호는 비공개 무료 레포라 적용 불가(403) → 사람 결정 Q-004. reviewer 카드 올림.
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~4 전부 O. 발견 [중간] 1건(PR 본문이 gitleaks 검사 범위를 반대로 설명. 실제는 모든 브랜치 검사). PM 결정: 동작 유지, 주석·PR 본문 정정 요청. [낮음] concurrency는 단계 1 CI 티켓으로. 결정 D-018 기록. 레포 공개 전환(D-017)으로 브랜치 보호는 머지 후 사람이 켠다.
   - 2026-10-22 PM: 정정 커밋 `20b59e7`(주석만 변경, PM이 diff 확인) CI 초록. PM 수락. 사람 머지 대기.
+  - 2026-10-22 PM: 사람이 "머지ㄱㄱ"라고 지시해 PM이 `gh pr merge --squash`로 머지(계정 oghdy). 브랜치 보호 적용은 사람 몫으로 남음. 후속: concurrency cancel-in-progress가 main push에도 적용되는 문제는 단계 1 CI 수정 시 처리.
 
 ---
 
