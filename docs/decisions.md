@@ -280,6 +280,14 @@
 - **검증:** 리뷰어가 실제 일정 1회(2,529경기)로 UTC·유형·season 전부 일치, 픽스처 가공으로 J1~J3·K·홈/원정 반대·stale 가드 재현. 수정 후 124 passed.
 - **참고:** `teams.city`의 static 값(GSW `San Francisco`, LAC `Los Angeles`)은 NBA 일정 표기(`Golden State`, `LA`)와 다르다. 설계안(출처 `nba_api.static`)대로 두고, 배당 매핑 별칭은 P-019에서 `team_aliases`로 해결한다.
 
+## D-035 포제션 추정은 저장하지 않고 함수로 제공한다: `POSS ≈ FGA − OREB + TOV + 0.44 × FTA`, 경기 단위는 양 팀 평균
+- **날짜:** 2026-10-22 (P-015, PR #13의 결정 제안 1 + "못 한 것" 1을 PM이 판단)
+- **무엇을:** `presagio.ingestion.possessions.team_possessions(fga, oreb, tov, fta)` = `FGA − OREB + TOV + 0.44 × FTA`, `game_possessions` = 양 팀 평균. 입력이 하나라도 NULL이면 NULL. **DB에는 저장하지 않는다.** 승인된 설계안 6-2(D-028)가 "포제션은 저장하지 않는다(공식은 ML이 피처 버전으로, 단계 2)"라고 정했고, P-015 티켓 목표의 "계산해 넣는다"는 완료 기준(공식이 코드와 decisions에 적혀 있다)과 충돌하지 않으므로 설계안을 따른다. 단계 2 피처 모듈이 이 함수를 부르고 피처 버전으로 기록한다.
+- **왜:** 입력 4개가 두 소스(게임로그, 박스스코어)에 모두 있고 단순해 설명하기 쉽다. 두 팀의 포제션은 거의 같으므로 평균이 한쪽 오차(팀 리바운드·팀 턴오버 누락)를 줄인다. 0.44는 Dean Oliver(*Basketball on Paper*, 2004)의 계수이고 basketball-reference의 TOV% 분모에도 쓰인다. 저장하지 않는 이유: 공식이 바뀌면(0.44 → 0.4, 리바운드 보정 추가) 저장값을 전부 다시 써야 하고, 피처 버전으로 두면 재현성이 보장된다.
+- **주의:** TOV 정의가 소스마다 달라(게임로그는 팀 턴오버 포함 추정) 박스스코어 행으로 계산하면 경기당 약 1포제션 낮게 나온다. ML은 뷰 `team_game_stats_primary`(대표 = 게임로그)로 계산한다(D-028 A-6).
+- **다른 선택지:** basketball-reference `Poss`(0.4 × FTA + 1.07 × 공격 리바운드 보정, 상대 DREB·FGM 필요. 더 정확하다고 알려졌지만 복잡. 브리핑의 "basketball-reference 근사"는 부정확한 표현이었고 작성자가 바로잡음), 0.475(대학 농구), 팀별 값만 쓰기, 컬럼 추가해 저장(스키마 변경, 재현성 약화).
+- **다시 볼 때:** 단계 2에서 Four Factors·페이스 피처를 만들 때 공식 비교 실험을 `docs/experiments.md`에 남긴다.
+
 ---
 
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)

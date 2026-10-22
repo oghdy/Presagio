@@ -20,11 +20,11 @@
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | DONE | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | DONE | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | DONE | P-010, P-013 |
-| P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | IN PROGRESS | P-014 |
+| P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | REVIEW | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
-| P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | IN PROGRESS | P-012, P-018 승인 |
+| P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | REVIEW | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
@@ -247,7 +247,7 @@
   - 2026-10-22 PM: 수정 커밋 `c23ed6b`(7파일, 스키마 변경 없음, 설계안 v1.2). 재리뷰 "수락 가능", 1차 발견 1~5 전부 해결, 124 passed, 멱등성 재확인. 결정 D-034 기록. PM 수락. 사람 머지 대기.
 
 ### P-015 nba_api 어댑터: 팀 박스스코어 → team_game_stats
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-015-team-game-stats`)
+- **상태:** REVIEW (2026-10-22 PR #13 열림, 브랜치 `feat/P-015-team-game-stats`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-014
@@ -263,6 +263,7 @@
 - **확인 방법:** `uv run pytest tests/ingestion -q`
 - **메모:**
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-015-briefing.md`. P-019와 병렬(파일 겹침 없음, `sources/base.py`는 P-015만 수정).
+  - 2026-10-22 PM: PR #13(https://github.com/oghdy/Presagio/pull/13) 도착. 테스트 56개, 실제 호출 3회(85경기 불일치 0), 한 호출로 games+team_stats 두 표 적재. 포제션은 설계안 6-2대로 저장 안 함(PM 판단 D-035). CI 초록. reviewer 카드 올림.
 
 ### P-016 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등)
 - **상태:** TODO
@@ -313,7 +314,7 @@
   - 2026-10-22 PM: 보완 커밋 `ecd418d`(문서만, PM이 diff 확인: 스냅숏 상한 5회, Odds-API.io 약관 채움, 되돌리기·시간 민감성 추가). CI 초록. PM 수락. 사람 결정 대기(decisions.md Q-006, Q-007).
 
 ### P-019 배당 어댑터 인터페이스 + odds_snapshots 저장
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-019-odds-adapter`)
+- **상태:** REVIEW (2026-10-22 PR #14 열림, 브랜치 `feat/P-019-odds-adapter`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-012, P-018 승인(D-026으로 완료: The Odds API 무료 플랜)
@@ -327,6 +328,7 @@
 - **확인 방법:** 테스트.
 - **메모:**
   - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-019-briefing.md`. 실제 호출 최대 2회, 키는 사람 `.env`에만 → 호출 필요 시 PM 경유로 사람 확인. P-015와 병렬.
+  - 2026-10-22 PM: PR #14(https://github.com/oghdy/Presagio/pull/14) 도착. 테스트 76개(합성 픽스처), 실제 호출 0회(브리핑대로 멈춤). 작성자가 `/events`(무료) 1회 + `/odds`(3크레딧) 1회 요청 → 사람 승인 대기. CI 초록. reviewer 카드 올림(픽스처 기반 먼저, 실제 응답 픽스처는 승인 후 추가).
 
 ### P-020 데이터 품질 체크 모듈 + CLI
 - **상태:** TODO
