@@ -378,6 +378,7 @@
 - **확인 방법:** 사람이 로컬 DB에서 보고서의 쿼리를 직접 실행.
 - **메모:**
   - 2026-10-22 PM: 야간 위임(D-041)으로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-021-briefing.md`. 개발 DB(5433)를 실제로 채운다. 차단(exit 2)이면 멈추고 보고.
+  - 2026-10-22 PM: 자동 이벤트 턴이라 세션 시작이 거부됨(사람 클릭 필요) → CLAUDE.md 허용 범위대로 data-engineer **서브에이전트**(Opus, 전용 worktree `.claude/worktrees/p-021-backfill-report`)로 수행.
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
 - **상태:** DONE (2026-10-22, PR #8 squash merge)
