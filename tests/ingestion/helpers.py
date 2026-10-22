@@ -1,5 +1,7 @@
 """Test helpers for ingestion: fake clock, in-memory raw store, canned HTTP responses."""
 
+import copy
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -118,3 +120,80 @@ def json_bytes(
     return httpx.Response(
         status, content=body, headers={"Content-Type": "application/json", **(headers or {})}
     )
+
+
+def fixture_name(request: httpx.Request) -> str:
+    """Fixture file a stats.nba.com request maps to, e.g. 'scheduleleaguev2__2026-27'."""
+    endpoint = request.url.path.rsplit("/", 1)[-1]
+    params = request.url.params
+    if endpoint == "scheduleleaguev2":
+        return f"scheduleleaguev2__{params['Season']}"
+    if endpoint == "leaguegamelog":
+        return f"leaguegamelog__{params['Season']}_{params['SeasonType'].replace(' ', '')}"
+    if endpoint == "commonteamyears":
+        return f"commonteamyears__{params['LeagueID']}"
+    raise AssertionError(f"no fixture route for {endpoint}")
+
+
+def nba_fixture_handler(overrides: dict[str, bytes] | None = None) -> Handler:
+    """MockTransport handler serving tests/fixtures/nba_api by request; overrides win.
+
+    The overrides dict is read on every request, so a test can change a response between
+    two loads (e.g. a scheduled game that became final).
+    """
+    seen: list[httpx.Request] = []
+    replaced = overrides if overrides is not None else {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve the matching fixture bytes with HTTP 200."""
+        seen.append(request)
+        name = fixture_name(request)
+        body = replaced[name] if name in replaced else fixture_bytes(name)
+        return json_bytes(200, body)
+
+    handler.seen = seen  # type: ignore[attr-defined]
+    return handler
+
+
+def fixture_json(name: str) -> Any:
+    """Parsed copy of a fixture, for tests that edit a response."""
+    return json.loads(fixture_bytes(name))
+
+
+def schedule_games(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every game object in a ScheduleLeagueV2 response."""
+    return [g for day in data["leagueSchedule"]["gameDates"] for g in day["games"]]
+
+
+def edit_game(data: dict[str, Any], game_id: str, **changes: Any) -> None:
+    """Apply changes to one schedule game; 'home'/'away' dicts update the team objects."""
+    game = next(g for g in schedule_games(data) if g["gameId"] == game_id)
+    game["homeTeam"].update(changes.pop("home", {}))
+    game["awayTeam"].update(changes.pop("away", {}))
+    game.update(changes)
+
+
+# Each case would break a games CHECK (or the time parser) if it reached the database.
+BROKEN_GAMES = {
+    "one_team_decided": ("0022600006", {"away": {"teamId": 0}}, "only one team"),
+    "same_team_twice": ("0022600006", {"away": {"teamId": 1610612755}}, "same team"),
+    "final_without_score": ("0022600001", {"home": {"score": None}}, "non-negative score"),
+    "final_negative_score": ("0022600001", {"away": {"score": -1}}, "non-negative score"),
+    "time_not_iso": ("0022600006", {"gameDateTimeUTC": "10/22/2026 23:00"}, "not an ISO time"),
+}
+
+
+def with_allstar_and_club_games(data: dict[str, Any]) -> dict[str, Any]:
+    """2025-26 schedule plus an all-star game and a preseason game against a foreign club.
+
+    Team IDs are the ones the real 2025-26 schedule uses for these (not in teams).
+    """
+    day = data["leagueSchedule"]["gameDates"][0]["games"]
+    allstar = copy.deepcopy(day[0])
+    allstar["gameId"] = "0032500001"
+    allstar["homeTeam"]["teamId"], allstar["awayTeam"]["teamId"] = 1610616859, 1610616860
+    club = copy.deepcopy(day[0])
+    club["gameId"] = "0012500099"
+    club["awayTeam"]["teamId"] = 15016  # Melbourne United
+    day.extend([allstar, club])
+    return data

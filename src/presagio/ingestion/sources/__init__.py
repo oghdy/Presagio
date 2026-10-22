@@ -1,0 +1,43 @@
+"""Source adapters: external responses -> source-neutral records (no database access)."""
+
+from presagio.ingestion.sources.base import (
+    GAME_TYPES,
+    RESULT_SEASON_TYPES,
+    STORED_GAME_TYPES,
+    GameRecord,
+    GameResultRecord,
+    Provenance,
+    QualityIssue,
+    ResultBatch,
+    ResultSource,
+    ScheduleBatch,
+    ScheduleSource,
+    SourceFormatError,
+    TeamAliasRecord,
+    TeamBatch,
+    TeamRecord,
+    TeamSource,
+    game_type_of,
+    season_of,
+)
+
+__all__ = [
+    "GAME_TYPES",
+    "RESULT_SEASON_TYPES",
+    "STORED_GAME_TYPES",
+    "GameRecord",
+    "GameResultRecord",
+    "Provenance",
+    "QualityIssue",
+    "ResultBatch",
+    "ResultSource",
+    "ScheduleBatch",
+    "ScheduleSource",
+    "SourceFormatError",
+    "TeamAliasRecord",
+    "TeamBatch",
+    "TeamRecord",
+    "TeamSource",
+    "game_type_of",
+    "season_of",
+]
