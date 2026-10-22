@@ -28,6 +28,7 @@
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
+| P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | TODO | P-002 |
 
 병렬로 돌릴 수 있는 것: P-001 다음에 **P-002, P-003, P-010, P-018**은 서로 다른 파일을 건드리므로 동시에 가능하다. 단, 같은 역할(data-engineer)이 두 티켓을 동시에 하지는 않는다. P-003은 platform-engineer가 한다.
 
@@ -185,7 +186,8 @@
   1. `uv run alembic upgrade head`가 빈 DB에서 성공하고, `downgrade base`도 성공한다.
   2. 모델과 마이그레이션이 일치한다(`alembic check` 또는 autogenerate 결과가 비어 있음).
   3. 설계안의 유니크 제약과 인덱스가 실제 DB에 존재한다(테스트로 확인).
-  4. CI에서 postgres service container로 마이그레이션 테스트가 돈다(P-003 워크플로우 수정은 platform-engineer에게 요청, 이 티켓에서는 로컬 증명으로 충분).
+  4. DB 설정이 있는데 틀린 경우(인증 실패, DB 없음)는 테스트가 skip이 아니라 실패한다(D-020, D-022). `PRESAGIO_REQUIRE_DB=1`로 로컬 실제 DB에서 전체 테스트가 통과한다.
+  5. CI에서 실제 PostgreSQL로 마이그레이션 테스트가 돈다. 워크플로 수정은 P-023(platform-engineer)에서 하고, 이 티켓은 P-023과 함께 머지되거나 P-023 머지 후 CI 초록으로 증명한다(D-022).
 - **확인 방법:** 위 명령.
 
 ### P-013 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs
@@ -321,6 +323,23 @@
   3. 품질 체크 전부 통과. 통과 못 한 항목은 원인과 처리 방법을 적는다.
   4. 전체 소요 시간과 호출 수, 차단/재시도 발생 횟수를 적는다.
 - **확인 방법:** 사람이 로컬 DB에서 보고서의 쿼리를 직접 실행.
+
+### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
+- **상태:** TODO
+- **담당 역할:** platform-engineer (단계 1 예외 활성, D-022)
+- **단계:** 1
+- **의존:** P-002 (DONE). P-012와 같은 시기에 진행.
+- **목표:** CI가 실제 PostgreSQL로 DB 테스트를 돌려 "DB 테스트 전부 skip"인 지금 상태를 없앤다. P-003 리뷰에서 나온 concurrency 문제도 같이 고친다.
+- **범위:** `.github/workflows/ci.yml`
+- **범위 밖:** 테스트 코드, 마이그레이션(P-012).
+- **읽어야 할 파일:** `CLAUDE.md`, `.github/workflows/ci.yml`, `docker-compose.yml`, `.env.example`, `tests/conftest.py`, `docs/decisions.md` D-018, D-020, D-022
+- **완료 기준:**
+  1. `lint-and-test` 잡(또는 별도 `db-test` 잡)에 `services: postgres`(17)를 붙이고 `DATABASE_URL`과 `PRESAGIO_REQUIRE_DB=1`을 설정해, PR에서 DB 테스트가 skip 없이 통과한다(Actions 로그에 skipped 0 증거).
+  2. 비밀번호는 CI 전용 가짜 값이고 워크플로 파일에만 있다(GitHub Secrets 불필요). gitleaks에 걸리지 않는다.
+  3. `concurrency.cancel-in-progress`가 `pull_request`에서만 true이고 `push: main`에서는 취소되지 않는다(연속 머지 2회로 증명하거나 표현식 동작을 문서로 확인).
+  4. 2회차 실행이 여전히 캐시를 복원하고 2분 이내다.
+- **확인 방법:** PR의 Checks 탭, Actions 로그.
+- **메모:** 2026-10-22 PM: D-022(Q-005 승인)와 P-003 리뷰어 [낮음] 발견으로 생성.
 
 ### P-022 단계 0~1 학습 노트 + 회고
 - **상태:** TODO
