@@ -23,7 +23,7 @@
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
-| P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | IN PROGRESS | P-001 |
+| P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | REVIEW | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | TODO | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
@@ -268,7 +268,7 @@
 - **확인 방법:** 테스트 + 수동 1회 실행 로그.
 
 ### P-018 🧑 배당 API 후보 조사 (스파이크)
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `docs/P-018-odds-api-research`)
+- **상태:** REVIEW (2026-10-22 PR #5 열림, 브랜치 `docs/P-018-odds-api-research`)
 - **담당 역할:** data-engineer (조사) → PM → 사람 결정
 - **단계:** 1
 - **의존:** P-001
@@ -282,6 +282,7 @@
 - **확인 방법:** 사람이 표를 보고 결정.
 - **메모:**
   - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). P-010과 병렬. 실제 API 호출·키 발급 금지, 가격·약관은 공식 URL과 확인 날짜 필수.
+  - 2026-10-22 PM: PR #5(https://github.com/oghdy/Presagio/pull/5) 도착. 후보 5개, 추천 The Odds API(매일 무료 + 과거 3시즌 백필에 $59 한 달). CI 초록. reviewer 세션 시작(Opus 5.5 높음, 출처·계산 검증 중심).
 
 ### P-019 배당 어댑터 인터페이스 + odds_snapshots 저장
 - **상태:** TODO
