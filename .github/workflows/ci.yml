@@ -1,0 +1,76 @@
+# CI for every PR into main and every push to main.
+# Two independent jobs so branch protection can require each one by name:
+#   - lint-and-test: ruff check, ruff format --check, pytest (uv-managed Python from .python-version)
+#   - secret-scan:   gitleaks over the full commit history (pre-commit only sees staged changes)
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: lint-and-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          # Same uv as the dev machine that wrote uv.lock.
+          version: "0.12.10"
+          enable-cache: true
+
+      - name: Install dependencies
+        # Python version comes from .python-version; --locked fails if uv.lock is stale.
+        run: uv sync --locked
+
+      - name: Ruff check
+        run: uv run --locked ruff check --output-format=github .
+
+      - name: Ruff format check
+        run: uv run --locked ruff format --check .
+
+      - name: Pytest
+        run: uv run --locked pytest -q
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # Keep in sync with the gitleaks rev in .pre-commit-config.yaml.
+      GITLEAKS_VERSION: "8.30.1"
+      # From gitleaks_8.30.1_checksums.txt in the official GitHub release.
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, so every commit is scanned, not just the tip.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL --retry 3 --retry-delay 5 --max-time 60 -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Scan full git history
+        run: gitleaks git --redact --verbose --no-banner .

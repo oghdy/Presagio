@@ -78,6 +78,8 @@ uv run pre-commit run --all-files
 
 gitleaks 훅은 처음 실행할 때 Go 툴체인을 pre-commit이 알아서 내려받으므로 몇 분 걸릴 수 있다.
 
+gitleaks 훅은 스테이징된 변경만 본다. 커밋 기록 전체 검사는 CI에서 한다.
+
 DB(`docker compose up`)와 설정 파일(`.env.example`)은 P-002에서 추가된다.
 
 ## 기술 스택 (기본안)
