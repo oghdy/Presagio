@@ -90,6 +90,8 @@
   3. `.env`가 `.gitignore`에 있고, `.env.example`에는 실제 비밀값이 없다.
   4. 테스트가 DB 없이도 통과한다(연결 테스트는 skip).
 - **확인 방법:** 위 명령.
+- **메모:**
+  - 2026-10-22 PM: 이 맥에 `docker` 명령 없음(PM 확인). Docker 런타임 선택과 설치는 사람(decisions.md Q-003). 설치 전에는 세션을 띄우지 않는다. 브리핑은 PM 공유 노트 `P-002-briefing.md`에 준비됨.
 
 ### P-003 GitHub Actions CI (lint + test)
 - **상태:** TODO
