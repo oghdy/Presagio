@@ -25,7 +25,7 @@
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | REVIEW | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
-| P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | REVIEW | P-015 |
+| P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | DONE | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
 | P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | DONE | P-002 |
@@ -344,7 +344,7 @@
   - 2026-10-22 PM: 사람 승인으로 실제 호출 2회(`/events` 무료, `/odds` 3크레딧, 잔여 497). 커밋 `d4b2704`: 실제 픽스처 2개(경기 3개로 자름, 키 없음), 팀 이름 시드 30개 확인, 41/41 매핑(시각 차이 최대 600초). 리뷰 판정 "수락 가능", 기준 1~4 O(가짜 키 누출 0회를 pg_dump 10.5MB까지 grep). [낮음] 4건(중복 event id 시 전체 실패 → P-017, 쿼터는 성공 run에만 기록, D-027 4회 시각 미정 → P-017). 결정 D-036 기록. PM 수락. 사람 머지 대기.
 
 ### P-020 데이터 품질 체크 모듈 + CLI
-- **상태:** REVIEW (2026-10-22 PR #16 열림, 브랜치 `feat/P-020-quality-checks`)
+- **상태:** DONE (2026-10-22, PR #16 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-015
