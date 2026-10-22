@@ -6,17 +6,19 @@ from functools import lru_cache
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from presagio.config import get_settings
+from presagio.config import DEFAULT_CONNECT_TIMEOUT, get_settings
 
 
 def make_engine(url: str | None = None, connect_timeout: int | None = None) -> Engine:
-    """Build a SQLAlchemy engine; arguments default to the loaded settings."""
-    if url is None or connect_timeout is None:
+    """Build an engine; without a url, url and timeout come from settings (.env)."""
+    if url is None:
         settings = get_settings()
-        url = url if url is not None else settings.database_url
-        connect_timeout = (
-            connect_timeout if connect_timeout is not None else settings.db_connect_timeout
-        )
+        url = settings.database_url
+        if connect_timeout is None:
+            connect_timeout = settings.db_connect_timeout
+    elif connect_timeout is None:
+        # An explicit url must not require .env (e.g. Alembic or tests passing their own url).
+        connect_timeout = DEFAULT_CONNECT_TIMEOUT
     return create_engine(
         url,
         pool_pre_ping=True,
