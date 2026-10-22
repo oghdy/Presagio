@@ -300,6 +300,22 @@
 - **다른 선택지:** 넓은 형식(마켓별 컬럼, 스키마 변경 잦음), 팀 이름 유사도 매칭(오매핑 위험), 시작한 경기도 저장 후 플래그(누수 위험), 은행가 반올림(가격 비교 시 혼동).
 - **남은 것:** D-027의 "하루 최대 4회의 정확한 시각"은 이 PR이 정하지 않았다 → P-017(증분 CLI)에서 정한다. 같은 응답에 중복 `event id`가 있으면 적재 전체가 실패한다(리뷰어 [낮음] L1, 실제 응답에서는 미관찰) → P-017에서 그 이벤트만 제외하도록. 과거 배당 API는 최상위 `{data: ...}` 구조라 어댑터가 따로 필요(D-026 보류와 함께).
 
+## D-037 백필 CLI 규칙: 단위는 시즌×시즌 유형, 재개는 최신 run 기준, 종료 코드 0/1/2/64, job_type 고정, argparse
+- **날짜:** 2026-10-22 (P-016, PR #15의 결정 제안 8건 + 리뷰어 발견 1을 PM이 정리)
+- **무엇을:**
+  1. **단위:** `presagio backfill`의 적재 단위는 "날짜"가 아니라 **시즌 × 시즌 유형**(teams 1 + 시즌마다 일정 1 + 게임로그 유형별 1). `--from/--to`는 범위가 걸친 시즌을 통째로 같은 scope_key로 받고 부모 scope_key에 범위를 남기며 범위 안 경기 수를 출력한다. 완료 기준 3의 "날짜 단위"는 이 단위로 읽는다(D-023, B1).
+  2. **재개:** 완료 단위는 건너뛴다. 완료 = **그 단위의 최신 run이 `succeeded`이고 시즌 종료(다음 해 10/15 UTC) 후에 시작**한 것. 최신이 `partial`/`failed`/`aborted`이거나 진행 중 시즌이면 다시 한다(upsert라 안전). `--force`면 전부 다시. (리뷰어 발견: "하나라도 succeeded"로 판정하면 `--force` 후 partial이 영구 skip → 최신 run 기준으로 수정.)
+  3. **선행 실패:** 선행 단위가 이번 실행에서 실패했고 DB에 그 데이터도 없으면 뒤 단위는 `not_run`. 일부라도 있으면 진행.
+  4. **종료 코드:** 0 전부 성공(건너뜀 포함), 1 하나라도 성공 아님(partial 포함) 또는 시작 전 오류, **2 차단(403/429)으로 즉시 중단**, 64 인자 오류(sysexits `EX_USAGE`, argparse 기본 2와 충돌 회피). 단계 6 스케줄러가 2를 보고 "오늘은 그만"으로 판단한다.
+  5. **job_type 고정:** `teams`, `schedule`, `gamelog`, `boxscore`, `odds`, `odds_events`, `backfill`(부모), `incremental`(P-017). DB CHECK 없이 `start_run`이 파이썬에서 거부. `code_version`은 모든 run에 자동(`git rev-parse --short HEAD` → 패키지 버전 → NULL).
+  6. **부모/자식:** `track_run` 블록 안에서 연 run은 `contextvars`로 자동 자식. 부모의 `api_calls`·`rows_written`은 0, 합계는 `error_detail.totals`(SUM 이중 계산 방지).
+  7. **CLI는 argparse**(표준 라이브러리, 새 의존성 없음). `-v`는 서브커맨드 앞에서만. `--stale-after-hours`는 양수만.
+  8. D-032 후속 반영: `track_run` 기본 `stale_after_hours`는 `STALE_RUN_HOURS`(모든 run이 시작 전 6시간 넘은 `running`을 정리), `finish()`는 `WHERE status='running'`(이미 닫힌 행은 경고 + False), `TransportError` 밖 httpx 예외는 재시도 없는 `IngestionError`, `httpx` 로거는 CLI가 WARNING 유지.
+- **왜:** 호출을 날짜마다 하면 차단 위험이 수백 배다. 재개가 scope_key로 로더와 맞물려야 "끊겼다 이어 돌리기"가 호출을 아낀다. 종료 코드가 구분돼야 자동화(단계 6)가 차단과 실패를 다르게 다룬다.
+- **다른 선택지:** 날짜별 ScoreboardV3 호출, 범위 scope_key로 부분 적재(시즌 성공 오인), 항상 전부 재처리(호출 낭비), typer(의존성 3개), DB CHECK로 job_type(값 추가마다 마이그레이션).
+- **검증:** 리뷰어가 임시 DB에서 실제 2호출로 플레이오프 단위 적재, 재개·`--force`·403 즉시 중단·D-032 후속 4건 재현, 소켓 차단 상태 299 passed.
+- **참고:** teams 단위는 아무 succeeded면 영구 skip이라 팀 확장·이전은 백필이 다시 받지 않는다 → P-017 매일 흐름에서 teams 갱신. 설치 이미지에 `.git`이 없으면 code_version이 패키지 버전만 남는다 → 단계 6에서 빌드 시 커밋 전달.
+
 ---
 
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)
