@@ -22,11 +22,11 @@
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | DONE | P-010, P-013 |
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | DONE | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | DONE | P-014, P-015 |
-| P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | REVIEW | P-016 |
+| P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | DONE | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | DONE | P-015 |
-| P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
+| P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | IN PROGRESS | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
 | P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | DONE | P-002 |
 
@@ -288,7 +288,7 @@
   - 2026-10-22 PM: 수정 커밋 `759f3b1`(재개는 최신 run 기준, 옵션 양수 검사, README). 재리뷰 "수락 가능", 새 발견 0, 305 passed. PM 수락. 사람 머지 대기.
 
 ### P-017 증분 수집 CLI (전날 결과 + 오늘 일정)
-- **상태:** REVIEW (2026-10-22 PR #17 열림, 브랜치 `feat/P-017-ingest-daily`)
+- **상태:** DONE (2026-10-22, PR #17 squash merge. 야간 위임 D-041로 PM이 머지)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-016
@@ -305,6 +305,7 @@
   - 2026-10-22 PM: PR #17(https://github.com/oghdy/Presagio/pull/17) 도착. 실제 실행 1회(nba_api 3회, 배당 skipped, exit 0). reviewer 카드 올림.
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 기준 1~3 O(서머타임 경계·자정·예정→종료·멱등·재시도 창 재현, 실제 3호출). [낮음] 3건(README 호출 수, get_settings 위치, 테스트 주석) + 팀 갱신 20h → **7일**로 결정 + P-020 체크 연결 요청. 수집 시각 D-038 승인. 결정 D-039 기록. 조건부 수락: #16 머지 후 main 합치고 재확인.
   - 2026-10-22 PM: 수정 `f482fb3` 1차 재확인 "수락 가능"(팀 7일, 설정 오류 한 줄, 테스트 값, 운영 메모. 365 passed). 남은 것: #16 머지 후 main 합치기 + 품질 체크 연결 → 2차 재확인.
+  - 2026-10-22 PM: main 병합 `4c9e4ce` + 품질 체크 연결(HEAD `ed69d35`). 2차 재확인 "수락 가능"(fail→1, warn→0, dry-run 호출 0, CI 초록). [낮음] 1건은 단계 6 알림 설계 참고. PM 머지(D-041).
 
 ### P-018 🧑 배당 API 후보 조사 (스파이크)
 - **상태:** DONE (2026-10-22, PR #5 squash merge. 사람 결정 D-026: The Odds API 무료 플랜, 과거 백필 보류. 무료 키 발급 완료, `.env`에 보관)
@@ -363,7 +364,7 @@
   - 2026-10-22 PM: 수정 `4435e21` 재리뷰 "수락 가능"(L1 skip/warn, L2 이벤트 기준 warn 재현, 357 passed). PM 수락. 사람 머지 대기.
 
 ### P-021 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 밤 시작, 브랜치 `docs/P-021-backfill-report`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-016, P-020
@@ -375,6 +376,8 @@
   3. 품질 체크 전부 통과. 통과 못 한 항목은 원인과 처리 방법을 적는다.
   4. 전체 소요 시간과 호출 수, 차단/재시도 발생 횟수를 적는다.
 - **확인 방법:** 사람이 로컬 DB에서 보고서의 쿼리를 직접 실행.
+- **메모:**
+  - 2026-10-22 PM: 야간 위임(D-041)으로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-021-briefing.md`. 개발 DB(5433)를 실제로 채운다. 차단(exit 2)이면 멈추고 보고.
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
 - **상태:** DONE (2026-10-22, PR #8 squash merge)
