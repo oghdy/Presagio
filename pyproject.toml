@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Daily NBA win-probability and total-points forecasts, validated against results and market odds."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "psycopg[binary]>=3.3.6",
+    "pydantic-settings>=2.16.1",
+    "sqlalchemy>=2.1.6",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
