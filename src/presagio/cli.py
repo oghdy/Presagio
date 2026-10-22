@@ -272,6 +272,7 @@ def cmd_backfill(
     print(f"Backfill {describe_request(request)}{' (dry run: nothing is written)' * args.dry_run}")
     plan = plan_backfill(engine, request, now=now)
     print_plan(plan, settings.http_min_interval, args.dry_run)
+    sys.stdout.flush()  # show the plan before the progress lines on stderr
     if args.dry_run:
         return 0
     if sources is None:
