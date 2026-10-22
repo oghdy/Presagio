@@ -2,11 +2,14 @@
 
 import os
 import socket
+import uuid
 from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from pydantic import ValidationError
-from sqlalchemy import URL, Engine, make_url
+from sqlalchemy import URL, Connection, Engine, make_url, text
 from sqlalchemy.exc import OperationalError
 
 from presagio.config import Settings
@@ -14,6 +17,8 @@ from presagio.db.session import make_engine
 
 # Short on purpose: an unreachable database must not slow the test run down.
 TEST_DB_CONNECT_TIMEOUT = 2
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _skip_or_fail(reason: str) -> None:
@@ -66,3 +71,46 @@ def db_engine() -> Iterator[Engine]:
     engine = _connect_test_engine(url)
     yield engine
     engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def make_test_database() -> Iterator[Callable[[], URL]]:
+    """Factory for fresh, empty databases next to the configured one, dropped after the run."""
+    # Migration tests drop every table (downgrade base), so they never touch the configured
+    # database itself: each call creates <db>_test_<random> on the same server instead.
+    __tracebackhide__ = True
+    try:
+        base_url = make_url(Settings().database_url)
+    except ValidationError:
+        _skip_or_fail("DATABASE_URL is not set (no env var and no .env)")
+    admin = _connect_test_engine(base_url).execution_options(isolation_level="AUTOCOMMIT")
+    created: list[str] = []
+
+    def _create() -> URL:
+        """Create one empty database and return its URL."""
+        name = f"{base_url.database}_test_{uuid.uuid4().hex[:8]}"
+        with admin.connect() as conn:
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+        created.append(name)
+        return base_url.set(database=name)
+
+    yield _create
+    with admin.connect() as conn:
+        for name in created:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    admin.dispose()
+
+
+def _alembic_config(connection: Connection) -> Config:
+    """Alembic config for the repo's alembic.ini that migrates the given open connection."""
+    config = Config(str(REPO_ROOT / "alembic.ini"))
+    # alembic/env.py uses this connection instead of DATABASE_URL and keeps pytest's logging.
+    config.attributes["connection"] = connection
+    config.attributes["configure_logger"] = False
+    return config
+
+
+@pytest.fixture(scope="session")
+def alembic_config() -> Callable[[Connection], Config]:
+    """Expose the Alembic config builder so tests can drive migrations programmatically."""
+    return _alembic_config

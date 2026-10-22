@@ -122,6 +122,36 @@ docker compose down
 
 연결 테스트는 "DB 포트에 아무도 없음"이면 skip하고, "포트는 열려 있는데 접속이 거부됨"(비밀번호·DB 이름이 틀림)이면 **실패**한다. 설정이 틀렸는데 skip으로 조용히 넘어가지 않게 하기 위해서다.
 
+### 6. 마이그레이션 (DB에 표 만들기)
+
+표 구조는 [Alembic](https://alembic.sqlalchemy.org/) 마이그레이션으로 만든다. 설계는 [docs/design/schema-v1.md](docs/design/schema-v1.md)(D-028), 마이그레이션 파일은 `alembic/versions/`에 있다. 접속 정보는 5단계의 `.env`의 `DATABASE_URL`을 그대로 쓴다(`alembic.ini`에는 URL을 적지 않는다).
+
+DB를 띄운 상태에서 최신 구조로 올린다. 표 8개와 뷰 2개가 생긴다. 두 번 실행해도 이미 최신이면 아무것도 바뀌지 않는다.
+
+```bash
+uv run alembic upgrade head
+```
+
+지금 DB가 어느 버전인지 본다. `0001 (head)`가 나오면 최신이다.
+
+```bash
+uv run alembic current
+```
+
+코드의 모델(`src/presagio/db/models/`)과 DB 구조가 같은지 확인한다. 같으면 `No new upgrade operations detected.`가 나온다. 모델을 고쳤는데 마이그레이션을 안 만들었으면 실패한다.
+
+```bash
+uv run alembic check
+```
+
+전부 지우고 처음 상태로 되돌릴 때는 아래 명령을 쓴다. **표와 데이터가 모두 지워진다.**
+
+```bash
+uv run alembic downgrade base
+```
+
+`uv run pytest -q`의 마이그레이션 테스트는 `.env`의 DB를 건드리지 않는다. 같은 서버에 `presagio_test_xxxxxxxx` 같은 임시 DB를 만들어 올리고 내린 뒤 테스트가 끝나면 지운다.
+
 ## 기술 스택 (기본안)
 
 Python 3.12 · uv · PostgreSQL · SQLAlchemy 2 + Alembic · nba_api + httpx · scikit-learn + LightGBM · FastAPI · pytest + ruff
