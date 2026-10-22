@@ -201,6 +201,7 @@
   - 2026-10-22 PM: PR #9(https://github.com/oghdy/Presagio/pull/9) 도착. 모델 8표, 마이그레이션 0001(CHECK 60개), 테스트 18개 추가(로컬 REQUIRE_DB=1로 33 passed). 설계 DDL과 마이그레이션 카탈로그 비교 테스트 포함. 기준 5는 P-023 머지 후 CI로 증명 예정. 결정 제안 4건(제약 이름 규칙, CHECK는 표 단위, 임시 테스트 DB, DDL 일치 테스트). reviewer 카드 올림.
   - 2026-10-22 PM: 리뷰 판정 "수정 후 재리뷰"(반려 1회차). 스키마는 설계안과 정확히 일치(리뷰어 독립 pg_dump diff, 제약 이름 외 차이 0). [심각] `test_one_running_row_per_work_unit`이 파이썬 시각 vs DB `now()` 비교로 불안정(로컬 42회 중 3회 실패, CI에서는 시계 공유로 거의 매번 실패 예상). [중간] 기준 5의 로컬 흉내는 동등 증명 불가 → P-023 머지 후 CI로만. [낮음] 모델↔마이그레이션 CHECK 드리프트를 아무도 못 잡음(`checkconstraint_byname` 플러그인 + 비교 테스트 제안). 작성자에게 수정 요청. TOAST 압축률 측정은 P-013으로 이동(PM 결정).
   - 2026-10-22 PM: 수정 커밋 `1307317`(시계 독립 테스트, `checkconstraint_byname` 플러그인, CHECK 드리프트 테스트) + main 병합 `a867ad4`. CI(실제 DB) `34 passed`, skipped 0 → 기준 5 증명. 작성자에게 재실행 1회 + PR 본문 갱신, 리뷰어에게 수정분 재확인 요청.
+  - 2026-10-22 PM: 재리뷰 "수락 가능". CI 실제 DB 2회(같은 커밋 attempt 1·2) 모두 34 passed, skipped 0. 시계 의존 제거·CHECK 드리프트 감지 확인. 결정 D-030 기록. PM 수락. 사람 머지 대기.
 
 ### P-013 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs
 - **상태:** TODO
