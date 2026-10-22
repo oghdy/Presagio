@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 1 (데이터 파이프라인, 2026-10-22 시작. 단계 0은 2026-10-22 완료)
+## 현재 단계: 1 완료 (2026-10-23 새벽) → 단계 2 계획 초안 작성 중, 사람 승인 대기
 
 ### 보드 한눈에 보기
 
@@ -26,8 +26,8 @@
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | DONE | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | DONE | P-015 |
-| P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | REVIEW | P-016, P-020 |
-| P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
+| P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | DONE | P-016, P-020 |
+| P-022 | 단계 0~1 학습 노트 + 회고 | pm | DONE | P-021 |
 | P-023 | CI에 postgres service container + REQUIRE_DB (+ concurrency 수정) | platform-engineer | DONE | P-002 |
 
 병렬로 돌릴 수 있는 것: P-001 다음에 **P-002, P-003, P-010, P-018**은 서로 다른 파일을 건드리므로 동시에 가능하다. 단, 같은 역할(data-engineer)이 두 티켓을 동시에 하지는 않는다. P-003은 platform-engineer가 한다.
@@ -364,7 +364,7 @@
   - 2026-10-22 PM: 수정 `4435e21` 재리뷰 "수락 가능"(L1 skip/warn, L2 이벤트 기준 warn 재현, 357 passed). PM 수락. 사람 머지 대기.
 
 ### P-021 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고
-- **상태:** REVIEW (2026-10-23 PR #19 열림, 브랜치 `docs/P-021-backfill-report`)
+- **상태:** DONE (2026-10-23, PR #19 squash merge `4c6e547`. 야간 위임 D-041로 PM 머지)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-016, P-020
@@ -381,6 +381,7 @@
   - 2026-10-22 PM: 자동 이벤트 턴이라 세션 시작이 거부됨(사람 클릭 필요) → CLAUDE.md 허용 범위대로 data-engineer **서브에이전트**(Opus, 전용 worktree `.claude/worktrees/p-021-backfill-report`)로 수행.
   - 2026-10-23 PM: PR #19(https://github.com/oghdy/Presagio/pull/19) 도착. 68호출, 차단·재시도 0, games 5,169·team_game_stats 7,946, 품질 체크 14 pass, 멱등 증명(`--force` 전체 재실행 후 행 수 불변). 시즌별 경기 수가 조사 보고서 표와 일치. **코드 수정 1건**(중립 경기장: 게임로그가 두 팀 모두 "@"로 줘서 10경기 거부되던 것 → 일정 기준으로 처리, 21줄 + 테스트 3개). 결정 제안 3건(중립 경기 규칙, 로더 의미 변경 시 --force 운영, `games.is_neutral` 컬럼은 스키마 변경 → 사람). reviewer 서브에이전트로 독립 리뷰 중.
   - 2026-10-23 PM: 리뷰 판정 "수락 가능", 기준 1~4 전부 O(리뷰어가 읽기 전용 연결로 보고서 SQL 전부 재현, raw 14행에서 중립 10경기 직접 확인, 수정 되돌리면 테스트 3개 실패, 422 passed). [낮음] 3건은 보고서 문장(raw 행 증가 설명, 2023-24 중립 경기 목록, 추정 표시) → 작성자에게 수정 요청. 결정 D-042 기록, `is_neutral` 컬럼은 Q-013으로 사람에게.
+  - 2026-10-23 PM: 보고서 문장 수정 `bad4900`(문서만) 확인 후 머지. 개발 DB: games 5,169, team_game_stats 7,946, raw 24행(4.7MB), DB 21MB. **단계 1 완료 기준 전부 충족.**
 
 ### P-023 CI에 postgres service container + REQUIRE_DB (+ concurrency 수정)
 - **상태:** DONE (2026-10-22, PR #8 squash merge)
@@ -405,7 +406,7 @@
   - 2026-10-22 PM: 사람 지시로 squash merge. 후속 확인: main 연속 머지 2회에서 두 실행 모두 완료되는지(다음 머지 때 PM이 본다).
 
 ### P-022 단계 0~1 학습 노트 + 회고
-- **상태:** TODO
+- **상태:** DONE (2026-10-23, `docs/learning/stage-0-1-data-pipeline.md` + 용어집 12항목, main 직접 커밋)
 - **담당 역할:** pm
 - **단계:** 1
 - **의존:** P-021
