@@ -19,12 +19,12 @@
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | DONE | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | DONE | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | DONE | P-012 |
-| P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | REVIEW | P-010, P-013 |
-| P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
+| P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | DONE | P-010, P-013 |
+| P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | IN PROGRESS | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
 | P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
-| P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | TODO | P-012, P-018 승인 |
+| P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | IN PROGRESS | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
 | P-022 | 단계 0~1 학습 노트 + 회고 | pm | TODO | P-021 |
@@ -226,7 +226,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O(네트워크 차단 상태에서 77 passed, 순서 강제·raw 버전·비밀값 누출 0 재현). [낮음] 4건: `STALE_RUN_HOURS` 미사용, 같은 바이트·다른 상태 코드 병합, `finish()`가 닫힌 행 덮어씀, `DecodingError` 미포장 → (a)(b)(c)는 P-016 완료 기준으로, 병합 한계는 D-032에 기록. 결정 D-031, D-032 기록, lz4는 Q-010 보류 추천. PM 수락. 사람 머지 대기.
 
 ### P-014 nba_api 어댑터: 팀, 일정, 결과 → teams, games
-- **상태:** REVIEW (2026-10-22 PR #12 열림, 브랜치 `feat/P-014-nba-schedule-adapter`)
+- **상태:** DONE (2026-10-22, PR #12 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-010, P-013
@@ -247,7 +247,7 @@
   - 2026-10-22 PM: 수정 커밋 `c23ed6b`(7파일, 스키마 변경 없음, 설계안 v1.2). 재리뷰 "수락 가능", 1차 발견 1~5 전부 해결, 124 passed, 멱등성 재확인. 결정 D-034 기록. PM 수락. 사람 머지 대기.
 
 ### P-015 nba_api 어댑터: 팀 박스스코어 → team_game_stats
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-015-team-game-stats`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-014
@@ -261,6 +261,8 @@
   3. 포제션 추정 공식이 코드 주석과 `docs/decisions.md`에 적혀 있다.
   4. 멱등: 두 번 로드해도 행 수 동일.
 - **확인 방법:** `uv run pytest tests/ingestion -q`
+- **메모:**
+  - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-015-briefing.md`. P-019와 병렬(파일 겹침 없음, `sources/base.py`는 P-015만 수정).
 
 ### P-016 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등)
 - **상태:** TODO
@@ -311,7 +313,7 @@
   - 2026-10-22 PM: 보완 커밋 `ecd418d`(문서만, PM이 diff 확인: 스냅숏 상한 5회, Odds-API.io 약관 채움, 되돌리기·시간 민감성 추가). CI 초록. PM 수락. 사람 결정 대기(decisions.md Q-006, Q-007).
 
 ### P-019 배당 어댑터 인터페이스 + odds_snapshots 저장
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-019-odds-adapter`)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-012, P-018 승인(D-026으로 완료: The Odds API 무료 플랜)
@@ -323,6 +325,8 @@
   3. 미국식/소수식 배당을 소수식으로 통일해 저장하고 변환 테스트가 있다.
   4. 멱등: 같은 스냅샷 재저장 시 중복 없음.
 - **확인 방법:** 테스트.
+- **메모:**
+  - 2026-10-22 PM: 사람 지시로 data-engineer 세션 시작(Opus 5.5 높음). 브리핑 `P-019-briefing.md`. 실제 호출 최대 2회, 키는 사람 `.env`에만 → 호출 필요 시 PM 경유로 사람 확인. P-015와 병렬.
 
 ### P-020 데이터 품질 체크 모듈 + CLI
 - **상태:** TODO
