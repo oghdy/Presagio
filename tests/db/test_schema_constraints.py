@@ -271,8 +271,14 @@ def test_odds_snapshot_duplicate_and_post_tipoff_are_rejected(conn: Connection) 
 def test_one_running_row_per_work_unit(conn: Connection) -> None:
     """Two running rows for the same job and scope are refused; finished rows may repeat."""
     unit = {"job_type": "schedule", "scope_key": "season=2026-27", "source": "nba_api"}
-    done = unit | {"status": "succeeded", "finished_at": datetime.now(UTC)}
-    running = unit | {"status": "running", "finished_at": None}
+    # Fixed timestamps on both sides: the DB default now() (transaction start) can be later
+    # than a Python clock reading, which would break finished_at >= started_at.
+    done = unit | {
+        "status": "succeeded",
+        "started_at": T0,
+        "finished_at": T0 + timedelta(minutes=1),
+    }
+    running = unit | {"status": "running", "started_at": T0, "finished_at": None}
     conn.execute(insert(IngestionRun), [done, done, running])
     assert _violation(conn, insert(IngestionRun), running) == "uq_ingestion_runs_one_running"
 

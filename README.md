@@ -152,6 +152,12 @@ uv run alembic downgrade base
 
 `uv run pytest -q`의 마이그레이션 테스트는 `.env`의 DB를 건드리지 않는다. 같은 서버에 `presagio_test_xxxxxxxx` 같은 임시 DB를 만들어 올리고 내린 뒤 테스트가 끝나면 지운다.
 
+테스트를 강제로 죽이면(`kill -9` 등) 임시 DB가 남을 수 있다. 남은 `presagio_test_*`를 한 번에 지운다(개발 DB `presagio`는 이름이 달라 지워지지 않는다).
+
+```bash
+echo "SELECT format('DROP DATABASE %I WITH (FORCE)', datname) FROM pg_database WHERE datname LIKE 'presagio\_test\_%' \gexec" | docker compose exec -T postgres psql -U presagio -d postgres
+```
+
 ## 기술 스택 (기본안)
 
 Python 3.12 · uv · PostgreSQL · SQLAlchemy 2 + Alembic · nba_api + httpx · scikit-learn + LightGBM · FastAPI · pytest + ruff

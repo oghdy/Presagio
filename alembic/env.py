@@ -40,6 +40,9 @@ def _run(connection: Connection) -> None:
         include_object=include_object,
         compare_type=True,
         compare_server_default=True,
+        # Opt-in plugin: also report CHECK constraints added or removed (matched by name).
+        # It does not compare CHECK expressions; tests/db/test_migrations.py covers those.
+        autogenerate_plugins=["alembic.autogenerate.*", "alembic.ext.checkconstraint_byname"],
     )
     with context.begin_transaction():
         context.run_migrations()

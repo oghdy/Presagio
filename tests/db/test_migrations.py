@@ -181,6 +181,19 @@ def _catalog(conn: Connection) -> dict[str, Any]:
     }
 
 
+def _difference(key: str, got: Any, want: Any) -> str:
+    """Describe what the migrated database has that the other one lacks, and the reverse."""
+    if isinstance(want, Counter):
+        extra, missing = sorted((got - want).elements()), sorted((want - got).elements())
+    elif isinstance(want, dict):
+        extra = sorted((k, v) for k, v in got.items() if want.get(k) != v)
+        missing = sorted((k, v) for k, v in want.items() if got.get(k) != v)
+    else:
+        extra = sorted(set(got) - set(want))
+        missing = sorted(set(want) - set(got))
+    return f"{key} differ\n  only in migration: {extra}\n  only in the other: {missing}"
+
+
 def test_migration_matches_design_ddl(
     make_test_database: Callable[[], URL], alembic_config: AlembicConfig
 ) -> None:
@@ -195,8 +208,41 @@ def test_migration_matches_design_ddl(
         with migrated_engine.connect() as migrated, design_engine.connect() as design:
             got, want = _catalog(migrated), _catalog(design)
         for key in want:
-            assert got[key] == want[key], key
+            assert got[key] == want[key], _difference(key, got[key], want[key])
         assert sum(1 for r in want["constraints"].elements() if r[1] == "c") == 60
     finally:
         migrated_engine.dispose()
         design_engine.dispose()
+
+
+def _named_constraints(conn: Connection) -> set[tuple[str, str, str, str]]:
+    """Return (table, name, type, definition) for every constraint on the schema v1 tables."""
+    rows = conn.execute(
+        text(
+            "SELECT conrelid::regclass::text, conname, contype, pg_get_constraintdef(oid) "
+            "FROM pg_constraint WHERE connamespace = 'public'::regnamespace "
+            "AND conrelid::regclass::text <> 'alembic_version'"
+        )
+    )
+    return {tuple(row) for row in rows}
+
+
+def test_model_constraints_match_migration(
+    make_test_database: Callable[[], URL], alembic_config: AlembicConfig
+) -> None:
+    """Tables built straight from the models carry the same named constraints as the migration."""
+    # `alembic check` ignores CHECK expressions (even with checkconstraint_byname, which only
+    # matches names), so a CHECK edited in a model alone would slip into the next autogenerate.
+    migrated_url, models_url = make_test_database(), make_test_database()
+    _upgrade(alembic_config, migrated_url)
+    models_engine = make_engine(models_url)
+    Base.metadata.create_all(models_engine)
+    migrated_engine = make_engine(migrated_url)
+    try:
+        with migrated_engine.connect() as migrated, models_engine.connect() as models:
+            got, want = _named_constraints(migrated), _named_constraints(models)
+        assert got == want, _difference("constraints", got, want)
+        assert sum(1 for row in want if row[2] == "c") == 60
+    finally:
+        migrated_engine.dispose()
+        models_engine.dispose()
