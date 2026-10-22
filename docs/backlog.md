@@ -15,7 +15,7 @@
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
-| P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | REVIEW | P-001 |
+| P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
@@ -23,7 +23,7 @@
 | P-015 | nba_api 어댑터: 팀 박스스코어 → team_game_stats | data-engineer | TODO | P-014 |
 | P-016 | 백필 CLI (시즌/날짜 범위, 재개 가능, 멱등) | data-engineer | TODO | P-014, P-015 |
 | P-017 | 증분 수집 CLI (전날 결과 + 오늘 일정) | data-engineer | TODO | P-016 |
-| P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | REVIEW | P-001 |
+| P-018 | 🧑 배당 API 후보 조사 (스파이크) | data-engineer | DONE | P-001 |
 | P-019 | 배당 어댑터 인터페이스 + odds_snapshots 저장 | data-engineer | TODO | P-012, P-018 승인 |
 | P-020 | 데이터 품질 체크 모듈 + CLI | data-engineer | TODO | P-015 |
 | P-021 | 3시즌 + 현재 시즌 실제 백필 + 확인 쿼리 보고 | data-engineer | TODO | P-016, P-020 |
@@ -134,7 +134,7 @@
 ## 단계 1. 데이터 파이프라인
 
 ### P-010 nba_api 엔드포인트 조사 (스파이크)
-- **상태:** REVIEW (2026-10-22 PR #6 열림, 브랜치 `docs/P-010-nba-api-research`)
+- **상태:** DONE (2026-10-22, PR #6 squash merge)
 - **담당 역할:** data-engineer
 - **단계:** 1
 - **의존:** P-001
@@ -270,7 +270,7 @@
 - **확인 방법:** 테스트 + 수동 1회 실행 로그.
 
 ### P-018 🧑 배당 API 후보 조사 (스파이크)
-- **상태:** REVIEW (2026-10-22 PR #5 열림, 브랜치 `docs/P-018-odds-api-research`)
+- **상태:** DONE (2026-10-22, PR #5 squash merge. 사람 결정 D-026: The Odds API 무료 플랜, 과거 백필 보류. 무료 키 발급 완료, `.env`에 보관)
 - **담당 역할:** data-engineer (조사) → PM → 사람 결정
 - **단계:** 1
 - **의존:** P-001
@@ -292,7 +292,7 @@
 - **상태:** TODO
 - **담당 역할:** data-engineer
 - **단계:** 1
-- **의존:** P-012, P-018 승인
+- **의존:** P-012, P-018 승인(D-026으로 완료: The Odds API 무료 플랜)
 - **목표:** 배당 소스가 무엇이든 같은 모양으로 `odds_snapshots`에 넣는 인터페이스와, 선택된 소스의 어댑터(키가 있으면 실제 연결, 없으면 픽스처 기반)를 만든다.
 - **범위:** `src/presagio/ingestion/sources/odds/`, `src/presagio/ingestion/loaders/odds.py`, `tests/`
 - **완료 기준:**
