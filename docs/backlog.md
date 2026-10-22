@@ -16,7 +16,7 @@
 | P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | DONE | P-001 |
 | P-003 | GitHub Actions CI (lint + test) | platform-engineer | DONE | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | DONE | P-001 |
-| P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
+| P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | IN PROGRESS | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
 | P-013 | 공통 수집 레이어: 재시도/딜레이/타임아웃/raw 저장/ingestion_runs | data-engineer | TODO | P-012 |
 | P-014 | nba_api 어댑터: 팀, 일정, 결과 → teams, games | data-engineer | TODO | P-010, P-013 |
@@ -158,7 +158,7 @@
   - 2026-10-22 PM: 리뷰 판정 "수락 가능", 완료 기준 1~5 전부 O(리뷰어가 실제 호출 5번과 픽스처로 재현, 5,470경기 ID·시간대 규칙 위반 0). 발견 [중간] 1건: 조사 스크립트가 HTML 403에서 즉시 멈추지 않음(JSON 파싱 후 검사) → 제품 코드가 아니므로 수정 없이 수락, P-013 기준 보강으로 반영(Q-008, D-024). [낮음] 2건(호출 수 표기, 픽스처 단계 경로)은 일회성 스크립트라 무시. 결정 D-023~D-025 기록. 사람 머지 대기.
 
 ### P-011 🧑 raw/clean 스키마 설계안 v1
-- **상태:** TODO
+- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `docs/P-011-schema-v1`)
 - **담당 역할:** data-engineer (설계안 작성) → PM → 사람 승인
 - **단계:** 1
 - **의존:** P-010
@@ -174,6 +174,8 @@
   5. "다른 선택지와 안 고른 이유"가 최소 3개 있다(예: JSONB vs 정규화 컬럼, 자연키 vs 대리키, 팀 ID 체계).
   6. 사람이 승인하면 PM이 `docs/decisions.md`에 D-번호로 기록한다.
 - **확인 방법:** 사람이 설계안을 읽고 승인/수정 요청.
+- **메모:**
+  - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). 브리핑에 P-010 6장 관찰과 P-018 응답 구조, D-023~D-026을 반영. 결과물은 설계안 + "승인 요청 사항" 번호 목록.
 
 ### P-012 SQLAlchemy 모델 + Alembic 초기 마이그레이션
 - **상태:** TODO
@@ -203,7 +205,7 @@
 - **읽어야 할 파일:** `docs/research/nba_api.md`(딜레이 권장값), `docs/team/risks.md` B1
 - **완료 기준:**
   1. 요청 간 최소 딜레이, 지수 백오프 재시도 횟수, 타임아웃이 설정값(`config.py`)이고 기본값이 문서화되어 있다.
-  2. 재시도는 일시적 오류(타임아웃, 429, 5xx)에만 하고, 4xx는 즉시 실패한다. 테스트로 증명.
+  2. 재시도는 일시적 오류(타임아웃, 5xx)에만 하고, 403/429를 포함한 4xx는 재시도 없이 즉시 실패한다. HTTP 상태 코드는 **JSON 파싱보다 먼저** 검사한다(nba_api는 4xx에서 예외를 던지지 않고 HTML 본문을 돌려준다). 비JSON 차단 응답(HTML 403)을 mock으로 테스트한다. (2026-10-22 D-024, Q-008 승인으로 보강)
   3. 모든 응답이 `raw_api_responses`에 저장되고, 같은 요청을 다시 해도 중복 행이 생기지 않는다(테스트).
   4. `ingestion_runs`에 작업 종류, 시작/종료, 상태, 처리 건수, 에러 메시지가 기록된다(테스트).
   5. 테스트는 네트워크를 타지 않는다(httpx MockTransport 또는 동등한 방식).
