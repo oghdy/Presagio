@@ -115,6 +115,39 @@
 - **다른 선택지:** OrbStack(가볍고 빠르지만 상업 이용은 유료, 맥 전용), Colima(오픈소스 무료, CLI만, 설정이 더 필요).
 - **다시 볼 때:** 맥 메모리 부담이 크면 OrbStack으로 바꿀 수 있다. compose 파일은 그대로 쓸 수 있으므로 전환 비용은 낮다.
 
+## D-017 레포를 공개(public)로 전환한다
+- **날짜:** 2026-10-22 (사람 결정, Q-004)
+- **무엇을:** `oghdy/Presagio`를 비공개에서 공개로 바꿨다. 목적은 `main` 브랜치 보호(PR 필수, `lint-and-test`·`secret-scan` 필수 체크, force push 금지)를 켜는 것. 브랜치 보호 적용은 사람이 GitHub 설정에서 한다(P-003 PR 본문의 제안 그대로).
+- **왜:** 비공개 무료 레포는 브랜치 보호와 rulesets API가 403이라 "CI 빨간불이면 머지 금지"를 기계가 강제할 수 없었다. 포트폴리오 프로젝트라 어차피 공개할 예정이고, 공개 레포는 Actions 분량 제한도 없다. 공개 전에 CI `secret-scan`이 커밋 기록 전체에 비밀값이 없음을 확인했다(P-003).
+- **다른 선택지:** GitHub Pro(유료), 비공개 유지 + 사람 규칙(실수 방지 장치 없음).
+- **따라오는 규칙:** 공개 레포이므로 `.env`, API 키, 실제 배당 데이터 덤프를 더욱 커밋하면 안 된다. pre-commit gitleaks(D-012) + CI 기록 전체 검사(D-015) 두 겹이 그 방어선이다. 외부 API 키는 GitHub Secrets에만 둔다(단계 6).
+
+## D-018 CI 비밀값 검사는 gitleaks 바이너리를 직접 실행하고, 가져온 모든 브랜치의 기록을 검사한다
+- **날짜:** 2026-10-22 (P-003, PR #2의 결정 제안 + 리뷰어 검증을 PM이 채택)
+- **무엇을:** `.github/workflows/ci.yml`의 `secret-scan` 잡은 gitleaks v8.30.1 공식 릴리스를 sha256 체크섬 검증 후 받아 `gitleaks git --redact .`를 실행한다. `actions/checkout`은 `fetch-depth: 0`. 서드파티 액션은 커밋 SHA로 고정한다. 검사 범위는 **checkout이 가져온 모든 ref(원격 브랜치 전체)의 커밋 기록**이다(리뷰어가 재현으로 확인. 작성자의 처음 설명 "HEAD만 본다"는 틀렸고 PR에서 정정했다).
+- **왜:** (1) pre-commit 훅과 같은 버전·같은 규칙이라 "로컬 통과 = CI 통과"가 보장된다. (2) 로컬에서 같은 명령으로 재현된다. (3) `gitleaks-action`은 자체 라이선스이고 조직 이전 시 키가 필요하다. (4) 모든 브랜치를 보는 것은 공개 레포에서는 어느 브랜치든 올라가면 이미 노출이므로 넓게 울리는 쪽이 맞다.
+- **대가:** 원격의 어느 브랜치 하나에 비밀값(또는 오탐)이 있으면 무관한 PR까지 전부 `secret-scan`이 실패한다. 그 브랜치를 지우거나 고쳐야 머지가 풀린다. 카나리 브랜치는 반드시 바로 지운다.
+- **다른 선택지:** `gitleaks/gitleaks-action@v3`(PR 댓글·SARIF 편리, 라이선스 의존), `--log-opts=HEAD`로 PR 기준만 검사(좁지만 다른 브랜치 유출을 못 봄), GitHub secret scanning(공개 레포에서 켤 수 있음, 로컬 재현 불가. 켜는 것은 사람 몫).
+- **후속:** `concurrency.cancel-in-progress`가 `push: main`에도 적용되어 연속 머지 시 앞 커밋의 CI가 취소될 수 있다(리뷰어 [낮음]). 단계 1에서 CI에 postgres service container를 붙일 때 같이 고친다.
+
+## D-019 DB 접속 스택: psycopg 3 + SQLAlchemy 2 + pydantic-settings, `DATABASE_URL` 한 줄, postgres 17, 호스트 포트 5433
+- **날짜:** 2026-10-22 (P-002, PR #4의 결정 제안을 PM이 채택)
+- **무엇을:**
+  - 드라이버 psycopg 3(`psycopg[binary]`), URL `postgresql+psycopg://`. 동기 SQLAlchemy 2.x 공식 지원 현행 드라이버, psycopg2의 후속, 바이너리 휠이라 libpq 설치 불필요, 나중에 async도 같은 드라이버.
+  - 설정은 pydantic-settings `BaseSettings`: `.env` 읽기, 환경변수 우선, 타입 변환·검증, 필수값 누락 시 즉시 에러. 단계 5 FastAPI와 같은 생태계.
+  - 파이썬은 `DATABASE_URL` 한 줄(SQLAlchemy·Alembic·PaaS 표준), 컨테이너는 `POSTGRES_*` 개별 변수(이미지가 그렇게 받음). 같은 정보가 두 곳에 있으므로 함께 고친다.
+  - 이미지 `postgres:17-alpine`: "16 이상" 중 데이터 경로가 16과 같은 마지막 메이저, 지원 2029-11. 18은 볼륨 경로 규칙이 바뀜(작성자가 `docker image inspect`로 확인).
+  - 호스트 포트 5433, `127.0.0.1` 바인딩: 이 맥의 Postgres.app이 5432를 쓰고 있고, 같은 네트워크의 다른 기기가 가짜 비번으로 접속하지 못하게.
+- **다른 선택지:** psycopg2-binary(유지보수 모드), asyncpg(async 전용, Alembic·배치와 안 맞음), `os.environ` 직접(검증 없음), 개별 변수로 URL 조립(PaaS와 안 맞음), postgres 16(보수적)/18(최신, 경로 다름), 포트 5432(충돌).
+- **skip 기준:** D-020에 따로 적었다.
+
+## D-020 DB 연결 테스트는 "아무도 안 들음"이면 skip, "들었는데 거부함"이면 실패한다
+- **날짜:** 2026-10-22 (P-002 리뷰 과정에서 확정)
+- **무엇을:** `tests/conftest.py`의 `db_engine` fixture는 (1) `DATABASE_URL`이 없으면 skip, (2) TCP 탐침으로 포트에 아무도 안 들으면 skip(연결 거부, 타임아웃 2초), (3) 포트는 열렸는데 DB가 거부하면(비밀번호 틀림, DB 없음) **실패**시키고 원인 메시지 전체를 보여준다. `PRESAGIO_REQUIRE_DB=1`이면 skip 대신 전부 실패. 실패 경로에서 비밀번호가 traceback에 찍히지 않도록 `__tracebackhide__`를 쓰고, "출력에 비밀번호 없음"을 테스트로 고정한다.
+- **왜:** 환경변수 유무만 보면 ".env는 있는데 Docker를 안 켠" 개발자의 테스트가 실패해 완료 기준 4("DB 없이도 통과")를 어긴다. 반대로 모든 연결 오류를 skip하면 볼륨 생성 후 비밀번호를 바꾼 것 같은 실제 설정 오류가 "DB 꺼짐"으로 위장되어 조용히 넘어간다(리뷰어 재현). pytest는 기본 traceback에 함수 인자를 찍으므로 URL 문자열을 받는 프레임에서 실패하면 비밀번호가 노출된다(리뷰어 재현, `grep -c WRONGPW` 4 → 수정 후 0).
+- **다른 선택지:** pytest 마커(`-m db`)로 분리(기본 실행에서 빠져 잊기 쉬움), 환경변수 유무만 보기, 모든 OperationalError를 skip.
+- **알려진 한계(단계 1에서):** fixture가 function 범위라 응답 없는 호스트에서는 DB 테스트마다 2초씩 늘어난다(지금 6개 → 약 12초). "닿는지" 판정을 session 범위로 한 번만 하는 방식을 단계 1 DB 티켓에서 다룬다. CI에 postgres service container를 붙일 때 `PRESAGIO_REQUIRE_DB=1`을 켠다(Q-005).
+
 ---
 
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)
@@ -124,3 +157,5 @@
 | Q-001 | P-003(CI) 완료 기준에 "`gitleaks git`으로 기록 전체 검사 통과"를 추가 (리뷰어 제안. pre-commit 훅은 스테이징 변경만 보기 때문) | 2026-10-21 | 승인 (2026-10-22, D-015) |
 | Q-002 | 앞으로 "도구가 설치되어 있다" 같은 기계 상태 기준은 "README에 설치 방법이 있고 새 클론에서 명령이 성공한다"로 쓴다 (리뷰어 제안, 기준 작성 규칙) | 2026-10-21 | 대기 |
 | Q-003 | 로컬 Docker 런타임 선택 (이 맥에 docker 없음). 후보: Docker Desktop(개인 무료, 가장 표준, GUI), OrbStack(개인 무료·상업 유료, 가볍고 빠름), Colima(오픈소스 무료, CLI만). PM 추천: Docker Desktop. 포트폴리오로 보여줄 때 "docker compose up"이 어디서나 같은 뜻이고 면접관도 아는 도구라서 | 2026-10-22 | 승인 (2026-10-22, Docker Desktop, D-016) |
+| Q-004 | 브랜치 보호(필수 체크)를 켜려면 레포를 공개로 바꾸거나 GitHub Pro가 필요(비공개 무료 레포는 403). 선택지: (a) 공개 전환(무료, Actions 무제한, 포트폴리오라 어차피 공개 예정. CI secret-scan으로 기록 전체 깨끗함 확인됨), (b) GitHub Pro(유료), (c) 비공개 유지 + "CI 초록 확인 후 머지"를 사람 규칙으로. PM 추천: (a) 공개 전환. 단, 공개 전 README가 "진행 중 프로젝트"임을 밝히고 있으니 그대로 공개해도 된다 | 2026-10-22 | 승인 (2026-10-22, 공개 전환 완료, D-017) |
+| Q-005 | 단계 1 DB 티켓(P-012~)의 완료 기준에 "DB 설정 오류(인증 실패 등)는 skip이 아니라 실패"와 "CI는 postgres service container + `PRESAGIO_REQUIRE_DB=1`로 실제 DB에서 돌린다"를 넣는다 (P-002 리뷰어 제안). PM 추천: 넣는다 | 2026-10-22 | 대기 |
