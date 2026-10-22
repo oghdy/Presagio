@@ -13,8 +13,8 @@
 | --- | --- | --- | --- | --- |
 | P-000 | 회사 구조 셋업 | (창업 세션) | DONE | - |
 | P-001 | uv 프로젝트 뼈대 + ruff + pytest + pre-commit | data-engineer | DONE | - |
-| P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | IN PROGRESS | P-001 |
-| P-003 | GitHub Actions CI (lint + test) | platform-engineer | IN PROGRESS | P-001 |
+| P-002 | Docker Compose PostgreSQL + 설정 로딩 | data-engineer | REVIEW | P-001 |
+| P-003 | GitHub Actions CI (lint + test) | platform-engineer | REVIEW | P-001 |
 | P-010 | nba_api 엔드포인트 조사 (스파이크) | data-engineer | TODO | P-001 |
 | P-011 | 🧑 raw/clean 스키마 설계안 v1 | data-engineer | TODO | P-010 |
 | P-012 | SQLAlchemy 모델 + Alembic 초기 마이그레이션 | data-engineer | TODO | P-002, P-011 승인 |
@@ -71,7 +71,7 @@
   - 2026-10-22 PM: 사람이 리뷰어 세션에서 "확인 완료 PR 합치는것으로 결정"이라 말해 리뷰어 세션이 `gh`로 squash merge 수행(머지 계정 oghdy). 머지는 사람 또는 PM 요청으로만 하는 것이 원칙(D-005)이므로 다음부터는 PM 세션에서 진행. README [낮음] 발견 사항은 P-003 범위로 이동. 브리핑에서 런타임 의존성(SQLAlchemy 등) 추가를 범위 밖으로 명시했고, `uv.lock`은 커밋 대상에 포함했다.
 
 ### P-002 Docker Compose PostgreSQL + 설정 로딩
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-002-docker-postgres`)
+- **상태:** REVIEW (2026-10-22 PR #4 열림, 브랜치 `feat/P-002-docker-postgres`)
 - **담당 역할:** data-engineer
 - **단계:** 0
 - **의존:** P-001
@@ -93,9 +93,10 @@
 - **메모:**
   - 2026-10-22 PM: 이 맥에 `docker` 명령 없음(PM 확인). Docker 런타임 선택과 설치는 사람(decisions.md Q-003). 설치 전에는 세션을 띄우지 않는다. 브리핑은 PM 공유 노트 `P-002-briefing.md`에 준비됨.
   - 2026-10-22 PM: 사람이 Docker Desktop 설치 완료(D-016, hello-world 확인). data-engineer 세션 시작(Opus 5.5, 노력 높음, D-011). P-003과 병렬.
+  - 2026-10-22 PM: PR #4(https://github.com/oghdy/Presagio/pull/4) 도착. README에서 PR #2와 충돌 예정(해결법은 PR 본문). reviewer 카드 올림. 머지 순서: #2 먼저, 그 다음 #4 충돌 해결 후.
 
 ### P-003 GitHub Actions CI (lint + test)
-- **상태:** IN PROGRESS (2026-10-22 시작, 브랜치 `feat/P-003-github-actions-ci`)
+- **상태:** REVIEW (2026-10-22 PR #2 열림, 브랜치 `feat/P-003-github-actions-ci`)
 - **담당 역할:** platform-engineer (단계 0 예외 활성)
 - **단계:** 0
 - **의존:** P-001
@@ -115,6 +116,7 @@
   - 2026-10-21 PM: P-001 리뷰어가 완료 기준 추가를 제안함(`gitleaks git` 기록 전체 검사).
   - 2026-10-22 PM: 사람이 승인. 완료 기준 4와 README 한 줄을 범위에 추가했다(D-015).
   - 2026-10-22 PM: 사람 확인 후 platform-engineer 세션 시작(Opus 5.5, 노력 높음, D-011). P-002는 Docker 설치 대기.
+  - 2026-10-22 PM: PR #2(https://github.com/oghdy/Presagio/pull/2) 도착. CI 2개 잡 초록, 카나리 PR #3으로 실패 증명 후 삭제. 브랜치 보호는 비공개 무료 레포라 적용 불가(403) → 사람 결정 Q-004. reviewer 카드 올림.
 
 ---
 
