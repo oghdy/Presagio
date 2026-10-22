@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Seconds to wait for a TCP connection to the database before giving up.
@@ -22,6 +22,12 @@ DEFAULT_HTTP_BACKOFF_BASE = 1.0
 DEFAULT_HTTP_BACKOFF_JITTER = 0.5
 # A run left 'running' for longer than this (process died) is closed as 'aborted' (schema ch. 4).
 DEFAULT_STALE_RUN_HOURS = 6.0
+
+# The Odds API (D-026, docs/research/odds_api.md). One /odds request costs markets x regions
+# credits (3 with the defaults below); the free plan has 500 credits a month.
+DEFAULT_ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4"
+DEFAULT_ODDS_API_REGIONS = "us"
+DEFAULT_ODDS_API_MARKETS = "h2h,spreads,totals"
 
 
 class Settings(BaseSettings):
@@ -64,6 +70,27 @@ class Settings(BaseSettings):
         gt=0,
         description="Hours after which a leftover 'running' ingestion run is marked 'aborted'.",
     )
+    odds_api_key: SecretStr | None = Field(
+        default=None,
+        description="The Odds API key; empty or unset disables the odds adapter. Never logged.",
+    )
+    odds_api_base_url: str = Field(
+        default=DEFAULT_ODDS_API_BASE_URL, description="The Odds API base URL, up to /v4."
+    )
+    odds_api_regions: str = Field(
+        default=DEFAULT_ODDS_API_REGIONS, description="Bookmaker regions, comma separated."
+    )
+    odds_api_markets: str = Field(
+        default=DEFAULT_ODDS_API_MARKETS, description="Markets to request, comma separated."
+    )
+
+    @field_validator("odds_api_key", mode="before")
+    @classmethod
+    def _blank_key_is_none(cls, value: object) -> object:
+        """Treat ODDS_API_KEY= (empty, as in .env.example) as no key."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 @lru_cache
