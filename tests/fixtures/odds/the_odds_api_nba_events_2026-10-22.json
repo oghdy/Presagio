@@ -1,0 +1,26 @@
+[
+ {
+  "id": "110e33c79c5ec8c0377702aff685f83b",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-10-22T23:10:00Z",
+  "home_team": "Philadelphia 76ers",
+  "away_team": "Cleveland Cavaliers"
+ },
+ {
+  "id": "223b2883b9b05a67329ef246384b85f1",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-10-23T01:40:00Z",
+  "home_team": "Oklahoma City Thunder",
+  "away_team": "Denver Nuggets"
+ },
+ {
+  "id": "13d9ca3bcb664829c603755d31401002",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-28T02:40:00Z",
+  "home_team": "San Antonio Spurs",
+  "away_team": "Los Angeles Lakers"
+ }
+]
