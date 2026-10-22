@@ -1,4 +1,4 @@
-"""`presagio` command line: ingestion commands (backfill now; ingest-daily in P-017).
+"""`presagio` command line: ingestion commands (backfill, ingest-daily) and quality-check.
 
 Exit codes: 0 everything done, 1 some unit not done (or an error before starting), 2 stopped by
 a block (HTTP 403/429), 64 bad arguments (sysexits EX_USAGE, so it never reads as "blocked").
@@ -31,6 +31,7 @@ from presagio.ingestion.backfill import (
 )
 from presagio.ingestion.client import IngestionClient, db_raw_store
 from presagio.ingestion.errors import RunAlreadyRunningError
+from presagio.ingestion.incremental import add_ingest_daily_parser
 from presagio.ingestion.runs import error_line
 from presagio.quality.cli import COMMAND as QUALITY_CHECK
 from presagio.quality.cli import add_quality_check_parser, cmd_quality_check
@@ -143,6 +144,7 @@ def build_parser() -> ArgumentParser:
         metavar="H",
         help="close 'running' rows older than H hours as aborted first (default STALE_RUN_HOURS)",
     )
+    add_ingest_daily_parser(commands)  # P-017
     add_quality_check_parser(commands)
     return parser
 
@@ -310,7 +312,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     engine: Engine | None = None,
-    sources: Callable[[Engine], BackfillSources] | None = None,
+    sources: Callable[[Engine], Any] | None = None,
     now: datetime | None = None,
     setup_logging: bool = True,
 ) -> int:
@@ -321,6 +323,10 @@ def main(
         if setup_logging:
             configure_logging(args.verbose)
         return cmd_quality_check(args, engine=engine)
+    if hasattr(args, "run"):  # subcommands that bring their own runner (set_defaults(run=...))
+        if setup_logging:
+            configure_logging(args.verbose)
+        return args.run(args, engine=engine, sources=sources, now=now)
     if args.command == "backfill" and (args.date_from is None) != (args.date_to is None):
         parser.error("--from and --to go together")
     try:
