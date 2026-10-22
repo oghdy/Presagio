@@ -177,6 +177,7 @@
 - **메모:**
   - 2026-10-22 PM: 사람 확인 후 data-engineer 세션 시작(Opus 5.5, xhigh, D-011). 브리핑에 P-010 6장 관찰과 P-018 응답 구조, D-023~D-026을 반영. 결과물은 설계안 + "승인 요청 사항" 번호 목록.
   - 2026-10-22 PM: PR #7(https://github.com/oghdy/Presagio/pull/7) 도착. 표 8개(raw_api_responses, ingestion_runs, teams, team_aliases, games, team_game_stats, odds_events, odds_snapshots) + 뷰 2개 + 승인 요청 A-1~A-11. 부록 DDL은 작성자가 임시 Postgres 17에서 검증. CI 초록. reviewer 카드 올림(픽스처 대조, DDL 실행, 매일 흐름 시뮬레이션 지시).
+  - 2026-10-22 PM: 리뷰 판정 "수정 후 재리뷰"(반려 1회차). DDL 통과, 완료 기준 1~5 O. [중간] 3건을 임시 DB로 재현: (1) 연기 경기에서 `odds_closing_lines`가 오래된 배당을 마감으로 반환, (2) `games`를 scoreboard가 먼저 적재하면 `season` NOT NULL 위반·`postponed_status` 소실(소스별 갱신 컬럼 규칙 없음), (3) `team_game_stats_primary`가 TOV 정의를 섞음. [낮음] 4건. 작성자에게 문서 수정 요청(표 구조 변경 금지). 리뷰어 지적한 기준 6 문제(PM 행동이라 PR로 검증 불가)는 다음 설계 티켓부터 문구 수정(D-021 적용).
 
 ### P-012 SQLAlchemy 모델 + Alembic 초기 마이그레이션
 - **상태:** TODO
