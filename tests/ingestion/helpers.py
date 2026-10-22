@@ -1,5 +1,6 @@
 """Test helpers for ingestion: fake clock, in-memory raw store, canned HTTP responses."""
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -118,3 +119,41 @@ def json_bytes(
     return httpx.Response(
         status, content=body, headers={"Content-Type": "application/json", **(headers or {})}
     )
+
+
+def fixture_name(request: httpx.Request) -> str:
+    """Fixture file a stats.nba.com request maps to, e.g. 'scheduleleaguev2__2026-27'."""
+    endpoint = request.url.path.rsplit("/", 1)[-1]
+    params = request.url.params
+    if endpoint == "scheduleleaguev2":
+        return f"scheduleleaguev2__{params['Season']}"
+    if endpoint == "leaguegamelog":
+        return f"leaguegamelog__{params['Season']}_{params['SeasonType'].replace(' ', '')}"
+    if endpoint == "commonteamyears":
+        return f"commonteamyears__{params['LeagueID']}"
+    raise AssertionError(f"no fixture route for {endpoint}")
+
+
+def nba_fixture_handler(overrides: dict[str, bytes] | None = None) -> Handler:
+    """MockTransport handler serving tests/fixtures/nba_api by request; overrides win.
+
+    The overrides dict is read on every request, so a test can change a response between
+    two loads (e.g. a scheduled game that became final).
+    """
+    seen: list[httpx.Request] = []
+    replaced = overrides if overrides is not None else {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve the matching fixture bytes with HTTP 200."""
+        seen.append(request)
+        name = fixture_name(request)
+        body = replaced[name] if name in replaced else fixture_bytes(name)
+        return json_bytes(200, body)
+
+    handler.seen = seen  # type: ignore[attr-defined]
+    return handler
+
+
+def fixture_json(name: str) -> Any:
+    """Parsed copy of a fixture, for tests that edit a response."""
+    return json.loads(fixture_bytes(name))
