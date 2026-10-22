@@ -1,6 +1,7 @@
 """Tests for settings loading and the database connection helpers."""
 
 import time
+from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -9,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from presagio.config import Settings
+from presagio.db import session as db_session
 from presagio.db.session import check_connection, make_engine
 
 
@@ -36,6 +38,47 @@ def test_check_connection_fails_fast_when_unreachable() -> None:
         check_connection(engine)
     assert time.monotonic() - start < 5
     engine.dispose()
+
+
+def test_make_engine_with_explicit_url_ignores_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Passing a url alone must not read settings, so it works without a .env file."""
+
+    def _no_settings() -> Settings:
+        raise AssertionError("make_engine(url) must not load settings")
+
+    monkeypatch.setattr(db_session, "get_settings", _no_settings)
+    engine = make_engine("postgresql+psycopg://presagio:presagio@127.0.0.1:1/presagio")
+    assert engine.url.port == 1
+    engine.dispose()
+
+
+def test_nothing_listening_skips(
+    monkeypatch: pytest.MonkeyPatch, connect_test_engine: Callable[[str], Engine]
+) -> None:
+    """A closed port means "no database here", which skips DB tests."""
+    monkeypatch.delenv("PRESAGIO_REQUIRE_DB", raising=False)
+    with pytest.raises(pytest.skip.Exception, match="no database listening at 127.0.0.1:1"):
+        connect_test_engine("postgresql+psycopg://presagio:presagio@127.0.0.1:1/presagio")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("password", "definitely-wrong", "password authentication failed"),
+        ("database", "presagio_missing", 'database "presagio_missing" does not exist'),
+    ],
+)
+def test_wrong_settings_fail_instead_of_skip(
+    db_engine: Engine,
+    connect_test_engine: Callable[[str], Engine],
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    """A listening server that rejects the settings fails the test with the real cause."""
+    bad_url = db_engine.url.set(**{field: value}).render_as_string(hide_password=False)
+    with pytest.raises(pytest.fail.Exception, match=message):
+        connect_test_engine(bad_url)
 
 
 def test_check_connection_returns_server_version(db_engine: Engine) -> None:
