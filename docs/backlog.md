@@ -428,8 +428,8 @@
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
 | P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | IN PROGRESS | P-017 |
-| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | IN PROGRESS | P-021 |
-| P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | REVIEW (PR #20) | - |
+| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | REVIEW (PR #21) | P-021 |
+| P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | IN PROGRESS | P-021 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (features, model_versions, predictions as_of 스냅숏, 참조 배당) → 마이그레이션 0002 (`is_neutral` 컬럼 추가 없음, D-046) | data-engineer | TODO | P-030 승인 |
 | P-032 | walk-forward 평가 틀 + 지표(log loss, Brier, 보정 구간, MAE/RMSE) + 시장 확률·CLV 계산 | ml-engineer | TODO | P-030 승인 |
@@ -488,7 +488,7 @@
   - 2026-10-23 PM: 창업 세션 검증 노트 F-3로 생성. 맥·Docker Desktop이 꺼진 날은 결손이고 `ingestion_runs`에 run이 없는 것으로 드러난다(정직한 결손). 브랜치 `feat/P-024-launchd-schedule`.
 
 ### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
-- **상태:** IN PROGRESS (2026-10-23 data-engineer 세션 `p-025-neutral`, Opus 5.5 높음, 브랜치 `fix/P-025-neutral-2023-24`. 브리핑 `P-025-briefing.md`)
+- **상태:** REVIEW (2026-10-23 PR #21 https://github.com/oghdy/Presagio/pull/21, 커밋 `27d2b53`, CI 초록. reviewer 서브에이전트 독립 리뷰 중)
 - **담당 역할:** data-engineer
 - **단계:** 2 (단계 1 보수)
 - **의존:** P-021 (DONE), Q-015 (a) 승인
@@ -504,9 +504,10 @@
 - **확인 방법:** 기준 3의 쿼리, `uv run presagio quality-check --season 2023-24` 14 pass.
 - **메모:**
   - 2026-10-23 PM: 창업 세션 검증 노트 F-1로 생성. D-044의 "컬럼 추가"는 틀린 전제였다(컬럼은 마이그레이션 0001에 있음) → Q-015로 정정 요청. 브랜치 `fix/P-025-neutral-2023-24`.
+  - 2026-10-23 PM: data-engineer 세션(Opus 5.5 높음) 시작 → 같은 날 PR #21 도착(+493/-4, 파일 4, CI 초록). reviewer(Opus 5.5 높음) 서브에이전트가 detached worktree에서 독립 리뷰(D-006, D-014).
 
 ### P-029 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다
-- **상태:** REVIEW (2026-10-23 PR #20 https://github.com/oghdy/Presagio/pull/20. PM 작성, 리뷰어 없음, 사람 머지 대기)
+- **상태:** DONE (2026-10-23, PR #20 squash merge `d631cee`. 사람 지시로 PM이 머지, D-005 보완)
 - **담당 역할:** pm
 - **단계:** 2
 - **의존:** 없음 (Q-016 승인 → D-047도 같은 PR에)
@@ -523,6 +524,7 @@
 - **메모:**
   - 2026-10-23 PM: 검증 노트 F-4로 생성. P-030과 파일이 겹치지 않아 병렬. 브랜치 `docs/P-029-ops-docs-sync`. PM이 직접 쓰고 사람이 머지한다(리뷰어 없음, 문서 정합성 작업).
   - 2026-10-23 PM: PR #20. 문서 4개, +43/-8줄. `git grep "하루 2회" docs/team CLAUDE.md` 0줄 확인. D-047 문구 포함. 사람 머지 대기.
+  - 2026-10-23 PM: 사람 지시("PR #20 머지해줘. squash로")로 PM이 squash 머지 `d631cee`. DONE.
 
 ### 티켓 초안 요지 (상세 완료 기준은 P-030 승인 후 새 PM이 확정)
 
