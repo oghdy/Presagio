@@ -427,7 +427,7 @@
 
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
-| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | REVIEW (PR #23, 기준 5 대기) | P-017 |
+| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | REVIEW (PR #23, PM 수락, 사람 머지 대기) | P-017 |
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
@@ -549,11 +549,11 @@
 - **의존:** P-024 DONE
 - **목표:** 토·일 14:45·16:45 ET에 `ingest-daily --odds-only` 캡처 2회를 더해 낮 경기(12:00~18:00 ET 시작) 마감 배당 커버리지를 87.6% → 97.0%로 올린다. 평일은 4회 그대로. 월 최대 425크레딧.
 - **범위:** `scripts/launchd/`(래퍼 슬롯 규칙·plist 깨어남), `tests/scripts/`, README 운영 소절, `docs/team/risks.md` B2 숫자(PM이 같은 PR에서 또는 별도). 설정값이 필요하면(`ODDS_WEEKEND_CLOSING_TIMES_ET` 등) `src/presagio/config.py` 변경은 data-engineer 영역이므로 PM이 범위를 정한다.
-- **완료 기준(초안, P-024 머지 후 확정):** 토·일 6회·평일 4회를 7개월 모의로 증명, 중복 없음, 월 크레딧 계산 표(≤ 425), 실제 주말 1회 결과.
+- **완료 기준(초안, P-024 머지 후 확정):** 토·일 6회·평일 4회를 7개월 모의로 증명, 중복 없음, 월 크레딧 계산 표(≤ 425), 실제 주말 1회 결과. 함께: P-024 리뷰 3회차 [낮음] 1(23h 정지라 19:45 차단 뒤 다음 날 18:45부터 재개 — 주석·README 문구 정정 또는 "같은 슬롯 벽시계 −10분"으로 변경 + 19:45 차단 테스트).
 - **메모:** 2026-10-23 PM: D-049 M-9로 생성.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
-- **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `3a4dddd`. 재리뷰 "수락 가능(기준 5 대기)" → **16:00 KST 첫 실제 실행 성공(run 102, PM 확인 16:04)** → 작성자 최종 커밋 `527b717`(기준 5 기록 + [낮음] 2건) → **리뷰어 최종 확인 중** → PM 수락 → 사람 머지)
+- **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `3a4dddd`. 재리뷰 "수락 가능(기준 5 대기)" → **16:00 KST 첫 실제 실행 성공(run 102, PM 확인 16:04)** → 최종 커밋 `527b717` → 리뷰 3회차 **"수락 가능"**(기준 1~5 전부 O) → **PM 수락**, 사람 머지 대기. 머지 후 PM이 공유 체크아웃에서 재설치)
 - **담당 역할:** platform-engineer (단계 6 역할의 선행 예외 활성. D-002 예외, P-003·P-023과 같은 방식)
 - **단계:** 2 (단계 6 선행)
 - **의존:** P-017 (DONE), Q-017 승인
@@ -577,7 +577,8 @@
   - 2026-10-23 PM 13:08: 작성자 수정 커밋 `3a4dddd`("base block pause on slot times and trust only ingest-daily exit codes", 파일 7, +1187, 래퍼 테스트 50, CI 초록). 작업자 worktree 깨끗(래퍼 해시 `baf87eed…`), 설치된 잡은 그 파일을 16:00에 실행. 같은 reviewer 서브에이전트에게 재리뷰(차단 경로 1~8, 평상시 경로 회귀 확인) 요청 → `P-024-review-2.md`. 기준 5는 16:00 뒤 PM.
   - 2026-10-23 PM 13:4x: **재리뷰 "수락 가능(기준 5 대기)"**(`P-024-review-2.md`). 1차 발견 1~8 전부 해결(정지 기준을 슬롯 예정 시각으로 + 23시간 50분, 자식을 venv `presagio` 콘솔 스크립트로 직접 호출 + 차단 줄이 있을 때만 BLOCKED, install.sh가 `$REPO/scripts/launchd` 래퍼만 허용, 30분 타임아웃 `exit=124 TIMEOUT`, README·테스트 보강). 전에 살아남은 변이 3개 이제 잡힘. 평상시 경로 회귀 없음(852 슬롯 재계산 동일, 설치된 plist 인자로 dry-run 5회 exit 0). 472 passed(네트워크 차단). 새 [낮음] 2: (1) 봄 서머타임 시작 다음 날 하루만 차단 다음 날 같은 마감 슬롯을 건너뜀(`BLOCK_PAUSE = 23h − 허용치`로 줄이면 해결), (2) `presagio_script()`를 고정하는 테스트 없음(한 줄). → 16:05 이후 기준 5 증거와 함께 한 커밋으로 반영 요청 예정(그 전엔 래퍼 파일 불변). 참고: 타임아웃으로 죽은 run은 `running`으로 남아 같은 scope가 6시간(`STALE_RUN_HOURS`) 동안 exit 1 → 운영 메모. **머지 후 순서:** `git pull` → 공유 체크아웃에서 `scripts/launchd/install.sh` → plist 래퍼 경로에 `.claude/worktrees`·`--uv` 없는지 확인 → 그 뒤에만 작업자 worktree 정리.
   - 2026-10-23 PM 16:04: **기준 5 충족.** launchd 16:00:03 시작 → 16:00:10 `RESULT exit=0 OK [full-2026-10-23-1600] 7.1 s`, 슬롯 표시 생성, blocked 없음, err 로그 0바이트, `launchctl` 종료 0. DB run 102(`incremental date_kst=2026-10-23`, succeeded) + 자식 103 schedule 10-22(1호출·2행), 104 gamelog(1호출·48행), 105 schedule 10-23 upcoming(1호출·12행), 106 odds(1호출·741행). 외부 호출 nba_api 3 + 배당 1(3크레딧) = 계획과 동일. `odds_snapshots` +724행(`prediction`, 이벤트 17, 07:00:09 UTC) — **올 시즌 예측 시점 배당이 처음으로 자동 수집됨.** 작성자에게 PR 기준 5 기록 + [낮음] 2건 한 커밋 요청. 밤 마감 3회는 10-24 07:45·08:45·10:45 KST.
-  - 2026-10-23 PM 16:1x: 작성자 커밋 `527b717`("shorten block pause to 23 h for the spring DST day" + `presagio_script` 테스트 + PR 본문 기준 5 기록, 474 passed). 작업자 worktree 깨끗(설치된 래퍼 해시 `54793f84…` = 이 커밋). reviewer 서브에이전트에게 최종 확인(diff·테스트·기준 5 대조) 요청 → `P-024-review-3.md`. PM 지시 변경: 16:00 launchd 실행을 기다리지 말고 10:57 확인 뒤 PR을 먼저 열고, 기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 결과로 채우되 확인 쿼리를 PR에 적기. 설치한 잡은 제거하지 말 것(머지 후 PM이 공유 체크아웃에서 재설치). **16:00 이후 PM이 `ingestion_runs`로 본 실행 결과를 확인해야 한다.**
+  - 2026-10-23 PM 16:1x: 작성자 커밋 `527b717`("shorten block pause to 23 h for the spring DST day" + `presagio_script` 테스트 + PR 본문 기준 5 기록, 474 passed). 작업자 worktree 깨끗(설치된 래퍼 해시 `54793f84…` = 이 커밋). reviewer 서브에이전트에게 최종 확인(diff·테스트·기준 5 대조) 요청 → `P-024-review-3.md`.
+  - 2026-10-23 PM 16:2x: **3회차 "수락 가능"**: 기준 1~5 전부 O(5는 로그·슬롯 폴더·DB·raw 응답으로 PR 기록과 전부 일치: run 102~106, nba_api 3 + 배당 1, 잔여 크레딧 494, odds 796→1,520). 낮음 2건 해결(정지 길이·테스트 변이로 확인), 평상시 경로 회귀 없음(852 슬롯, 200일 정지 경계 프로브에서 데이터 손실 0). 16:00 실행은 `3a4dddd` 래퍼로 돌았고 차이는 `BLOCK_PAUSE`뿐이라 영향 없음. 새 [낮음] 1: 정지 23h라 19:45 ET 차단 뒤 다음 날 18:45부터 재개(주석·README의 "같은 슬롯 전까지"보다 한 슬롯 이름. 손실 없음, 스냅숏 1개 추가) → **P-028 범위에 문구·테스트 정리 포함**(재리뷰 불필요). **PM 수락.** 수락 메시지 `P-024-acceptance.md`. 사람 머지 대기. **머지 후 PM:** `git pull` → `scripts/launchd/install.sh` → `plutil -p ~/Library/LaunchAgents/com.presagio.ingest-daily.plist | grep -n "presagio_launchd\|--uv"`에 `.claude/worktrees`·`--uv` 없음 확인 → 리뷰 worktree 제거 → 그 뒤 작업자 worktree 정리 가능. 내일 아침 `ingest-2026-10-24.log`에 `odds-2026-10-23-1845/-1945/-2145` RESULT 3줄 확인(기준 2 실물 증거). PM 지시 변경: 16:00 launchd 실행을 기다리지 말고 10:57 확인 뒤 PR을 먼저 열고, 기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 결과로 채우되 확인 쿼리를 PR에 적기. 설치한 잡은 제거하지 말 것(머지 후 PM이 공유 체크아웃에서 재설치). **16:00 이후 PM이 `ingestion_runs`로 본 실행 결과를 확인해야 한다.**
 
 ### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
 - **상태:** DONE (2026-10-23, PR #21 squash merge `f77b691`. 사람 지시("그래 그러면 머지해줘", 추천대로 테스트 한 줄은 후속으로)로 PM이 머지. 머지 후 main에서 `backfill --season 2023-24 --force` 1회: run 96(자식 97~101) 5호출 succeeded, code_version `f77b691`, 행 수·중립 5경기 불변, 품질 체크 14 pass)
