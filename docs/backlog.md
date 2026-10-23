@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·**P-031·P-032** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀). **P-026(PR #34)·P-040(PR #31) PM 수락, 사람 머지 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·P-031·P-032·**P-026** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재). **P-040(PR #31) PM 수락, 사람 머지 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -431,7 +431,7 @@
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
-| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | REVIEW (PR #34 PM 수락, 사람 머지 대기) | P-031 DONE ✓ |
+| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | DONE (PR #34 `4f0d9af`) | P-031 DONE ✓ |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | REVIEW (PR #31, PM 수락, 사람 머지 + 환경 생성 대기) | P-024 DONE |
@@ -555,7 +555,7 @@
 - **메모:** 2026-10-23 PM: P-040 리뷰로 생성.
 
 ### P-026 2022-23 시즌 추가 수집 (D-049 M-11, DR-1)
-- **상태:** REVIEW (2026-10-23 PR #34 https://github.com/oghdy/Presagio/pull/34 `c5a2cb1`, 파일 4 +1067/−7. 리뷰 "수락 가능" → **PM 수락**(`P-026-acceptance.md`). 사람 머지 대기. 개발 DB에는 2022-23 1,320경기·중립 2가 이미 들어 있음(이 PR 코드 `fe1f2db`로 수집, HEAD의 src·tests와 동일 → 머지 뒤 재수집 불필요))
+- **상태:** DONE (2026-10-23 PR #34 https://github.com/oghdy/Presagio/pull/34 squash merge `4f0d9af`. 리뷰 "수락 가능" → PM 수락(`P-026-acceptance.md`) → 사람 지시("PR #34 squash 머지해줘")로 PM이 머지, D-005 보완. 개발 DB에는 2022-23 1,320경기·중립 2가 이미 들어 있음(이 PR 코드 `fe1f2db`로 수집, HEAD의 src·tests와 동일 → 머지 뒤 재수집 불필요))
 - **담당 역할:** data-engineer (Opus 5.5 높음)
 - **단계:** 2
 - **의존:** P-031 뒤(같은 역할이 동시에 두 티켓을 하지 않음). P-034(Elo) 전에 끝나야 함.
@@ -572,6 +572,7 @@
   - 2026-10-23 PM 20:00: 사람 지시로 data-engineer 로컬 세션 `p-026-season`(local_8d439251…, Opus 5.5 높음, 브랜치 `feat/P-026-season-2022-23`) 시작. 브리핑 `P-026-briefing.md`(보고서는 stage1 절 추가 또는 새 파일 하나, 개발 DB 쓰기는 이 세션만).
   - 2026-10-23 PM 20:1x: **PR #34** 도착(`c5a2cb1`, 파일 4 +1067/−7: `docs/research/backfill-report-2022-23.md`, `schedule.py` 중립 목록 2건(멕시코시티 `0022200439`·파리 `0022200678`, 5 → 7), 픽스처 `scheduleleaguev2__2022-23_neutral.json`, 테스트). 작성자 보고: 1,320경기·2,640 스탯 행, nba_api 7호출(4 + 보완 뒤 정규 `--force` 3), 품질 fail 0. reviewer(Opus 5.5 높음) 서브에이전트가 detached worktree에서 개발 DB 읽기 전용(psql read-only 트랜잭션, backfill은 `--dry-run`만)으로 리뷰.
   - 2026-10-23 PM 20:3x: **리뷰 "수락 가능"**(`P-026-review.md`): **기준 1~4 전부 O** — `ingestion_runs` 107~116으로 호출 7(1차 4·teams skip, force 1회 3, 재실행 0; retry 0, 전부 succeeded), raw 94 유형별 수(002 1,230/004 84/005 6/006 0) = DB 1,320, 스탯 2,640(경기당 정확히 2행), 품질 17개 중 16 pass·1 skip·fail 0(전체도 같음), 다른 시즌·모델링 표 4개·odds 불변, `--force` inserted 0(upsert 멱등), 중립 전수 스캔(홈팀별 도시·경기장)으로 정확히 2경기·누락 0(Austin 2·Alamodome 1은 SAS 연고 안 → D-046과 같은 판단), 커밋된 파서를 raw에 돌려 DB 14컬럼 전부 일치, 변이 11/11 잡힘, 보고서 숫자 쿼리 12개 재현 일치, 664 passed(루프백 밖 연결 0), M-11 문구 명시. **[낮음] 3(전부 문서 문구):** 보고서 268행이 포스트시즌 90경기 점수 근거로 `gamelog_vs_schedule_score`를 댔으나 그 체크는 `source='leaguegamelog'`만 봄(값은 raw 게임로그와 90/90 일치, `points_match_score`가 보증), `schema-v1.md` 6-1·13장 "5경기" 미갱신, 오타 1 → **P-041**에 묶음. 참고: `status_text` 공백 15칸 1건(`0022200236`), `NO_ODDS_SEASONS`에 2022-23 없음(→ P-033 5(h)), 머지 커밋에 Co-Authored-By 없음(squash면 소멸). **기준 자체(PM 메모):** 기준 2 "14 pass"는 17개 시대에 맞지 않아 브리핑에서 보정, 범위 문구(stage1 절 vs 새 파일)를 브리핑과 맞춤, 호출 상한이 "보완 뒤 전체 재수집" 몫을 못 담아 포스트시즌 `games.source` 정렬이 막힘 → **D-053**. **PM 수락**(`P-026-acceptance.md`). 사람 머지 대기.
+  - 2026-10-23 PM 20:39: 기록 PR #35 머지 뒤 `gh pr update-branch 34`(HEAD `5e74b79`, CI 초록) → 사람 지시로 PM이 squash 머지 **`4f0d9af`**. **DONE.** 개발 DB 재수집 불필요(DB 값은 `fe1f2db` 코드로 받았고 머지된 src·tests와 동일). 리뷰 worktree 제거. 후속은 P-041(문서 정정 3건)·P-033 5(h)·D-053.
 
 ### P-027 스탯 정정 빈도 품질 체크 (설계안 DR-2)
 - **상태:** TODO (상세 완료 기준은 P-031 뒤 확정)
