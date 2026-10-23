@@ -52,6 +52,15 @@ echo "  uv:       $UV"
 echo "  logs:     $LOG_DIR/ingest-<KST date>.log"
 echo "  wake-ups (KST):"
 (cd "$REPO" && "$UV" run --project "$REPO" python "$HERE/presagio_launchd.py" calendar) | sed 's/^/    /'
+case "$REPO" in
+  "$HOME"/Desktop/* | "$HOME"/Documents/* | "$HOME"/Downloads/*)
+    echo
+    echo "NOTE: $REPO is in a privacy-protected folder. The first run asks for permission"
+    echo "  (\"uv\" wants to access the Desktop/Documents/Downloads folder) and waits until"
+    echo "  someone clicks Allow. Wake the job now and answer the prompt:"
+    echo "    launchctl kickstart gui/$(id -u)/$LABEL"
+    ;;
+esac
 echo
 echo "launchctl list | grep presagio"
 launchctl list | grep presagio

@@ -242,6 +242,8 @@ uv run presagio ingest-daily --odds-only
 
 **전제.** 맥이 켜져 있고(잠자기는 괜찮다, 아래 참고), Docker Desktop이 켜져 DB 컨테이너가 떠 있고, 실행할 레포 루트에 `.env`(`DATABASE_URL`, `ODDS_API_KEY`)가 있어야 한다. 맥 시간대는 서울이어야 한다(설치 스크립트가 확인한다).
 
+**macOS 개인정보 보호(TCC) 권한.** 레포가 `~/Desktop`·`~/Documents`·`~/Downloads` 아래에 있으면, launchd가 띄운 `uv`가 레포를 처음 열 때 macOS가 "uv이(가) 데스크탑 폴더의 파일에 접근하려고 합니다" 창을 띄우고 **사람이 답할 때까지 실행이 멈춘다**(2026-10-23 설치 시험에서 확인: `uv` 프로세스가 `open()`에서 대기, 로그 0줄). 터미널에서 직접 돌릴 때는 터미널 앱이 이미 권한을 가져서 안 보인다. 설치 직후 한 번 `launchctl kickstart gui/$(id -u)/com.presagio.ingest-daily`로 깨워 창이 뜨면 **허용**을 누른다(시스템 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서 `uv`의 "데스크탑 폴더"가 켜져 있으면 된다). 거부하면 `launchd.err.log`에 권한 오류가 남고 아무것도 돌지 않는다. 멈춘 채로 두면 그동안의 예약도 놓친다(잡이 도는 중에 온 예약은 건너뛴다, `man launchd.plist`). 확인: kickstart 뒤 몇 초 안에 오늘 로그에 `skip` 또는 `start` 줄이 생기고 `launchctl list | grep presagio` 첫 칸이 `-`로 돌아오면 정상이다.
+
 **언제 도나.** 시각은 `.env`의 `INGEST_DAILY_TIME_KST`, `ODDS_CLOSING_TIMES_ET`를 그대로 읽는다(D-038).
 
 | 실행 | 기준 시각 | 한국 시각: 서머타임(EDT, ~10-31) | 한국 시각: 겨울(EST, 11-01~) |
