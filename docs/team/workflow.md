@@ -67,6 +67,8 @@
 ## 7. 머지 (사람)
 
 - 사람이 GitHub에서 PR을 읽고 머지한다. squash merge를 기본으로 한다(히스토리가 티켓 단위로 깔끔해진다).
+- 사람이 수락 메시지를 읽고 명시적으로 지시하면("머지해줘", "머지ㄱㄱ") PM이 `gh pr merge --squash`로 대신 실행할 수 있다(D-005 보완). 리뷰어와 작업자는 머지하지 않는다. 사람이 이해하고 결정한다는 원칙은 그대로이고, 버튼을 누르는 손만 위임한 것이다.
+- `main`에는 브랜치 보호(PR 필수, 필수 체크 `lint-and-test`·`secret-scan`, force push 금지, 관리자 우회 금지)를 건다(D-047, 사람이 GitHub에서 켠다). 켜진 뒤에는 PM 소유 문서(`docs/backlog.md`, `docs/decisions.md`, `docs/team/`, `docs/learning/`, `CLAUDE.md`) 변경도 `docs/P-NNN-...` 또는 `docs/pm-YYYYMMDD-<주제>` 브랜치 + PR로 간다. 리뷰어는 붙이지 않고, 작은 기록 변경은 모아서 PR 하나로 한다.
 - 머지 후 PM이 backlog를 `DONE`으로 바꾸고, 결정이 있었으면 `decisions.md`에 적는다.
 
 ## 8. 단계 종료
@@ -86,6 +88,12 @@
 | 돈이 드는 것 | PM | 월 비용 추정 포함 |
 | 완료 기준이 비현실적 | 작업자 → PM → 사람 | 기준을 바꾸는 건 사람만 |
 | 같은 실패 2회 | 작업자 → PM | 상황과 시도한 것 요약 |
+
+## 세션 시작 제약 (Claude 데스크탑 앱, 2026-10-23 기준)
+
+- 작업자·리뷰어 세션은 **사람 턴**에서만 PM이 바로 띄울 수 있다. 다른 세션의 알림이나 자동 이벤트로 시작된 턴에서는 앱이 거부한다. 그때 PM은 (a) 카드(own_initiative)를 올려 사람이 클릭해 시작하게 하거나, (b) 같은 역할 파일의 서브에이전트를 전용 worktree(`git worktree add`)에서 돌린다(D-041 야간 운영에서 실제로 썼다). 서브에이전트에게도 "공유 체크아웃 수정 금지, 루트 `.env` 열지 말 것, 셸로 파일 쓰기"를 명시한다.
+- 앱이 만드는 worktree는 항상 main 기준이다(D-014). 작업자 브리핑에는 브랜치 이름 확인·변경 명령(`git branch --show-current`, `git branch -m ...`)을 넣는다.
+- 모델·노력은 `docs/team/organization.md`의 표(D-011, D-043)대로 띄우고, 어떤 모델·노력으로 띄웠는지 PM이 backlog 티켓 메모에 적는다.
 
 ## PM 세션 시작 프롬프트 (사람이 복사해서 쓴다)
 
@@ -112,5 +120,11 @@ CLAUDE.md를 먼저 읽어라. 아래 브리핑의 티켓만 수행한다. 범�
 ```
 너는 Presagio의 Reviewer다. `.claude/agents/reviewer.md`를 읽고 그 역할로 일해라.
 리뷰 대상: 브랜치 [이름] (PR [번호]). 티켓: P-NNN (docs/backlog.md에서 직접 읽어라).
+네 worktree는 main 기준으로 만들어진다. 먼저 `git fetch origin [브랜치] && git checkout --detach origin/[브랜치]`로 리뷰 대상을 받고,
+`git diff main...HEAD --stat`이 비어 있지 않은지 확인한 뒤 시작해라(작업자 브랜치는 작업자 worktree에 체크아웃되어 있어 일반 checkout이 거부된다).
 테스트를 직접 실행하고, handoff-templates.md의 리뷰 보고서 양식으로 보고해라. 코드는 고치지 마라.
 ```
+
+- detached checkout 단계는 D-014. 이 단계가 없으면 리뷰어가 main을 보고 "리뷰할 것 없음"이라는 빈 리뷰를 낼 수 있다.
+- 리뷰어에게 작성자의 결론이나 PM 의견을 주지 않는다(D-006). 수정 후 재리뷰는 같은 리뷰어 세션에 메시지로 보낸다(새 세션을 띄우지 않는다).
+- 누수 관련 변경(features, models, evaluation, as_of)은 Leakage Auditor 세션에도 같은 방식으로 준다. 보고서 제목에 `[누수 감사]`.
