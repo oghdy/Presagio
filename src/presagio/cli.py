@@ -1,4 +1,4 @@
-"""`presagio` command line: ingestion commands (backfill, ingest-daily) and quality-check.
+"""`presagio` command line: ingestion (backfill, ingest-daily), quality-check, backtest.
 
 Exit codes: 0 everything done, 1 some unit not done (or an error before starting), 2 stopped by
 a block (HTTP 403/429), 64 bad arguments (sysexits EX_USAGE, so it never reads as "blocked").
@@ -17,6 +17,7 @@ from typing import Any, NoReturn
 from sqlalchemy import Engine
 
 from presagio.config import get_settings
+from presagio.evaluation.cli import add_backtest_parser
 from presagio.ingestion.backfill import (
     EXIT_FAILED,
     RUN,
@@ -146,6 +147,7 @@ def build_parser() -> ArgumentParser:
     )
     add_ingest_daily_parser(commands)  # P-017
     add_quality_check_parser(commands)
+    add_backtest_parser(commands)  # P-032
     return parser
 
 
