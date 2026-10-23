@@ -431,14 +431,15 @@
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
-| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | TODO (브리핑 작성, 사람 확인 대기. 로컬) | P-031 DONE ✓ |
+| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | IN PROGRESS (로컬 세션 p-026-season) | P-031 DONE ✓ |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
-| P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | REVIEW (PR #31, 클라우드 세션이 열음) | P-024 DONE |
+| P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | REVIEW (PR #31, PM 수락, 사람 머지 + 환경 생성 대기) | P-024 DONE |
+| P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | TODO | P-040 DONE |
 | P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | TODO | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
-| P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | TODO (브리핑 작성, 사람 확인 대기. 클라우드 후보) | P-031·P-032 DONE ✓ |
+| P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | TODO (사람 결정: P-040 머지 + 환경 생성 뒤 클라우드 세션. 브리핑에 클라우드 보강 추가) | P-031·P-032 DONE ✓ |
 | P-034 | Elo 레이팅(홈 어드밴티지, 시즌 간 평균 회귀, 중립 경기 처리) + 총점 기준선(최근 N경기 평균) | ml-engineer | TODO | P-033 |
 | P-035 | as_of 피처 모듈 v1 (최근 5/10/20 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정, 시즌 누적) + 누수 테스트 | ml-engineer | TODO | P-031 |
 | P-036 | 누수 감사 1차 (P-032~P-035 대상: as_of 강제, 시간 여행 테스트, 미래 주입 테스트) | leakage-auditor | TODO | P-035 |
@@ -525,7 +526,7 @@
   - 2026-10-23 PM 18:2x: 작성자 수정 `81fca24`("score-free prediction context, pin every runner guard": `PredictionContext`를 R1·R2 결과 튜플 + 점수 없는 일정 뷰 `ScheduledGame`(cup_final 포함) + 읽기 전용 시장만 담는 frozen dataclass로, 전체 경기 목록은 실행기 내부 `_History`로, 가드 3곳 전용 테스트, 실행기 수준 배당 시간 여행 테스트, 테스트 121→133). **재리뷰 "수락 가능" + [누수 감사] "누수 없음"**(`P-032-review-2.md`): 1차 재현 코드가 `AttributeError`/`FrozenInstanceError`로 중단, gc 수준 객체 그래프 검사 위반 0(하루 최대 26,495객체), 1차 생존 변이 3개 전부 잡힘, 610 passed(네트워크 0), CLI 출력 1차와 바이트 동일·SQL 424개 전부 SELECT, 복제본 시간 여행·미래 주입·배당 시간 여행 불변(일정 뷰 포함 해시로도). 새 [낮음] 2: cup_final 제외 조건 변이가 살아남음(픽스처 cup final에 스탯 없어서 R2가 대신 막음 → P-033에서 픽스처 스탯 2행), PR 본문 옛 문구(작성자가 본문만 정리). 참고: 의도적 스택 프레임 우회(`sys._getframe`)는 파이썬 한계 → P-033/P-036 AST 금지 테스트, `ScheduledGame`에 상태 없음(P-035 설계 문제), `GameMarket` 내부 dict 가변(P-033 저장 시 복사). **PM 수락.** 사람 머지 대기 → 머지 후 P-033 브리핑(P-031도 머지돼야 함).
 
 ### P-033 승패 기준선 3종(B0·B1·B3) + 결과 저장 경로
-- **상태:** TODO (2026-10-23 브리핑 `P-033-briefing.md` 작성, 사람 확인 대기. D-052상 클라우드 후보 — 환경이 준비되면 클라우드, 아니면 로컬)
+- **상태:** TODO (2026-10-23 사람 결정: **P-040 머지 + `presagio-dev` 환경 생성 뒤 클라우드 세션**. 브리핑 `P-033-briefing.md`에 클라우드 보강 추가: 훅 줄 확인, P-040 기준 4 증거 기록, `gh api` REST로 PR, VM 사실)
 - **담당 역할:** ml-engineer (Opus 5.5 높음)
 - **단계:** 2
 - **의존:** P-031 DONE, P-032 DONE (둘 다 2026-10-23 머지, 개발 DB 0002 적용)
@@ -545,8 +546,16 @@
 - **메모:**
   - 2026-10-23 PM: P-031·P-032 머지 뒤 상세 확정. P-032 리뷰(1·2회차)의 P-033 후속을 기준 5에 전부 넣음. 브랜치 `feat/P-033-baselines-store`.
 
+### P-042 클라우드 셋업 후속 (P-040 리뷰 [낮음] 5건)
+- **상태:** TODO (상세 완료 기준은 P-040 머지·첫 환경 세션 뒤 확정)
+- **담당 역할:** platform-engineer (Opus 5.5 높음). D-052상 클라우드에서 수행 가능.
+- **단계:** 2 (단계 6 선행)
+- **의존:** P-040 DONE(머지 + 첫 환경 세션 확인)
+- **목표:** P-040 리뷰(`P-040-review.md`)의 [낮음] 5건을 한 PR로. (1) README 셋업 칸 안내: 플랫폼이 레포 루트에서 셋업을 돈다는 보장이 없으면 rc 127 → 셋업 칸을 `bash scripts/cloud-setup.sh || true` 또는 절대 경로 폴백으로, 실패 시 세션 안 수동 실행 안내. (2) 훅: `alembic current`가 head와 다르면 "캐시가 낡음, `bash scripts/cloud-setup.sh` 실행" 경고 + README에 "셋업 칸 주석을 바꿔 캐시 재생성". (3) README에 `claude --cloud` 전 `/remote-env`로 `presagio-dev` 선택 안내, Default 환경으로 뜬 경우의 훅 메시지. (4) 셋업 성공 경로 테스트(스텁 `runuser`·`psql`·`uv`로 CREATEDB·alembic·`--locked` 단언, 변이 5 생존 해소). (5) 훅 실패 출력 한 줄로. 함께: README 예시 수치 683/0002로 갱신, 클라우드에서 `gh pr` 불가(GraphQL 403) 안내와 `gh api` REST 예시.
+- **메모:** 2026-10-23 PM: P-040 리뷰로 생성.
+
 ### P-026 2022-23 시즌 추가 수집 (D-049 M-11, DR-1)
-- **상태:** TODO (2026-10-23 브리핑 `P-026-briefing.md` 작성, 사람 확인 대기. 로컬 — 개발 DB·nba_api 4호출)
+- **상태:** IN PROGRESS (2026-10-23 20:00 사람 확인 → data-engineer 로컬 세션 `p-026-season`(local_8d439251…), Opus 5.5 높음, 브랜치 `feat/P-026-season-2022-23`)
 - **담당 역할:** data-engineer (Opus 5.5 높음)
 - **단계:** 2
 - **의존:** P-031 뒤(같은 역할이 동시에 두 티켓을 하지 않음). P-034(Elo) 전에 끝나야 함.
@@ -588,7 +597,7 @@
 - **메모:** 2026-10-23 PM: P-031 리뷰로 생성. PR #25 머지를 막지 않음.
 
 ### P-040 🧑 Claude Code 클라우드 세션 환경 셋업
-- **상태:** REVIEW (2026-10-23 클라우드 세션 `p-040-cloud`(사람이 시작)이 **PR #31** https://github.com/oghdy/Presagio/pull/31 을 열었다 — 첫 클라우드 세션 산출물. reviewer 서브에이전트가 로컬 detached worktree에서 리뷰 중(셋업 스크립트는 Ubuntu 컨테이너로 재현 시도) → `P-040-review.md`)
+- **상태:** REVIEW (2026-10-23 PR #31 https://github.com/oghdy/Presagio/pull/31 `47833bc`, 파일 6 +593. 리뷰 "수락 가능(기준 4는 머지 후 확인)" → **PM 수락**(`P-040-acceptance.md`). 사람 머지 → 사람이 `presagio-dev` 환경 생성 → **첫 환경 세션 = P-033 클라우드 세션이 기준 4 증거를 PR에 남김**)
 - **담당 역할:** platform-engineer (Opus 5.5 높음). 환경 생성(claude.ai/code 입력)은 사람.
 - **단계:** 2 (단계 6 선행). **시간 민감:** 클라우드 크레딧 US$250이 2026-11-05 16:59 KST에 만료된다.
 - **의존:** P-024 DONE. Q-021 승인.
@@ -604,6 +613,7 @@
   5. 로컬 영향 0: 로컬에서 `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, launchd 잡과 compose 설정 변경 없음, `git diff main...HEAD -- src alembic docker-compose.yml`이 비어 있음.
 - **확인 방법:** 기준 4의 클라우드 세션 PR 본문, 로컬에서 훅 스크립트 무동작 실행, `bash -n scripts/cloud-setup.sh`.
 - **메모:**
+  - 2026-10-23 PM 20:1x: **리뷰 "수락 가능, 기준 4 머지 후 확인"**(`P-040-review.md`): 기준 1·2·3·5 O(맥 497 passed·훅 무동작 exit 0 직접 확인; ubuntu:24.04 + PG 16.15 컨테이너에서 셋업 콜드 10.4초·재실행 0.6초·멱등 5경우·실패 경로 3종 재현; PR+main 병합 트리 683 passed·0002 head; 공식 문서 인용 전부 원문 일치). 기준 4는 작성자가 셋업 칸·환경변수 없는 Default 환경에서 확인한 것이라 "사람이 환경을 만든 뒤 첫 세션" 문구대로는 미충족 → **PM 결정: 머지 → 사람이 `presagio-dev` 생성 → 첫 세션(P-033 클라우드)이 훅 줄·683 passed·0002 head를 PR에 기록하는 것으로 기준 4 충족.** 기준 3(a) `localhost`는 PR의 `127.0.0.1` 인정. [낮음] 5(셋업 칸이 cwd에 기댐 → rc 127 위험, 캐시 낡아도 훅 "DB ready", `/remote-env` 환경 선택 안내 없음, 셋업 성공 경로 테스트 없음(변이 5 생존), 훅 실패 출력 여러 줄) → **P-042**. 변이 14 중 9 잡힘. 리뷰어가 VM에서 새로 확인한 사실(uv 0.11.32 설치됨, astral.sh·api.the-odds-api.com 막힘, docker 데몬 꺼짐, python3 3.13, `CLAUDE_CODE_REMOTE="true"`, **GitHub GraphQL 403 → 클라우드에서 `gh pr` 불가, `gh api` REST 사용**, idle 시 VM 정지·재개) → D-052 보완, workflow.md, P-033 브리핑 보강.
   - 2026-10-23 PM: 창업 세션 요청(사람이 claude.ai GitHub 커넥터 연결·Claude GitHub App을 `oghdy`에 설치·Presagio 선택 완료, 크레딧 US$250 잔액 확인). 창업 세션이 공식 문서로 확인한 사실: VM은 Ubuntu 24.04·약 4 vCPU·16GB·30GB, PostgreSQL 16과 docker compose 설치됨(Postgres는 꺼져 있음), 프로세스는 세션 간 비유지(파일·패키지·이미지 캐시만 유지) → DB 시작은 SessionStart 훅으로, 셋업 스크립트는 5분 안에 끝나야 캐시(약 7일), 환경변수는 환경 사용자 모두 읽음 → 비밀값은 network secret, 기본 Trusted 네트워크에 PyPI·GitHub·Docker Hub 있음·stats.nba.com 없음, 클라우드 세션은 레포의 CLAUDE.md·.claude/settings.json·.claude/agents를 읽고 사용자 ~/.claude는 없음, 시작 시 푸시된 브랜치를 클론, **완료 알림 없음**. 진행 중인 P-031·P-032는 로컬에서 끝낸다. 2단계 진행: ① 로컬 platform-engineer가 1·2·3·5 → PR(사람 머지) → ② 사람이 환경 생성 → PM이 첫 클라우드 세션으로 4 검증.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)

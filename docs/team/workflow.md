@@ -101,6 +101,7 @@
 - 시작: 사람이 "클라우드로"라고 하면 PM이 `start_session target: "cloud"`로, 또는 사람이 claude.ai/code에서 직접. 클라우드는 GitHub의 **푸시된 브랜치**를 클론하므로 브리핑이 참조하는 티켓·문서는 main에 머지돼 있어야 한다. 환경 셋업과 생성 절차는 P-040(`scripts/cloud-setup.sh`, README "클라우드 세션" 절).
 - **완료 확인:** 클라우드 세션은 앱에 끝났다는 알림을 보내지 않는다. PM이 `gh pr list`로 PR이 열렸는지 확인한다(필요하면 30분 간격 일회성 예약). 리뷰·수락·머지는 로컬 세션과 같다(D-014 detached checkout, D-006).
 - **비밀값:** `ODDS_API_KEY`는 클라우드 환경변수에 두지 않는다(환경 사용자 모두 읽음, 공개 레포). 필요하면 network secret으로만.
+- **클라우드에서 `gh pr`은 막힌다**(GitHub GraphQL 403, D-052 보완 2). 작업자는 `gh api -X POST repos/oghdy/Presagio/pulls -f title=... -f head=... -f base=main -F body=@body.md`(REST) 또는 플랫폼 내장 PR 도구로 PR을 열고, 브리핑 전문은 프롬프트에 넣는다(로컬 파일·공유 노트·개발 DB 접근 불가). 환경은 `presagio-dev`(README "클라우드 세션" 절). 세션 시작 줄에 `[presagio cloud] DB ready ... PRESAGIO_REQUIRE_DB=1`이 보여야 한다.
 
 ## PM 세션 시작 프롬프트 (사람이 복사해서 쓴다)
 
