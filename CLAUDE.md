@@ -16,6 +16,7 @@ Presagio는 매일 자동으로 NBA 경기 데이터를 모으고, 승률과 총
 - 일이 흘러가는 순서(티켓 → 브랜치 → PR → 리뷰 → 수락): [docs/team/workflow.md](docs/team/workflow.md)
 - 브리핑, 티켓, 리뷰 보고서 양식: [docs/team/handoff-templates.md](docs/team/handoff-templates.md)
 - 알려진 위험과 대응책: [docs/team/risks.md](docs/team/risks.md)
+- 세션의 모델·노력 배치(D-011, D-043): [docs/team/organization.md](docs/team/organization.md)의 표
 
 ## 2. 공유 기억은 문서다 (에이전트는 세션이 끝나면 기억을 잃는다)
 
@@ -62,7 +63,7 @@ Presagio는 매일 자동으로 NBA 경기 데이터를 모으고, 승률과 총
 
 - 티켓에 적힌 완료 기준을 스스로 느슨하게 해석하지 않는다. 안 되면 "안 된다"고 PR에 쓴다.
 - 자기 티켓 범위 밖 파일을 고치지 않는다.
-- `main`에 직접 커밋하지 않는다. 항상 브랜치 + PR.
+- `main`에 직접 커밋하지 않는다. 항상 브랜치 + PR. 브랜치 보호가 켜진 뒤에는 PM 문서도 같다(D-047).
 - 스키마를 바꾸는 코드를 사람 승인 없이 넣지 않는다.
 - `.env`, API 키, 토큰을 커밋하지 않는다.
 - 같은 티켓에서 같은 실패를 세 번째 반복하지 않는다. 두 번 실패하면 PM에게 올린다.
@@ -71,3 +72,4 @@ Presagio는 매일 자동으로 NBA 경기 데이터를 모으고, 승률과 총
 
 - 작업자: PR을 열고, PR 본문에 "무엇을 했나 / 어떻게 확인하나 / 못 한 것 / 결정 제안"을 적는다.
 - PM: backlog 상태를 갱신하고, 결정이 있었으면 decisions.md에 적고, 사람에게 3문장 요약을 준다.
+- 머지는 사람이 한다. 사람이 수락 메시지를 읽고 "머지해줘"라고 명시하면 PM이 `gh pr merge --squash`를 대신 실행할 수 있다(D-005 보완). 리뷰어·작업자는 머지하지 않는다.
