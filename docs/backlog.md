@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·**P-031·P-032** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀). 진행 중: P-040(클라우드 셋업, PR #31 리뷰 중). 다음: P-026(로컬)·P-033(클라우드 후보) 브리핑 확인 대기. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·**P-031·P-032** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀). **P-026(PR #34)·P-040(PR #31) PM 수락, 사람 머지 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -431,7 +431,7 @@
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
-| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | IN PROGRESS (로컬 세션 p-026-season) | P-031 DONE ✓ |
+| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | REVIEW (PR #34 PM 수락, 사람 머지 대기) | P-031 DONE ✓ |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | REVIEW (PR #31, PM 수락, 사람 머지 + 환경 생성 대기) | P-024 DONE |
@@ -539,7 +539,7 @@
   2. **누수 테스트 파라미터화:** T1·T2가 등록된 모든 EXPERIMENTS(B0·B1·B3·더미)로 통과. B0·B1의 당일 경기 off-by-one 테스트(당일 결과를 바꿔도 예측 불변).
   3. **저장 경로:** `backtest run --experiment B0 --seasons 2023-24,2024-25 --store`가 `model_versions` 1행(재현 정보·보류 컬럼 포함), 예측마다 `predictions` 1행(`origin=backtest`, `snapshot_kind=daily`, `as_of`, `train_cutoff`, `scheduled_start_utc`, `feature_id` NULL, `p_home`, `total_mean` NULL, `market_reference`, `market_status` 4값, `reference_*`, `is_recommendation_basis=false`), 채점 뒤 `evaluations` 1행(`metric_version=1`)을 쓴다. 덮어쓰기 금지: `ON CONFLICT DO NOTHING` + 값 불일치 건수·예시 보고. 테스트: 임시 DB 두 번 저장 → 행 수 동일·불일치 0, 값 바꿔 재저장 → 불일치 보고.
   4. **보류 시즌:** `--store`로도 2025-26 행은 쓰지 않음(`--unlock-holdout` 시 `holdout_unlocked_reason` 기록). 테스트.
-  5. **P-032 리뷰 후속:** (a) 학습 소스 자기 보고 값을 `game_id`로 대조해 다르면 `LeakageGuardError`, (b) 학습 창 시즌 하한(`--seasons` 밖 시즌·2022-23 제외), (c) 저장 시 `GameMarket` 복사, (d) `models`·`features`에서 `sys._getframe`·`inspect.currentframe/stack/getouterframes`·`gc.get_*`·`ctypes` 금지 AST 테스트, (e) 합성 리그 cup final 스탯 2행, (f) `cli.py` 가드 위반 종료 코드 분리(제안 3) + ERROR 로그, (g) `pyproject.toml` numpy 명시.
+  5. **P-032 리뷰 후속:** (a) 학습 소스 자기 보고 값을 `game_id`로 대조해 다르면 `LeakageGuardError`, (b) 학습 창 시즌 하한(`--seasons` 밖 시즌·2022-23 제외), (c) 저장 시 `GameMarket` 복사, (d) `models`·`features`에서 `sys._getframe`·`inspect.currentframe/stack/getouterframes`·`gc.get_*`·`ctypes` 금지 AST 테스트, (e) 합성 리그 cup final 스탯 2행, (f) `cli.py` 가드 위반 종료 코드 분리(제안 3) + ERROR 로그, (g) `pyproject.toml` numpy 명시, (h) `evaluation/market.py` `NO_ODDS_SEASONS`에 2022-23 추가(P-026 리뷰 2026-10-23: 지금은 2022-23을 채점하면 `no_odds_season`이 아니라 `no_snapshot_at_as_of`로 나옴. M-11상 채점 대상 아니지만 사유 코드는 맞아야 함).
   6. **실데이터 실행 1회(개발 DB):** B0·B1·B3를 2023-24·2024-25에 `--store`로 돌려 `model_versions`·`predictions`·`evaluations` 행 수와 6-1 두 줄 표를 PR 본문에(B3는 n=0 `no_odds_season` 정상, 성능 숫자는 참고). 재실행 후 행 수 불변·불일치 0. 클라우드 세션이면 "머지 후 PM"으로 표시하고 PM이 수행.
   7. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, 네트워크 0, 새 의존성은 numpy 명시만.
 - **확인 방법:** CLI 명령 + `SELECT mv.model_family, count(p.*) FROM predictions p JOIN model_versions mv USING (model_version_id) GROUP BY 1`, 두 번 실행 전후 count, 테스트.
@@ -555,19 +555,23 @@
 - **메모:** 2026-10-23 PM: P-040 리뷰로 생성.
 
 ### P-026 2022-23 시즌 추가 수집 (D-049 M-11, DR-1)
-- **상태:** IN PROGRESS (2026-10-23 20:00 사람 확인 → data-engineer 로컬 세션 `p-026-season`(local_8d439251…), Opus 5.5 높음, 브랜치 `feat/P-026-season-2022-23`)
+- **상태:** REVIEW (2026-10-23 PR #34 https://github.com/oghdy/Presagio/pull/34 `c5a2cb1`, 파일 4 +1067/−7. 리뷰 "수락 가능" → **PM 수락**(`P-026-acceptance.md`). 사람 머지 대기. 개발 DB에는 2022-23 1,320경기·중립 2가 이미 들어 있음(이 PR 코드 `fe1f2db`로 수집, HEAD의 src·tests와 동일 → 머지 뒤 재수집 불필요))
 - **담당 역할:** data-engineer (Opus 5.5 높음)
 - **단계:** 2
 - **의존:** P-031 뒤(같은 역할이 동시에 두 티켓을 하지 않음). P-034(Elo) 전에 끝나야 함.
 - **목표:** Elo 워밍업·`prev_season_*` 피처·carry 탐색용으로 2022-23 시즌(정규·플레이인·플레이오프)을 개발 DB에 넣는다. 학습·평가 대상이 아니다(배당 없음).
-- **범위:** 실행(`uv run presagio backfill --season 2022-23`), `docs/research/backfill-report-stage1.md`에 2022-23 절 추가, 필요 시 최소 코드 수정(2022-23 응답 형식 차이, 중립 경기 보완 목록 확장 — 2022-23에도 멕시코시티·파리 경기가 있고 `isNeutral`이 false일 가능성).
+- **범위:** 실행(`uv run presagio backfill --season 2022-23`), `docs/research/backfill-report-stage1.md`에 2022-23 절 추가 **또는** 새 파일 `backfill-report-2022-23.md` 하나(브리핑에서 허용. PR은 새 파일을 택함), 필요 시 최소 코드 수정(2022-23 응답 형식 차이, 중립 경기 보완 목록 확장 — 2022-23에도 멕시코시티·파리 경기가 있고 `isNeutral`이 false일 가능성).
 - **범위 밖:** 배당, 스키마, 2022-23을 학습 대상에 넣는 것.
 - **완료 기준:**
   1. `backfill --season 2022-23`이 종료 코드 0, nba_api 호출 ≤ 4(일정 1 + 게임로그 3; 재실행 포함 합계 ≤ 8).
-  2. 2022-23 `games` 수 = 일정 응답의 002·004·005 수, `team_game_stats` = 종료 경기 × 2. 품질 체크 `--season 2022-23` 14 pass.
+  2. 2022-23 `games` 수 = 일정 응답의 002·004·005 수, `team_game_stats` = 종료 경기 × 2. 품질 체크 `--season 2022-23` fail 0·error 0(D-040의 14개 pass. P-031 뒤 17개가 되어 모델링 3개는 pass/skip. 원문 "14 pass"를 2026-10-23 보정, D-053 4항).
   3. 다른 시즌 행 수 불변, 같은 명령 재실행 후 불변(전후 count).
   4. 2022-23 중립 경기를 raw(`arenaCity`·`gameLabel`)로 확인해 `is_neutral`이 맞다(필요하면 P-025 목록 확장 + 테스트). 보고서에 표(경기 수·홈 승률·평균 총점·중립 수).
-- **메모:** 2026-10-23 PM: D-049 M-11로 생성.
+- **메모:**
+  - 2026-10-23 PM: D-049 M-11로 생성.
+  - 2026-10-23 PM 20:00: 사람 지시로 data-engineer 로컬 세션 `p-026-season`(local_8d439251…, Opus 5.5 높음, 브랜치 `feat/P-026-season-2022-23`) 시작. 브리핑 `P-026-briefing.md`(보고서는 stage1 절 추가 또는 새 파일 하나, 개발 DB 쓰기는 이 세션만).
+  - 2026-10-23 PM 20:1x: **PR #34** 도착(`c5a2cb1`, 파일 4 +1067/−7: `docs/research/backfill-report-2022-23.md`, `schedule.py` 중립 목록 2건(멕시코시티 `0022200439`·파리 `0022200678`, 5 → 7), 픽스처 `scheduleleaguev2__2022-23_neutral.json`, 테스트). 작성자 보고: 1,320경기·2,640 스탯 행, nba_api 7호출(4 + 보완 뒤 정규 `--force` 3), 품질 fail 0. reviewer(Opus 5.5 높음) 서브에이전트가 detached worktree에서 개발 DB 읽기 전용(psql read-only 트랜잭션, backfill은 `--dry-run`만)으로 리뷰.
+  - 2026-10-23 PM 20:3x: **리뷰 "수락 가능"**(`P-026-review.md`): **기준 1~4 전부 O** — `ingestion_runs` 107~116으로 호출 7(1차 4·teams skip, force 1회 3, 재실행 0; retry 0, 전부 succeeded), raw 94 유형별 수(002 1,230/004 84/005 6/006 0) = DB 1,320, 스탯 2,640(경기당 정확히 2행), 품질 17개 중 16 pass·1 skip·fail 0(전체도 같음), 다른 시즌·모델링 표 4개·odds 불변, `--force` inserted 0(upsert 멱등), 중립 전수 스캔(홈팀별 도시·경기장)으로 정확히 2경기·누락 0(Austin 2·Alamodome 1은 SAS 연고 안 → D-046과 같은 판단), 커밋된 파서를 raw에 돌려 DB 14컬럼 전부 일치, 변이 11/11 잡힘, 보고서 숫자 쿼리 12개 재현 일치, 664 passed(루프백 밖 연결 0), M-11 문구 명시. **[낮음] 3(전부 문서 문구):** 보고서 268행이 포스트시즌 90경기 점수 근거로 `gamelog_vs_schedule_score`를 댔으나 그 체크는 `source='leaguegamelog'`만 봄(값은 raw 게임로그와 90/90 일치, `points_match_score`가 보증), `schema-v1.md` 6-1·13장 "5경기" 미갱신, 오타 1 → **P-041**에 묶음. 참고: `status_text` 공백 15칸 1건(`0022200236`), `NO_ODDS_SEASONS`에 2022-23 없음(→ P-033 5(h)), 머지 커밋에 Co-Authored-By 없음(squash면 소멸). **기준 자체(PM 메모):** 기준 2 "14 pass"는 17개 시대에 맞지 않아 브리핑에서 보정, 범위 문구(stage1 절 vs 새 파일)를 브리핑과 맞춤, 호출 상한이 "보완 뒤 전체 재수집" 몫을 못 담아 포스트시즌 `games.source` 정렬이 막힘 → **D-053**. **PM 수락**(`P-026-acceptance.md`). 사람 머지 대기.
 
 ### P-027 스탯 정정 빈도 품질 체크 (설계안 DR-2)
 - **상태:** TODO (상세 완료 기준은 P-031 뒤 확정)
@@ -594,7 +598,10 @@
 - **의존:** P-031 DONE(머지), Q-022.
 - **목표:** P-031 리뷰(`P-031-review.md`)의 [낮음] 중 코드·문서로 고칠 것을 한 PR로. 스키마(DDL) 변경 없음.
 - **범위(초안):** `src/presagio/quality/checks.py`(+tests): (a) `predictions.feature_id`가 같은 `game_id`이고 피처 `as_of ≤ 예측 as_of`인지 검사하는 체크(fail), (b) `feature_drift` compared=0이면 SKIP, (c) 모델링 표가 없을 때 `alembic_version` < 0002면 SKIP·그 외 error, (d) 예측 행 `market_status`가 4값 밖이면 fail(Q-022 (2)(a)); `tests/db/test_migrations.py`에 `pg_indexes.indexdef` 비교 추가(M5); `docs/design/schema-v1.md` 9장 머리말 메모·3장 Q7·7-2의 `predicted_at`→`as_of`·13장 1-1 오기·`artifact_path` 규칙("디렉터리 + `train_cutoff` 기준 파일명") 한 줄·9-4 두 표의 `market_status` 뜻 차이 명시; `README.md` 품질 체크 14→17 표.
-- **메모:** 2026-10-23 PM: P-031 리뷰로 생성. PR #25 머지를 막지 않음.
+- **추가 범위(P-026 리뷰, 2026-10-23, D-053):** 소형 문서 정정 3건 — (e) `docs/design/schema-v1.md` 6-1·13장 "2023-24 보완 목록 5경기" → "2022-23 2 + 2023-24 5 = 7경기"(305·329·1086행 근처), (f) `docs/research/backfill-report-2022-23.md` 198·268행: 포스트시즌 90경기 점수 근거를 `gamelog_vs_schedule_score`(대상 밖)에서 `points_match_score`·raw 게임로그 대조로 바꾸고 "이 90경기는 `gamelog_vs_schedule_score` 대상 밖" 한 줄, (g) 같은 파일 199행 오타("1행 는 것은" → "1행 늘어난 것은"). 코드 변경 없음.
+- **메모:**
+  - 2026-10-23 PM: P-031 리뷰로 생성. PR #25 머지를 막지 않음.
+  - 2026-10-23 PM: P-026 리뷰 [낮음] 3건을 문서 정정으로 추가(위 추가 범위).
 
 ### P-040 🧑 Claude Code 클라우드 세션 환경 셋업
 - **상태:** REVIEW (2026-10-23 PR #31 https://github.com/oghdy/Presagio/pull/31 `47833bc`, 파일 6 +593. 리뷰 "수락 가능(기준 4는 머지 후 확인)" → **PM 수락**(`P-040-acceptance.md`). 사람 머지 → 사람이 `presagio-dev` 환경 생성 → **첫 환경 세션 = P-033 클라우드 세션이 기준 4 증거를 PR에 남김**)
@@ -706,6 +713,7 @@
 
 - 단계 2: 피처 모듈(as_of), 롤링 효율/페이스, 휴식일/백투백, Elo, 단순 기준선, 누수 테스트, features 테이블 승인
   - (D-033) predictions는 경기당 여러 `as_of` 스냅숏 허용 + 참조 배당 스냅숏. 전 경기 승패 확률과 총점(언더/오버) 둘 다. 예측 시각 결정.
+  - (P-026 리뷰, 2026-10-23) **P-035 피처 작성자용:** `games.status_text`에 소스 그대로 공백 15칸이 붙은 경기 1건(2022-23 `0022200236`, `"Final" + 공백`. 다른 시즌 없음). 종료 판정은 `status_code`만 쓰므로 지금 영향 없지만 문자열을 비교하면 `trim` 필요. P-035 브리핑에 한 줄.
 - 단계 4 (D-033 추가): edge 계산, 스테이킹(정액 vs 분수 Kelly), 가상 자금 시뮬레이터, ROI·CLV·낙폭 백테스트, `recommendations`·`bankroll_ledger` 표 승인, 과거 배당 백필($59) 재결정
 - 단계 5 (D-033 추가): `GET /recommendations/today`, 대시보드에 오늘의 추천과 가상 자금 곡선
 - **사람의 방향 메모(2026-10-22, 단계 2 계획에 반영할 것):**
@@ -722,7 +730,9 @@
 - 단계 6: 매일 흐름 묶기, Docker 이미지, 배포 비용 비교, 알림, 신선도 체크, 7일 연속 운영
   - (P-025 리뷰, 2026-10-23) `ingestion_runs.code_version`에 작업 트리 dirty 표시가 없어 미커밋 코드로 돌린 run이 커밋 해시로만 남는다 → 로더 버전 기록(D-042 2항)과 함께 처리.
   - (P-025 리뷰) 진행 중 시즌에서 스코어보드가 보완 목록 밖 중립 경기에 `isNeutral=false`를 주면 일정의 true를 덮을 수 있다(스코어보드 raw 72·73에서는 미관찰). 2026-27 중립 경기(파리·맨체스터·멕시코시티·컵 결승) 날짜의 스코어보드 raw로 확인 후 필요하면 `is_neutral`을 일정만 갱신하게. 같은 티켓에서 `tests/ingestion/sources/test_nba_api_scoreboard.py`의 중립 테스트에 "`isNeutral=true`는 그대로 true" 단언 한 줄 추가(P-025 재리뷰 [낮음] 1, 머지 시 후속으로 넘김).
-- 문서 정리(PM, P-038 또는 docs 티켓): `docs/research/nba_api.md` 7장 픽스처 표에 `scheduleleaguev2__2023-24_neutral.json` 추가, `docs/research/backfill-report-stage1.md` 10장 "중립 경기 여부가 DB에 없다" 문장을 D-046·P-025 이후로 갱신.
+  - (P-026 리뷰, 2026-10-23, D-053) 백필 CLI에 "일정만 force" 옵션이 없어 중립 보완 뒤 일정만 다시 받으려면 시즌 유형 단위 전체(teams+일정+게임로그 3호출)를 force해야 한다. 수집 CLI를 손볼 때 후보(D-042 2항). 호출 상한 기준에는 "보완 뒤 전체 재수집" 몫을 포함.
+  - (P-026 리뷰, D-053) 2022-23 플레이인 6·플레이오프 84경기 `games.source`가 `scheduleleaguev2`로 남아 `gamelog_vs_schedule_score`(`source='leaguegamelog'`만 검사) 대상 밖인 유일한 포스트시즌. 값은 게임로그와 같음(90/90). 다음 2022-23 재수집(`--season 2022-23 --force`, 5호출) 때 정렬.
+- 문서 정리(PM, P-038 또는 docs 티켓): `docs/research/nba_api.md` 7장 픽스처 표에 `scheduleleaguev2__2023-24_neutral.json`·`scheduleleaguev2__2022-23_neutral.json` 추가, `docs/research/backfill-report-stage1.md` 10장 "중립 경기 여부가 DB에 없다" 문장을 D-046·P-025 이후로 갱신.
 - 단계 7(선택): 부상자, 선수 피처, MLflow, 드리프트
 
 ## 아이디어 주차장 (범위 밖 아이디어는 여기에만 적는다)
