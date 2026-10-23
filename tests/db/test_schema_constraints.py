@@ -22,7 +22,7 @@ from presagio.db.models import (
 from presagio.db.models.games import BOX_SCORE_COUNTS
 from presagio.db.session import make_engine
 
-# Unique keys from docs/design/schema-v1.md (chapters 3-7, appendix A).
+# Unique keys from docs/design/schema-v1.md (chapters 3-7 and appendix A; modeling layer 9-7).
 EXPECTED_UNIQUE = {
     "uq_raw_request_content": ("raw_api_responses", "UNIQUE (request_hash, response_sha256)"),
     "uq_teams_tricode": ("teams", "UNIQUE (tricode)"),
@@ -30,6 +30,19 @@ EXPECTED_UNIQUE = {
     "uq_odds_snapshot": (
         "odds_snapshots",
         "UNIQUE (odds_event_id, market_key, bookmaker_key, outcome_side, captured_at)",
+    ),
+    "uq_features_game_id_as_of_feature_version": (
+        "features",
+        "UNIQUE (game_id, as_of, feature_version)",
+    ),
+    "uq_model_versions_model_name_version": ("model_versions", "UNIQUE (model_name, version)"),
+    "uq_predictions_game_id_model_version_id_as_of": (
+        "predictions",
+        "UNIQUE (game_id, model_version_id, as_of)",
+    ),
+    "uq_evaluations_prediction_id_metric_version": (
+        "evaluations",
+        "UNIQUE (prediction_id, metric_version)",
     ),
 }
 EXPECTED_PRIMARY_KEYS = {
@@ -41,6 +54,10 @@ EXPECTED_PRIMARY_KEYS = {
     "team_game_stats": "PRIMARY KEY (game_id, team_id, source)",
     "odds_events": "PRIMARY KEY (odds_event_id)",
     "odds_snapshots": "PRIMARY KEY (odds_snapshot_id)",
+    "features": "PRIMARY KEY (feature_id)",
+    "model_versions": "PRIMARY KEY (model_version_id)",
+    "predictions": "PRIMARY KEY (prediction_id)",
+    "evaluations": "PRIMARY KEY (evaluation_id)",
 }
 # Secondary indexes, as pg_indexes prints them (name, table, "USING btree ..." part).
 EXPECTED_INDEXES = {
@@ -71,8 +88,17 @@ EXPECTED_INDEXES = {
     "ix_odds_events_unmatched": ("odds_events", "", "(commence_time) WHERE (game_id IS NULL)"),
     "ix_odds_snapshots_captured": ("odds_snapshots", "", "(captured_at)"),
     "ix_odds_snapshots_raw": ("odds_snapshots", "", "(raw_response_id)"),
+    "ix_features_as_of": ("features", "", "(as_of)"),
+    "ix_features_feature_version": ("features", "", "(feature_version)"),
+    "uq_predictions_one_recommendation_basis": (
+        "predictions",
+        "UNIQUE",
+        "(game_id, model_version_id) WHERE is_recommendation_basis",
+    ),
+    "ix_predictions_as_of": ("predictions", "", "(as_of)"),
+    "ix_predictions_model_as_of": ("predictions", "", "(model_version_id, as_of)"),
 }
-# Number of CHECK constraints per table in appendix A (60 in total).
+# Number of CHECK constraints per table: appendix A (60) plus chapter 9-7 (48).
 EXPECTED_CHECK_COUNTS = {
     "ingestion_runs": 10,
     "raw_api_responses": 8,
@@ -81,6 +107,10 @@ EXPECTED_CHECK_COUNTS = {
     "team_game_stats": 18,
     "odds_events": 2,
     "odds_snapshots": 9,
+    "features": 6,
+    "model_versions": 5,
+    "predictions": 15,
+    "evaluations": 22,
 }
 
 T0 = datetime(2026, 10, 22, 23, 0, tzinfo=UTC)

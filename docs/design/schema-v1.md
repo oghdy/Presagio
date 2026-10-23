@@ -1,9 +1,9 @@
 # 스키마 설계안 v1: raw / clean 레이어 + ingestion_runs (P-011)
 
-- **작성:** Data Engineer, 2026-10-22 (v1.1: PR #7 리뷰 반영, v1.2: P-014 게임로그 열 추가, v1.3: P-025 2023-24 `is_neutral` 보완, 바뀐 곳은 13장)
+- **작성:** Data Engineer, 2026-10-22 (v1.1: PR #7 리뷰 반영, v1.2: P-014 게임로그 열 추가, v1.3: P-025 2023-24 `is_neutral` 보완, v1.4: P-031 모델링 레이어 확정, 바뀐 곳은 13장)
 - **상태:** 🧑 사람 승인 대기. 승인 전에는 SQLAlchemy 모델도 Alembic 마이그레이션도 만들지 않는다(P-012에서 구현).
 - **이번 승인 대상:** `raw_api_responses`, `ingestion_runs`, `teams`, `team_aliases`, `games`, `team_game_stats`, `odds_events`, `odds_snapshots`, 뷰 2개(`team_game_stats_primary`, `odds_closing_lines`).
-- **승인 대상 아님:** 모델링 레이어(`features`, `model_versions`, `predictions`, `evaluations`). 9장에 초안만 두고 단계 2에서 다시 승인받는다.
+- **모델링 레이어(v1.4, P-031):** `features`, `model_versions`, `predictions`, `evaluations`와 뷰 `predictions_recommendation_basis`. 요구는 `docs/design/modeling-v1.md` 8장(D-049 승인), DDL은 9장(9-7). 🧑 DDL 승인 = 사람이 9장을 읽고 P-031 PR을 머지하는 것. 마이그레이션 `0002`.
 - **근거 자료:** `docs/research/nba_api.md`(P-010), `docs/research/odds_api.md`(P-018), `tests/fixtures/nba_api/` 21개 픽스처, `docs/decisions.md` D-004·D-019·D-023~D-026, `docs/team/risks.md` B1·B3·B5.
 - **확인 방법:** 컬럼 이름과 타입은 전부 픽스처에서 직접 읽어 확인했다(12장에 명령). 아래 DDL 스케치(부록 A)는 임시 `postgres:17-alpine` 컨테이너(PostgreSQL 17.11)에 실제로 적용해 제약과 upsert가 의도대로 동작하는지 확인했다. 확인하지 못한 것은 "(미확인)"이라고 적었다.
 
@@ -493,16 +493,514 @@ erDiagram
 
 ---
 
-## 9. 모델링 레이어 초안 (이번 승인 대상 아님, 단계 2에서 다시 승인)
+## 9. 모델링 레이어 (P-031 확정, 마이그레이션 0002)
 
-방향만 적는다. 컬럼과 키는 단계 2 첫 티켓에서 ML Engineer가 설계안을 다시 낸다.
+- **요구:** `docs/design/modeling-v1.md`(v1.2) 8장. 사람이 D-049로 승인했다. 이 장은 그 요구를 DDL로 옮긴 것이다.
+- **승인:** 🧑 사람이 이 장을 읽고 P-031 PR을 머지하는 것이 DDL 승인이다(P-031 목표). 개발 DB 적용(`alembic upgrade head`)은 머지 뒤 PM이 한다.
+- **구현:** `src/presagio/db/models/modeling.py`(SQLAlchemy 모델), `alembic/versions/0002_modeling_layer.py`(마이그레이션). 9-7의 DDL과 마이그레이션의 일치는 `tests/db/test_migrations.py`가 임시 DB 두 개를 카탈로그로 비교해 고정한다(D-030 4항).
+- **v1.3까지의 초안과 바뀐 점(변경 표시):** (1) `model_versions` 한 행 = "학습된 모델 1개" → **"모델 설정 1개"**. 주간 재학습은 버전을 늘리지 않고 `predictions.train_cutoff`로 구분한다(modeling-v1 8-2, 리뷰 발견 13). (2) `predictions`의 키 `predicted_at` → **`as_of`**(정보 경계가 기준, 실제 계산 시각은 `computed_at`). (3) "컬럼은 ML Engineer가 다시 낸다" → 설계안 8장이 그 역할을 했고, 이 장이 DDL이다.
 
-| 표 | 한 행 | 키 초안 | 메모 |
-| --- | --- | --- | --- |
-| `features` | 경기 1개 × 기준 시각 1개 × 피처 버전 1개 | `UNIQUE (game_id, as_of, feature_version)` | 값은 `jsonb` 한 칸(피처가 자주 바뀌는 단계라서). 안정되면 정규화 검토. **피처 값은 계산할 때 저장하고 다시 계산해 덮어쓰지 않는다**(clean 표는 최신 값만 가지므로, 지난 예측의 재현성은 이 표가 맡는다. 리뷰어 권고) |
-| `model_versions` | 학습된 모델 1개 | `UNIQUE (model_name, version)` | 학습 데이터 범위, 하이퍼파라미터(`jsonb`), 피처 버전, 시드, 코드 버전 |
-| `predictions` | 경기 1개 × 모델 버전 1개 × 예측 시각 1개 | `UNIQUE (game_id, model_version_id, predicted_at)` | `predicted_at`이 7-2 "예측 시점 배당"의 기준 |
-| `evaluations` | 예측 1개의 평가 | `UNIQUE (prediction_id, metric_version)` | 실제 결과, 지표, 마감 배당 확률과 비교. 시장 비교 불가(D-026 기간)는 NULL + 사유 |
+```mermaid
+erDiagram
+    games ||--o{ features : "game_id"
+    games ||--o{ predictions : "game_id"
+    model_versions ||--o{ predictions : "model_version_id"
+    features |o--o{ predictions : "feature_id (NULL 가능)"
+    predictions ||--o{ evaluations : "prediction_id"
+
+    features {
+        bigint feature_id PK
+        text game_id "UQ with as_of, feature_version"
+        timestamptz as_of
+        text feature_version
+        jsonb values
+    }
+    model_versions {
+        bigint model_version_id PK
+        text model_name "UQ with version"
+        text version
+        text model_family
+    }
+    predictions {
+        bigint prediction_id PK
+        text game_id "UQ with model_version_id, as_of"
+        bigint model_version_id FK
+        timestamptz as_of
+        numeric p_home
+    }
+    evaluations {
+        bigint evaluation_id PK
+        bigint prediction_id "UQ with metric_version"
+        text metric_version
+        boolean home_won
+    }
+```
+
+**쉬운 말 요약**
+- `features`는 "그 경기를 그 시각(as_of)에 봤을 때의 피처 값"을 **계산한 순간 그대로** 얼려 둔다. clean 표는 최신 값만 갖기 때문에, 지난 예측을 다시 만들 수 있는 근거는 이 표뿐이다. 그래서 한 번 저장한 행은 고치지 않는다.
+- `model_versions`는 "어떤 모델을 어떤 설정으로 돌렸나"를 적는 설정 카드다. 매주 다시 학습해도 카드는 그대로이고, 각 예측이 "언제까지의 경기로 학습했나(`train_cutoff`)"를 들고 있다.
+- `predictions`는 예측 한 건, `evaluations`는 경기가 끝난 뒤 그 예측의 채점표다. 시장 배당과 비교할 수 없으면 시장 칸은 비우고 `market_status`에 이유를 적는다.
+- DB가 직접 막는 것(CHECK)과, 표를 넘나들어 DB가 못 막아 로더·품질 체크가 막는 것을 나눠 적었다(9-1).
+
+### 9-1. 네 표의 공통 규칙
+
+1. **시각.** 시각 컬럼은 전부 `timestamptz`(1-2). `as_of`와 `computed_at`은 **같은 시계(파이썬, raw `fetched_at`과 같은 시계)**로 찍는다. DB `now()` 기본값을 섞으면 Docker Desktop VM 시계 차이로 경계 CHECK가 간헐적으로 실패한다(modeling-v1 R4, D-030 교훈). `created_at`(기본 `now()`)은 "DB에 처음 생긴 시각" 기록용이고 `as_of`·`computed_at`과 비교하지 않는다.
+2. **덮어쓰기 금지(적재 규칙, CHECK 아님).** `features`와 `predictions`는 `INSERT ... ON CONFLICT DO NOTHING`으로만 넣는다. 같은 키로 다시 계산한 값이 저장값과 다르면 **갱신하지 않고** 불일치를 보고한다(`features`는 품질 체크 `feature_drift`, `predictions`는 로더의 결정성 검사 실패). 정의가 바뀌면 `feature_version`이나 모델 `version`을 올려 새 행을 만든다. 이 규칙을 지키는 로더는 P-033(기준선)·P-035(피처)가 만든다. `evaluations`는 같은 `metric_version`이면 재평가 값이 같아야 하고, 결과가 정정되면 `source_fetched_at`이 바뀌어 추적된다.
+3. **결손 보충 행의 `origin`은 `backtest`다(D-049 후속 메모).** 실시간 수집이 빠진 날을 나중에 채우는 행은 as_of가 과거이고 계산은 지금이라, 실시간(`live`)이 아니라 백테스트와 정보 조건이 같다. `live` 행만 `computed_at - as_of <= 2시간` 상한을 받는다.
+4. **값 집합을 어디서 막나(D-037과 비교).** D-037은 `ingestion_runs.job_type`을 "값이 늘 때마다 마이그레이션"이 싫어서 DB CHECK 없이 파이썬에서 거부했다. 같은 기준을 적용했다.
+
+   | 컬럼 | 값 | 어디서 막나 | 이유 |
+   | --- | --- | --- | --- |
+   | `origin` | `live`, `backtest` | **DB CHECK** | 정의상 두 값뿐(실시간이냐 아니냐). 늘 일이 없다 |
+   | `market_status` | 4-6의 6값 | **DB CHECK** | 사람이 승인한 고정 집합(M-8). 값을 바꾸면 보고 규칙(두 줄 표)이 바뀌므로 마이그레이션 + 승인이 맞다 |
+   | `snapshot_kind` | `daily`, `pre_tip_1845`, `pre_tip_1945`, `pre_tip_2145` | **형식만 DB CHECK**(`^(daily\|pre_tip_[0-9]{4})$`), 목록은 파이썬(`SNAPSHOT_KINDS`) | 캡처 시각이 늘 예정이다(P-028 주말 14:45·16:45 ET). 형식 CHECK가 오타는 막고, 새 시각은 마이그레이션 없이 파이썬 목록만 고친다 |
+   | `model_family` | 8-2의 10값 | **형식만 DB CHECK**(`^[a-z][a-z0-9_]*$`), 목록은 파이썬(`MODEL_FAMILIES`) | 가설이 늘면 모델 종류도 는다(단계 3) |
+
+   파이썬 목록은 `presagio.db.models.modeling`에 있고 로더(P-033·P-035)가 쓴다.
+5. **표를 넘는 시점 조건.** `features.as_of < games.start_time_utc`, `predictions.as_of < games.start_time_utc`는 다른 표의 값이라 CHECK로 걸 수 없다. 로더가 넣기 전에 검사하고, 품질 체크 `features_after_tipoff`·`predictions_after_tipoff`(행 수 = 0, fail)가 뒤에서 확인한다. `predictions`는 예측 당시 시작 시각 `scheduled_start_utc`를 행에 갖고 있으므로 `as_of < scheduled_start_utc`는 CHECK로도 막는다. `input_fingerprint.max_stats_fetched_at <= as_of`(`daily` live 행, 8-1)는 이 티켓의 체크 3개 밖이라 후속이다.
+6. **`code_version`은 네 표 모두 NOT NULL.** 어느 코드가 만든 행인지 모르면 재현할 수 없다(원칙 2). 값은 `ingestion_runs`와 같은 함수(`current_code_version()`, git 커밋 → 패키지 버전)로 채운다. 그 함수가 `None`을 돌려주는 환경에서는 저장이 실패한다(의도).
+7. **새로 쓰는 타입.** 1-1의 목록에 세 가지를 더한다: `interval`(`closing_lead_time`, 8-4가 지정), `text[]`(`holdout_seasons`, 8-2가 지정), `smallint`(`over_outcome`, 8-4가 지정).
+8. **확률 열은 열린 구간 (0, 1).** `p_home`, `over_prob`, `market_p_home_*`는 `numeric(6,4)`이고 CHECK가 0과 1을 거부한다. 반올림하면 0.99996이 1.0000이 되므로 **로더는 저장 전에 [0.0001, 0.9999]로 자른다**(지표 계산의 `[1e-6, 1 − 1e-6]` 자르기(6-1)와는 별개).
+9. **`odds_closing_lines`를 읽는 코드는 평가 모듈뿐**(8-4 읽기 규칙)은 코드 규칙이라 DB에 없다. P-032의 테스트(T6 모듈 경계)가 막는다.
+10. **`values` 컬럼 이름.** SQL 키워드지만 PostgreSQL 17에서 컬럼 이름으로 따옴표 없이 쓸 수 있다(`SELECT values FROM features` 확인, 9-11). PostgreSQL이 제약 정의를 출력할 때는 `"values"`로 따옴표를 붙인다. SQLAlchemy에서는 `Feature.values`로 쓰고, `Table.c.values`는 메서드와 이름이 겹치므로 `Table.c["values"]`로 쓴다.
+11. **jsonb의 파이썬 `None` = SQL NULL.** SQLAlchemy의 기본 `JSONB`는 `None`을 JSON 값 `null`로 저장한다(테스트에서 확인). 그러면 NULL 허용 컬럼(`market_reference`)에 "값 없음"이 아니라 JSON `null`이 들어가고 `*_is_object` CHECK가 거부한다. 그래서 네 표의 jsonb 컬럼은 모델에서 `JSONB(none_as_null=True)`로 선언했다. 로더가 `None`을 넘기면 SQL NULL이다. 날 SQL로 넣을 때는 `NULL`을 쓰고 `'null'`을 쓰지 않는다.
+
+### 9-2. `features` — 경기 1 × as_of 1 × 피처 버전 1
+
+| 컬럼 | 타입 | NULL | 기본값 | 뜻 |
+| --- | --- | --- | --- | --- |
+| `feature_id` | `bigint` identity | NOT NULL | | 대리키. `predictions.feature_id`가 가리킨다 |
+| `game_id` | `text` FK → `games` | NOT NULL | | 대상 경기 |
+| `as_of` | `timestamptz` | NOT NULL | | 정보 경계. "이 시각까지 DB에 있던 정보"(modeling-v1 1-3). 실시간 `daily`는 본 실행 `prediction` 배당의 `captured_at`, 백테스트는 동부 날짜 07:00 UTC |
+| `feature_version` | `text` | NOT NULL | | 피처 정의 버전(`fv1`, …). 정의가 바뀌면 올린다 |
+| `snapshot_kind` | `text` | NOT NULL | | `daily`, `pre_tip_1845`, `pre_tip_1945`, `pre_tip_2145`(9-1 4번) |
+| `origin` | `text` | NOT NULL | | `live`(실시간) / `backtest`(백테스트·결손 보충, 9-1 3번) |
+| `values` | `jsonb` (객체) | NOT NULL | | 피처 값. 키 = modeling-v1 3-1의 이름(`home_*`, `away_*`, `diff_*`). **개별 값은 JSON `null` 허용**(콜드 스타트: 롤링·누적을 못 낼 때, T7) |
+| `input_fingerprint` | `jsonb` (객체) | NOT NULL | | 입력 지문: `{max_stats_fetched_at, n_prior_games_home, n_prior_games_away, input_completeness: {home, away}, odds_captured_at, odds_snapshot_count, availability_lag_hours, poss_formula}`(8-1). 키 목록은 ML 소유라 DB가 검사하지 않는다 |
+| `computed_at` | `timestamptz` | NOT NULL | | 실제 계산 시각. `as_of`와 같은 시계(9-1 1번) |
+| `code_version` | `text` | NOT NULL | | 계산한 코드의 git 커밋 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | DB에 생긴 시각 |
+
+- 키: `uq_features_game_id_as_of_feature_version UNIQUE (game_id, as_of, feature_version)`.
+- CHECK: `ck_features_snapshot_kind_format`, `ck_features_origin_valid`, `ck_features_values_is_object`, `ck_features_input_fingerprint_is_object`, `ck_features_as_of_before_computed`(`as_of <= computed_at`), `ck_features_live_computed_within_2h`(`origin <> 'live' OR computed_at - as_of <= interval '2 hours'`).
+- 인덱스: 키 인덱스(유니크가 만든다, `game_id`로 시작하므로 경기별 조회도 이것으로), `ix_features_as_of (as_of)`, `ix_features_feature_version (feature_version)`.
+- 학습은 이 표의 **저장 행** `(h, as_of(h), feature_version)`만 읽는다(modeling-v1 6-2). 같은 경기에 `live`·`backtest` 행이 둘 다 있으면 `live` 우선(6-2)이고, 이것은 읽는 쪽(P-032 `training_matrix`) 규칙이다.
+- 크기: modeling-v1 8-1 추정 약 6만 행, 행당 jsonb 크기는 미측정.
+
+### 9-3. `model_versions` — 모델 설정 1개
+
+| 컬럼 | 타입 | NULL | 기본값 | 뜻 |
+| --- | --- | --- | --- | --- |
+| `model_version_id` | `bigint` identity | NOT NULL | | 대리키 |
+| `model_name` | `text` | NOT NULL | | 모델 이름(예: `elo_b2`) |
+| `version` | `text` | NOT NULL | | 설정 버전. 설정(파라미터·피처 버전·코드 의미)이 바뀌면 올린다. 주간 재학습으로는 올리지 않는다 |
+| `model_family` | `text` | NOT NULL | | 8-2의 10값 중 하나(9-1 4번) |
+| `feature_version` | `text` | NULL 허용 | | 읽는 `features.feature_version`. **피처 행을 읽지 않는 모델(B0 항상 홈 등)은 NULL** |
+| `hyperparameters` | `jsonb` (객체) | NOT NULL | | Elo면 K·HCA·carry·MOV, 로지스틱이면 L2 등. 없으면 `{}` |
+| `seed` | `integer` | NOT NULL | | 난수 시드. 난수를 안 쓰는 모델도 실행기가 쓴 고정 시드를 적는다(원칙 2) |
+| `code_version` | `text` | NOT NULL | | 설정을 등록한 코드의 git 커밋 |
+| `training_window` | `jsonb` (객체) | NOT NULL | | `{train_start, refit_every_days, min_train_rule}`(8-2) |
+| `tuning_data` | `text` | NULL 허용 | | 하이퍼파라미터를 고른 데이터 범위(6-4). 튜닝이 없으면 NULL |
+| `experiment_id` | `text` | NULL 허용 | | `H-01` 등. 실험에 속하지 않는 설정이면 NULL |
+| `holdout_seasons` | `text[]` | NOT NULL | `'{2025-26}'` | 선언한 보류 시즌(M-2) |
+| `holdout_unlocked_reason` | `text` | NULL 허용 | | `--unlock-holdout "<사유>"`의 사유. **NULL이면 보류 시즌 미접촉**. 빈 문자열은 거부 |
+| `artifact_path` | `text` | NULL 허용 | | 재학습 산출물(계수·트리) 경로. 추천 기준 모델은 필수(CHECK), 실시간 예측에 쓴 모델도 필수(로더 규칙, 표를 넘음) |
+| `is_recommendation_model` | `boolean` | NOT NULL | `false` | 단계 4 추천의 기준 모델 표시 |
+| `retired_at` | `timestamptz` | NULL 허용 | | 더 이상 쓰지 않게 된 시각 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | 등록 시각 |
+
+- 키: `uq_model_versions_model_name_version UNIQUE (model_name, version)`.
+- CHECK: `ck_model_versions_model_family_format`, `ck_model_versions_hyperparameters_is_object`, `ck_model_versions_training_window_is_object`, `ck_model_versions_unlock_reason_not_blank`(`btrim(holdout_unlocked_reason) <> ''`), `ck_model_versions_recommendation_has_artifact`(`NOT is_recommendation_model OR artifact_path IS NOT NULL`).
+- 이 표는 `retired_at`, `holdout_unlocked_reason`, `is_recommendation_model`이 나중에 바뀐다(덮어쓰기 금지 대상 아님). 설정 자체(`hyperparameters` 등)를 바꾸려면 새 `version` 행을 만든다(적재 규칙).
+
+### 9-4. `predictions` — 경기 1 × 모델 버전 1 × as_of 1
+
+| 컬럼 | 타입 | NULL | 기본값 | 뜻 |
+| --- | --- | --- | --- | --- |
+| `prediction_id` | `bigint` identity | NOT NULL | | 대리키 |
+| `game_id` | `text` FK → `games` | NOT NULL | | 대상 경기 |
+| `model_version_id` | `bigint` FK → `model_versions` | NOT NULL | | 설정 |
+| `as_of` | `timestamptz` | NOT NULL | | 정보 경계(`features.as_of`와 같은 뜻) |
+| `snapshot_kind` | `text` | NOT NULL | | `features`와 같음 |
+| `origin` | `text` | NOT NULL | | `live` / `backtest` |
+| `computed_at` | `timestamptz` | NOT NULL | | 실제 계산 시각(`as_of`와 같은 시계) |
+| `train_cutoff` | `timestamptz` | NOT NULL | | 학습에 쓴 마지막 경기의 가용 시각(`available_at`, R2). 학습이 없는 모델(B0·B1 등)은 입력으로 쓴 마지막 경기의 가용 시각, 과거 경기를 전혀 안 쓰면(B3 시장) `as_of` |
+| `scheduled_start_utc` | `timestamptz` | NOT NULL | | 예측 당시 `games.start_time_utc`. 평가 때 실제 시작과 1시간 넘게 다르면 `rescheduled` |
+| `feature_id` | `bigint` FK → `features` | NULL 허용 | | 이 예측을 낸 피처 행. **피처 행을 읽지 않는 모델은 NULL**(9-9 1번) |
+| `p_home` | `numeric(6,4)` | NULL 허용 | | 홈 승리 확률, (0, 1). 총점 전용 모델은 NULL |
+| `total_mean` | `numeric(6,2)` | NULL 허용 | | 예상 총점(> 0). 승패 전용 모델은 NULL |
+| `total_sd` | `numeric(6,2)` | NULL 허용 | | 총점 표준편차(> 0, 단계 3). `total_mean`이 있을 때만 |
+| `over_prob` | `numeric(6,4)` | NULL 허용 | | P(총점 > `reference_line`), (0, 1). 라인이 있을 때만 |
+| `reference_line` | `numeric(6,2)` | NULL 허용 | | 기준 북메이커의 예측 시점 토탈 `point`(M-4). 평가가 같은 값을 쓴다(6-1). 배당이 없으면 NULL |
+| `reference_bookmaker` | `text` | NULL 허용 | | 기준 북메이커(`draftkings` → `fanduel` → `betmgm`). 라인이 있으면 필수 |
+| `reference_spread` | `numeric(6,2)` | NULL 허용 | | 기준 북메이커 홈 스프레드 `point`. 단계 4용(지금은 비워 둔다) |
+| `market_reference` | `jsonb` (객체) | NULL 허용 | | `{bookmaker, captured_at, snapshot_ids: [...], method: proportional, n_books}`(8-3). 시장을 안 썼으면 NULL |
+| `market_status` | `text` | NOT NULL | | 4-6의 6값(9-1 4번). 예측 시점에 알 수 있는 사유를 적고, 마감에 기대는 값(`pred_only`, `rescheduled`)은 평가가 `evaluations`에 정한다 |
+| `is_recommendation_basis` | `boolean` | NOT NULL | `false` | 그 경기·모델에서 추천의 기준이 된 스냅숏 1개만 true(단계 2는 `daily`, D-033) |
+| `code_version` | `text` | NOT NULL | | 예측한 코드의 git 커밋 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | DB에 생긴 시각 |
+
+- 키: `uq_predictions_game_id_model_version_id_as_of UNIQUE (game_id, model_version_id, as_of)`.
+- 부분 유니크: `uq_predictions_one_recommendation_basis ON (game_id, model_version_id) WHERE is_recommendation_basis`.
+- CHECK: `ck_predictions_snapshot_kind_format`, `_origin_valid`, `_market_status_valid`, `_p_home_range`, `_over_prob_range`, `_total_mean_positive`, `_total_sd_positive`, `_market_reference_is_object`, `_has_output`(`num_nonnulls(p_home, total_mean) >= 1`), `_train_cutoff_before_as_of`(`train_cutoff <= as_of`), `_as_of_before_computed`, `_as_of_before_start`(`as_of < scheduled_start_utc`), `_sd_needs_mean`, `_over_needs_line`, `_line_has_bookmaker`(이름 앞부분 `ck_predictions` 생략).
+- 인덱스: 키 인덱스(`game_id`로 시작), `ix_predictions_as_of (as_of)`, `ix_predictions_model_as_of (model_version_id, as_of)`. 8-3의 `(game_id)` 인덱스는 키 인덱스가 같은 일을 해서 따로 만들지 않았다(9-9 4번).
+- 보류 시즌(2025-26) 경기의 예측 행은 해제 전에 쓰지 않는다(M-2). 경기 시즌과 설정의 `holdout_seasons`를 비교해야 해서 표를 넘으므로, 평가 실행기(P-032)가 막는다.
+
+### 9-5. `evaluations` — 예측 1개의 평가
+
+| 컬럼 | 타입 | NULL | 기본값 | 뜻 |
+| --- | --- | --- | --- | --- |
+| `evaluation_id` | `bigint` identity | NOT NULL | | 대리키 |
+| `prediction_id` | `bigint` FK → `predictions` | NOT NULL | | 평가한 예측 |
+| `metric_version` | `text` | NOT NULL | | 지표 정의 버전(마진 제거 방식, 허용치, 보정 구간 수가 바뀌면 올린다) |
+| `home_won` | `boolean` | NOT NULL | | 홈 승리 |
+| `actual_total` | `integer` | NOT NULL | | 실제 총점(≥ 0) |
+| `actual_margin` | `integer` | NOT NULL | | 홈 점수 − 원정 점수(≠ 0, NBA는 무승부 없음) |
+| `actual_start_utc` | `timestamptz` | NOT NULL | | 실제 `games.start_time_utc` |
+| `rescheduled` | `boolean` | NOT NULL | | `actual_start_utc`가 `predictions.scheduled_start_utc`와 1시간 넘게 다름(1-2) |
+| `log_loss` | `numeric(9,6)` | NULL 허용 | | 경기 단위 log loss(≥ 0). `p_home`이 없으면 NULL |
+| `brier` | `numeric(7,6)` | NULL 허용 | | `(p − y)²`, [0, 1] |
+| `correct` | `boolean` | NULL 허용 | | `(p ≥ 0.5) = y` |
+| `abs_error_total` | `numeric(6,2)` | NULL 허용 | | `abs(μ − T)`. `total_mean`이 없으면 NULL |
+| `sq_error_total` | `numeric(10,2)` | NULL 허용 | | `(μ − T)²` |
+| `over_outcome` | `smallint` | NULL 허용 | | 1 오버 / 0 언더 / NULL push 또는 라인 없음 |
+| `over_log_loss` | `numeric(9,6)` | NULL 허용 | | 오버 확률의 log loss. push면 NULL |
+| `over_brier` | `numeric(7,6)` | NULL 허용 | | 오버 확률의 Brier |
+| `market_status` | `text` | NOT NULL | | 4-6의 6값. 시장 비교 불가면 시장 열 전부 NULL(CHECK) |
+| `market_p_home_pred` | `numeric(6,4)` | NULL 허용 | | 예측 시점 마진 제거 홈 확률 |
+| `market_p_home_close` | `numeric(6,4)` | NULL 허용 | | 마감 마진 제거 홈 확률 |
+| `market_log_loss_pred` / `_close` | `numeric(9,6)` | NULL 허용 | | 시장 확률의 log loss |
+| `market_brier_pred` / `_close` | `numeric(7,6)` | NULL 허용 | | 시장 확률의 Brier |
+| `market_total_line_pred` / `_close` | `numeric(6,2)` | NULL 허용 | | 기준 북메이커 토탈 라인 |
+| `closing_lead_time` | `interval` | NULL 허용 | | 마감 스냅숏의 `lead_time`(> 0). `pred_only`에서도 기록할 수 있다(왜 허용치 밖인지 보이게, 9-9 3번) |
+| `closing_bookmaker` | `text` | NULL 허용 | | 마감 값을 낸 북메이커 |
+| `line_move` | `numeric(6,2)` | NULL 허용 | | `L_close − L_pred`(4-5) |
+| `clv_prob` | `numeric(6,4)` | NULL 허용 | | `q_close − p_fair_pred`(4-5) |
+| `clv_return` | `numeric(8,4)` | NULL 허용 | | `o_pred × q_close − 1`. 라인이 다르면 NULL |
+| `beat_close` | `boolean` | NULL 허용 | | `o_pred > o_close` |
+| `evaluated_at` | `timestamptz` | NOT NULL | | 평가 시각(경기 종료 + 결과 적재 뒤, 다음 날 A0) |
+| `source_fetched_at` | `timestamptz` | NOT NULL | | 평가에 쓴 결과의 `games.fetched_at`(정정 추적) |
+| `code_version` | `text` | NOT NULL | | 평가한 코드의 git 커밋 |
+| `created_at` | `timestamptz` | NOT NULL | `now()` | DB에 생긴 시각 |
+
+- 키: `uq_evaluations_prediction_id_metric_version UNIQUE (prediction_id, metric_version)`. `prediction_id`로 시작하므로 FK 조회도 이것으로.
+- CHECK(범위): `actual_total_nonnegative`, `log_loss_nonnegative`, `brier_range`, `abs_error_total_nonnegative`, `sq_error_total_nonnegative`, `over_outcome_valid`, `over_log_loss_nonnegative`, `over_brier_range`, `market_status_valid`, `market_p_home_pred_range`, `market_p_home_close_range`, `closing_lead_time_positive`.
+- CHECK(관계): `margin_nonzero`, `home_won_matches_margin`(`home_won = (actual_margin > 0)`), `margin_within_total`, `win_metrics_together`(log_loss·brier·correct는 함께 있거나 함께 없음), `total_errors_together`, `over_metrics_together`(오버 지표는 함께, 그리고 `over_outcome`이 있을 때만), `no_market_all_null`(`market_status`가 `available`·`pred_only`가 아니면 시장 열 14개 전부 NULL, D-026), `close_only_when_available`(`available`이 아니면 마감·CLV 열 8개 전부 NULL. 4-6 "pred_only = CLV 없음"), `rescheduled_status`(`market_status = 'rescheduled'`이면 `rescheduled`), `rescheduled_no_market`(`rescheduled`이면 시장 비교 없음, 1-2). 이름 앞부분 `ck_evaluations_` 생략.
+- 지표 열의 소수 자리(6자리)는 경기 단위 값의 저장 정밀도다. 집계(평균, 부트스트랩)는 평가 실행기(P-032)가 이 값으로 다시 계산한다.
+
+### 9-6. 뷰 `predictions_recommendation_basis`
+
+`is_recommendation_basis = true`인 예측 행(경기·모델마다 최대 1개)에 그 평가를 `LEFT JOIN`한다. 평가 전이면 평가 열이 NULL이고, `metric_version`이 여럿이면 행이 여럿이다(읽는 쪽이 `metric_version`으로 거른다). 평가 열 중 예측과 이름이 겹치는 셋은 `evaluation_market_status`, `evaluation_code_version`, `evaluation_created_at`으로 바꿔 내보낸다. 단계 5 API가 읽는다(8-6).
+
+### 9-7. 확정 DDL (마이그레이션 0002와 같다)
+
+테스트(`tests/db/test_migrations.py`)가 이 블록을 그대로 꺼내 부록 A 다음에 임시 DB에 적용하고, 마이그레이션 `head`와 카탈로그(컬럼·타입·NULL·기본값·identity·제약 정의·인덱스 정의·뷰 정의)를 비교한다.
+
+```sql
+CREATE TABLE features (
+    feature_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    game_id           text        NOT NULL REFERENCES games (game_id),
+    as_of             timestamptz NOT NULL,
+    feature_version   text        NOT NULL,
+    snapshot_kind     text        NOT NULL CHECK (snapshot_kind ~ '^(daily|pre_tip_[0-9]{4})$'),
+    origin            text        NOT NULL CHECK (origin IN ('live', 'backtest')),
+    values            jsonb       NOT NULL CHECK (jsonb_typeof(values) = 'object'),
+    input_fingerprint jsonb       NOT NULL CHECK (jsonb_typeof(input_fingerprint) = 'object'),
+    computed_at       timestamptz NOT NULL,
+    code_version      text        NOT NULL,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_features_game_id_as_of_feature_version UNIQUE (game_id, as_of, feature_version),
+    CHECK (as_of <= computed_at),
+    CHECK (origin <> 'live' OR computed_at - as_of <= interval '2 hours')
+);
+CREATE INDEX ix_features_as_of ON features (as_of);
+CREATE INDEX ix_features_feature_version ON features (feature_version);
+
+CREATE TABLE model_versions (
+    model_version_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    model_name              text        NOT NULL,
+    version                 text        NOT NULL,
+    model_family            text        NOT NULL CHECK (model_family ~ '^[a-z][a-z0-9_]*$'),
+    feature_version         text,
+    hyperparameters         jsonb       NOT NULL CHECK (jsonb_typeof(hyperparameters) = 'object'),
+    seed                    integer     NOT NULL,
+    code_version            text        NOT NULL,
+    training_window         jsonb       NOT NULL CHECK (jsonb_typeof(training_window) = 'object'),
+    tuning_data             text,
+    experiment_id           text,
+    holdout_seasons         text[]      NOT NULL DEFAULT '{2025-26}'::text[],
+    holdout_unlocked_reason text CHECK (btrim(holdout_unlocked_reason) <> ''),
+    artifact_path           text,
+    is_recommendation_model boolean     NOT NULL DEFAULT false,
+    retired_at              timestamptz,
+    created_at              timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_model_versions_model_name_version UNIQUE (model_name, version),
+    CHECK (NOT is_recommendation_model OR artifact_path IS NOT NULL)
+);
+
+CREATE TABLE predictions (
+    prediction_id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    game_id                 text          NOT NULL REFERENCES games (game_id),
+    model_version_id        bigint        NOT NULL REFERENCES model_versions (model_version_id),
+    as_of                   timestamptz   NOT NULL,
+    snapshot_kind           text          NOT NULL CHECK (snapshot_kind ~ '^(daily|pre_tip_[0-9]{4})$'),
+    origin                  text          NOT NULL CHECK (origin IN ('live', 'backtest')),
+    computed_at             timestamptz   NOT NULL,
+    train_cutoff            timestamptz   NOT NULL,
+    scheduled_start_utc     timestamptz   NOT NULL,
+    feature_id              bigint REFERENCES features (feature_id),
+    p_home                  numeric(6, 4) CHECK (p_home > 0 AND p_home < 1),
+    total_mean              numeric(6, 2) CHECK (total_mean > 0),
+    total_sd                numeric(6, 2) CHECK (total_sd > 0),
+    over_prob               numeric(6, 4) CHECK (over_prob > 0 AND over_prob < 1),
+    reference_line          numeric(6, 2),
+    reference_bookmaker     text,
+    reference_spread        numeric(6, 2),
+    market_reference        jsonb CHECK (jsonb_typeof(market_reference) = 'object'),
+    market_status           text          NOT NULL CHECK (market_status IN ('available', 'pred_only',
+        'no_snapshot_at_as_of', 'no_odds_season', 'unmatched_event', 'rescheduled')),
+    is_recommendation_basis boolean       NOT NULL DEFAULT false,
+    code_version            text          NOT NULL,
+    created_at              timestamptz   NOT NULL DEFAULT now(),
+    CONSTRAINT uq_predictions_game_id_model_version_id_as_of
+        UNIQUE (game_id, model_version_id, as_of),
+    CHECK (num_nonnulls(p_home, total_mean) >= 1),
+    CHECK (train_cutoff <= as_of),
+    CHECK (as_of <= computed_at),
+    CHECK (as_of < scheduled_start_utc),
+    CHECK (total_sd IS NULL OR total_mean IS NOT NULL),
+    CHECK (over_prob IS NULL OR reference_line IS NOT NULL),
+    CHECK (reference_line IS NULL OR reference_bookmaker IS NOT NULL)
+);
+CREATE UNIQUE INDEX uq_predictions_one_recommendation_basis
+    ON predictions (game_id, model_version_id) WHERE is_recommendation_basis;
+CREATE INDEX ix_predictions_as_of ON predictions (as_of);
+CREATE INDEX ix_predictions_model_as_of ON predictions (model_version_id, as_of);
+
+CREATE TABLE evaluations (
+    evaluation_id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    prediction_id           bigint         NOT NULL REFERENCES predictions (prediction_id),
+    metric_version          text           NOT NULL,
+    home_won                boolean        NOT NULL,
+    actual_total            integer        NOT NULL CHECK (actual_total >= 0),
+    actual_margin           integer        NOT NULL CHECK (actual_margin <> 0),
+    actual_start_utc        timestamptz    NOT NULL,
+    rescheduled             boolean        NOT NULL,
+    log_loss                numeric(9, 6)  CHECK (log_loss >= 0),
+    brier                   numeric(7, 6)  CHECK (brier BETWEEN 0 AND 1),
+    correct                 boolean,
+    abs_error_total         numeric(6, 2)  CHECK (abs_error_total >= 0),
+    sq_error_total          numeric(10, 2) CHECK (sq_error_total >= 0),
+    over_outcome            smallint       CHECK (over_outcome IN (0, 1)),
+    over_log_loss           numeric(9, 6)  CHECK (over_log_loss >= 0),
+    over_brier              numeric(7, 6)  CHECK (over_brier BETWEEN 0 AND 1),
+    market_status           text           NOT NULL CHECK (market_status IN ('available', 'pred_only',
+        'no_snapshot_at_as_of', 'no_odds_season', 'unmatched_event', 'rescheduled')),
+    market_p_home_pred      numeric(6, 4)  CHECK (market_p_home_pred > 0 AND market_p_home_pred < 1),
+    market_p_home_close     numeric(6, 4)  CHECK (market_p_home_close > 0 AND market_p_home_close < 1),
+    market_log_loss_pred    numeric(9, 6),
+    market_log_loss_close   numeric(9, 6),
+    market_brier_pred       numeric(7, 6),
+    market_brier_close      numeric(7, 6),
+    market_total_line_pred  numeric(6, 2),
+    market_total_line_close numeric(6, 2),
+    closing_lead_time       interval       CHECK (closing_lead_time > interval '0'),
+    closing_bookmaker       text,
+    line_move               numeric(6, 2),
+    clv_prob                numeric(6, 4),
+    clv_return              numeric(8, 4),
+    beat_close              boolean,
+    evaluated_at            timestamptz    NOT NULL,
+    source_fetched_at       timestamptz    NOT NULL,
+    code_version            text           NOT NULL,
+    created_at              timestamptz    NOT NULL DEFAULT now(),
+    CONSTRAINT uq_evaluations_prediction_id_metric_version UNIQUE (prediction_id, metric_version),
+    CHECK (home_won = (actual_margin > 0)),
+    CHECK (abs(actual_margin) <= actual_total),
+    CHECK (num_nonnulls(log_loss, brier, correct) IN (0, 3)),
+    CHECK (num_nonnulls(abs_error_total, sq_error_total) IN (0, 2)),
+    CHECK (num_nonnulls(over_log_loss, over_brier) IN (0, 2)
+           AND (over_log_loss IS NULL OR over_outcome IS NOT NULL)),
+    CHECK (market_status IN ('available', 'pred_only') OR num_nonnulls(market_p_home_pred,
+           market_log_loss_pred, market_brier_pred, market_total_line_pred, market_p_home_close,
+           market_log_loss_close, market_brier_close, market_total_line_close, line_move, clv_prob,
+           clv_return, beat_close, closing_lead_time, closing_bookmaker) = 0),
+    CHECK (market_status = 'available' OR num_nonnulls(market_p_home_close, market_log_loss_close,
+           market_brier_close, market_total_line_close, line_move, clv_prob, clv_return,
+           beat_close) = 0),
+    CHECK (market_status <> 'rescheduled' OR rescheduled),
+    CHECK (NOT rescheduled OR market_status NOT IN ('available', 'pred_only'))
+);
+
+CREATE VIEW predictions_recommendation_basis AS
+SELECT p.*,
+       e.evaluation_id,
+       e.metric_version,
+       e.home_won,
+       e.actual_total,
+       e.actual_margin,
+       e.actual_start_utc,
+       e.rescheduled,
+       e.log_loss,
+       e.brier,
+       e.correct,
+       e.abs_error_total,
+       e.sq_error_total,
+       e.over_outcome,
+       e.over_log_loss,
+       e.over_brier,
+       e.market_status AS evaluation_market_status,
+       e.market_p_home_pred,
+       e.market_p_home_close,
+       e.market_log_loss_pred,
+       e.market_log_loss_close,
+       e.market_brier_pred,
+       e.market_brier_close,
+       e.market_total_line_pred,
+       e.market_total_line_close,
+       e.closing_lead_time,
+       e.closing_bookmaker,
+       e.line_move,
+       e.clv_prob,
+       e.clv_return,
+       e.beat_close,
+       e.evaluated_at,
+       e.source_fetched_at,
+       e.code_version AS evaluation_code_version,
+       e.created_at AS evaluation_created_at
+FROM predictions p
+LEFT JOIN evaluations e ON e.prediction_id = p.prediction_id
+WHERE p.is_recommendation_basis;
+```
+
+### 9-8. 요구 → 구현 대응표 (modeling-v1 8-1~8-4, 8-6)
+
+"로더"는 이 티켓 밖(P-033·P-035)의 적재 코드가 지킬 규칙이고, 이 장(9-1)에 규칙으로 적었다.
+
+**8장 머리말**
+
+| 요구 | 구현 |
+| --- | --- |
+| 네 표 모두 `created_at`(기본 `now()`) | 네 표 `created_at timestamptz NOT NULL DEFAULT now()` |
+| 네 표 모두 `code_version`(git 커밋) | 네 표 `code_version text NOT NULL`(9-1 6번) |
+| ML ↔ Serving 계약(D-004) | 표 4개 + 뷰 1개, 마이그레이션 0002 |
+
+**8-1 `features`**
+
+| 요구 | 구현 |
+| --- | --- |
+| 키 `UNIQUE (game_id, as_of, feature_version)` + 대리키 `feature_id` | `uq_features_game_id_as_of_feature_version`, `feature_id bigint identity PK` |
+| `values jsonb` 한 칸, 키 = 3-1 이름, NULL 허용(콜드 스타트) | `values jsonb NOT NULL` + `ck_features_values_is_object`. 개별 값의 JSON `null` 허용(9-9 2번) |
+| 자주 쓰는 열 승격 검토 | 지금은 안 함(요구도 "검토"). 승격은 새 마이그레이션 |
+| `as_of timestamptz` | `as_of timestamptz NOT NULL` |
+| `computed_at timestamptz`, `as_of ≤ computed_at` | `computed_at timestamptz NOT NULL`, `ck_features_as_of_before_computed` |
+| 상한 `≤ as_of + 2h`는 `origin = live` 행에만 | `ck_features_live_computed_within_2h`: `origin <> 'live' OR computed_at - as_of <= interval '2 hours'` |
+| as_of와 같은 시계(R4) | 9-1 1번(규칙. `computed_at`에 DB 기본값을 두지 않았다) |
+| `snapshot_kind text`(4값) | `snapshot_kind text NOT NULL` + 형식 CHECK `ck_features_snapshot_kind_format` + 파이썬 `SNAPSHOT_KINDS`(9-1 4번) |
+| `origin text`(`live`, `backtest`) | `origin text NOT NULL` + `ck_features_origin_valid` |
+| 결손 보충 행 `origin` = `backtest`(D-049 후속) | 9-1 3번(규칙) |
+| `input_fingerprint jsonb`(키 8개) | `input_fingerprint jsonb NOT NULL` + `ck_features_input_fingerprint_is_object`. 키는 ML 소유 |
+| 덮어쓰기 금지(`ON CONFLICT DO NOTHING`), 다르면 `feature_drift` 보고, 정의 변경은 `feature_version` 올림 | 9-1 2번(로더 규칙) + 품질 체크 `feature_drift`(틀, 9-9 6번) |
+| `as_of < games.start_time_utc`는 로더 + 품질 체크 `features_after_tipoff = 0` | 9-1 5번(로더) + 품질 체크 `features_after_tipoff`(fail) |
+| `daily` live 행 `max_stats_fetched_at <= as_of` 품질 체크 | **이 티켓 밖**(완료 기준 4의 체크 3개에 없음). 후속 제안(PR "못 한 것") |
+| 인덱스: 키, `(as_of)`, `(feature_version)` | 키 유니크 인덱스, `ix_features_as_of`, `ix_features_feature_version` |
+| 크기 약 6만 행(추정) | 반영할 DDL 없음. 9-2에 적음 |
+| 학습은 저장 행만 읽는다(6-2) | 읽는 쪽 규칙(P-032). 저장이 두 origin 모두 가능해서 성립한다(상한이 live에만 걸림) |
+
+**8-2 `model_versions`**
+
+| 요구 | 구현 |
+| --- | --- |
+| 키 `UNIQUE (model_name, version)` + `model_version_id` | `uq_model_versions_model_name_version`, `model_version_id bigint identity PK` |
+| `model_family text`(10값) | `model_family text NOT NULL` + 형식 CHECK + 파이썬 `MODEL_FAMILIES`(9-1 4번) |
+| `feature_version` | `feature_version text`(NULL 허용: 피처 행을 안 읽는 모델, 9-9 1번) |
+| `hyperparameters jsonb` | `hyperparameters jsonb NOT NULL` + `ck_model_versions_hyperparameters_is_object` |
+| `seed integer` | `seed integer NOT NULL` |
+| `code_version` | `code_version text NOT NULL` |
+| `training_window jsonb`(`{train_start, refit_every_days, min_train_rule}`) | `training_window jsonb NOT NULL` + `ck_model_versions_training_window_is_object` |
+| `tuning_data text` | `tuning_data text` |
+| `experiment_id text` | `experiment_id text` |
+| `holdout_seasons text[]`(기본 `{2025-26}`) | `holdout_seasons text[] NOT NULL DEFAULT '{2025-26}'` |
+| `holdout_unlocked_reason text`(NULL이면 미접촉) | `holdout_unlocked_reason text` + `ck_model_versions_unlock_reason_not_blank` |
+| 주간 재학습은 버전을 늘리지 않음, 한 행 = 설정 1개(초안 변경 표시) | 9장 머리말 변경 표시 + `predictions.train_cutoff` |
+| 산출물 경로 `artifact_path` | `artifact_path text` |
+| 추천 기준 모델의 산출물 필수 | `ck_model_versions_recommendation_has_artifact` |
+| 실시간 2026-27 예측에 쓴 모델의 산출물 필수 | 표를 넘음(`predictions.origin`) → 로더 규칙(9-3) |
+| `is_recommendation_model boolean` | `is_recommendation_model boolean NOT NULL DEFAULT false` |
+| `retired_at` | `retired_at timestamptz` |
+
+**8-3 `predictions`**
+
+| 요구 | 구현 |
+| --- | --- |
+| 키 `UNIQUE (game_id, model_version_id, as_of)` + `prediction_id` | `uq_predictions_game_id_model_version_id_as_of`, `prediction_id bigint identity PK` |
+| `predicted_at` → `as_of`, 실제 계산 시각 `computed_at` | `as_of timestamptz NOT NULL`, `computed_at timestamptz NOT NULL` + `ck_predictions_as_of_before_computed`(9-9 5번) |
+| `p_home numeric(6,4)` CHECK (0,1) | `p_home numeric(6,4)` + `ck_predictions_p_home_range`(NULL 허용: 총점 전용 모델, 9-9 1번) |
+| `total_mean numeric(6,2)` | `total_mean numeric(6,2)` + `ck_predictions_total_mean_positive`(NULL 허용: 승패 전용 모델) + `ck_predictions_has_output` |
+| `total_sd numeric(6,2)` NULL 허용 | `total_sd numeric(6,2)` + `_total_sd_positive` + `_sd_needs_mean` |
+| `over_prob numeric(6,4)` NULL 허용 | `over_prob numeric(6,4)` + `_over_prob_range` + `_over_needs_line` |
+| `reference_line numeric(6,2)` | `reference_line numeric(6,2)`(NULL 허용: 배당 없음) |
+| `reference_bookmaker text` | `reference_bookmaker text` + `_line_has_bookmaker` |
+| `reference_spread numeric(6,2)`(단계 4) | `reference_spread numeric(6,2)`(지금 만들어 두고 단계 4에서 채움, 9-9 7번) |
+| `snapshot_kind`, `origin` | `features`와 같은 컬럼·CHECK |
+| `train_cutoff timestamptz`, CHECK `train_cutoff <= as_of` | `train_cutoff timestamptz NOT NULL` + `ck_predictions_train_cutoff_before_as_of` |
+| `scheduled_start_utc`(예측 당시 일정 시각) | `scheduled_start_utc timestamptz NOT NULL` (+ `ck_predictions_as_of_before_start`) |
+| `feature_id` FK | `feature_id bigint REFERENCES features`(NULL 허용, 9-9 1번) |
+| `market_reference jsonb`(`{bookmaker, captured_at, snapshot_ids, method, n_books}`) | `market_reference jsonb` + `_market_reference_is_object` |
+| `market_status text`(4-6 값) | `market_status text NOT NULL` + `ck_predictions_market_status_valid`(6값) |
+| `is_recommendation_basis boolean` + 부분 유니크 `(game_id, model_version_id) WHERE is_recommendation_basis` | `is_recommendation_basis boolean NOT NULL DEFAULT false` + `uq_predictions_one_recommendation_basis` |
+| 덮어쓰기 없음, 같은 키 재실행은 값이 같아야 함 | 9-1 2번(로더 규칙) |
+| 로더 `as_of < games.start_time_utc`, 품질 체크 `predictions_after_tipoff = 0` | 9-1 5번 + 품질 체크 `predictions_after_tipoff`(fail) + 표 안 CHECK `_as_of_before_start` |
+| 인덱스: 키, `(as_of)`, `(model_version_id, as_of)`, `(game_id)` | 키 유니크 인덱스, `ix_predictions_as_of`, `ix_predictions_model_as_of`. `(game_id)`는 키 인덱스가 대신함(9-9 4번) |
+
+**8-4 `evaluations`**
+
+| 요구 | 구현 |
+| --- | --- |
+| 키 `UNIQUE (prediction_id, metric_version)` + `evaluation_id` | `uq_evaluations_prediction_id_metric_version`, `evaluation_id bigint identity PK` |
+| 결과 `home_won boolean`, `actual_total integer`, `actual_margin integer`, `actual_start_utc`, `rescheduled boolean` | 다섯 컬럼 전부 NOT NULL + `actual_total_nonnegative`, `margin_nonzero`, `home_won_matches_margin`, `margin_within_total` |
+| 모델 지표 `log_loss`, `brier`, `correct boolean`, `abs_error_total`, `sq_error_total`, `over_outcome smallint`(1/0/NULL=push), `over_log_loss`, `over_brier` | 여덟 컬럼(NULL 허용) + 범위 CHECK + `win_metrics_together`, `total_errors_together`, `over_metrics_together` |
+| 시장 `market_status`(4-6) | `market_status text NOT NULL` + `ck_evaluations_market_status_valid` |
+| `market_p_home_pred`, `market_p_home_close`, `market_log_loss_pred/_close`, `market_brier_pred/_close`, `market_total_line_pred/_close` | 여덟 컬럼(NULL 허용) + 확률 범위 CHECK 2개 |
+| `closing_lead_time interval`, `closing_bookmaker`, `line_move numeric(6,2)` | 세 컬럼(NULL 허용) + `closing_lead_time_positive` |
+| 시장 비교 불가면 전부 NULL + `market_status`에 사유(D-026) | `ck_evaluations_no_market_all_null` + `ck_evaluations_close_only_when_available`(pred_only는 CLV 없음, 4-6) |
+| 연기 경기는 시장 비교에서 제외(1-2) | `rescheduled_status`, `rescheduled_no_market` |
+| CLV `clv_prob`, `clv_return`, `beat_close boolean`(4-5) | 세 컬럼(NULL 허용) |
+| `evaluated_at` | `evaluated_at timestamptz NOT NULL` |
+| 같은 `metric_version`이면 재평가 값 동일, `games.fetched_at`을 `source_fetched_at`으로 저장 | `source_fetched_at timestamptz NOT NULL` + 9-1 2번(규칙) |
+| `odds_closing_lines`는 평가 모듈만 읽는다 | 코드 규칙(P-032 테스트, 9-1 9번). DDL 없음 |
+
+**8-6 함께 만들 것**
+
+| 요구 | 구현 |
+| --- | --- |
+| 마이그레이션 `0002`에 4표 + 인덱스·CHECK만, `is_neutral` 추가 없음 | `alembic/versions/0002_modeling_layer.py`: 표 4개 + 인덱스 5개(부분 유니크 포함) + CHECK 48개 + 뷰 1개. 기존 표 변경 없음 |
+| 설계 DDL 일치 테스트 확장(D-030 4항) | `tests/db/test_migrations.py::test_head_matches_design_ddl`(부록 A + 9-7 = head) |
+| 품질 체크 3개 | `features_after_tipoff`, `predictions_after_tipoff`(fail), `feature_drift`(warn, 비교 대상 없으면 skip) |
+| 뷰 `predictions_recommendation_basis` | 9-6 |
+
+### 9-9. 설계안 8장과 다르게 하거나 8장이 정하지 않아 정한 것
+
+1. **`predictions.p_home`, `total_mean`, `feature_id`와 `model_versions.feature_version`은 NULL 허용.** 8-2의 모델 종류에는 승패만 내는 모델(Elo, 시장)과 총점만 내는 모델(`total_league_mean`, `total_pace_eff`)이 함께 있다. 둘 다 NOT NULL이면 한쪽 모델은 저장할 수 없다. 대신 `ck_predictions_has_output`이 "둘 중 하나는 있다"를 강제한다. `feature_id`는 B0(항상 홈)처럼 피처 행을 읽지 않는 기준선이 있고, P-033(기준선)이 P-035(피처 모듈)보다 먼저 올 수 있어서 NULL을 허용했다. NOT NULL로 두면 P-033이 P-035를 기다려야 한다.
+2. **`features.values`는 컬럼 NOT NULL, 안의 값은 JSON `null` 허용.** 8-1의 "NULL 허용(콜드 스타트)"을 "피처 하나하나가 비어 있을 수 있다"로 읽었다(T7 "롤링·누적 NULL"). 값 칸 자체가 없는 피처 행은 뜻이 없다.
+3. **`pred_only`에서 `closing_lead_time`·`closing_bookmaker`는 남길 수 있다.** 4-4의 "평가 행은 남기고 사유만 적음"과 "`closing_lead_time`을 저장해 구간별로 보고"를 함께 만족시키려고, 마감 **가격**에서 나오는 값(마감 확률·지표·라인·`line_move`·CLV)만 NULL을 강제했다. 시장 비교가 아예 불가한 4값(`no_*`, `unmatched_event`, `rescheduled`)은 lead time까지 전부 NULL이다.
+4. **`predictions (game_id)` 인덱스를 따로 만들지 않았다.** 키 `UNIQUE (game_id, model_version_id, as_of)`의 인덱스가 `game_id`로 시작해서 `game_id` 조회에 그대로 쓰인다. 같은 일을 하는 인덱스를 하나 더 두면 쓰기만 느려진다. 필요하면 새 마이그레이션으로 더한다.
+5. **8장에 없는 CHECK를 더했다(전부 표 안의 조건).** `predictions`의 `as_of <= computed_at`(features와 같은 R4 규칙), `as_of < scheduled_start_utc`(R4의 `as_of < start_time_utc`를 예측 당시 시각으로 표 안에서 막음), 출력 열 사이 관계(`sd_needs_mean`, `over_needs_line`, `line_has_bookmaker`), `evaluations`의 결과 관계(`home_won = (actual_margin > 0)` 등), 지표가 함께 있거나 함께 없게 하는 CHECK, `model_versions`의 `recommendation_has_artifact`(8-2 "추천 기준 모델의 산출물 필수"), `unlock_reason_not_blank`. 전부 로더 버그를 DB에서 잡으려는 것이고, 정상 데이터를 막지 않는다(9-11 테스트).
+6. **`feature_drift`의 "비교 대상".** 재계산은 피처 모듈(P-035)의 일이라 지금은 비교할 대상이 없다. 체크는 재계산 함수를 `CheckSettings.feature_recompute`로 받는 틀이고, 함수가 없거나 표가 비었으면 skip, 있으면 저장 행마다 다시 계산해 `values`가 다른 행을 warn으로 보고한다(덮어쓰지 않는다, T11). CLI(`presagio quality-check`)는 아직 함수를 넘기지 않으므로 항상 skip이다. P-035가 함수를 만들면 연결한다.
+7. **`reference_spread`를 지금 만들었다.** 8-3에 "(단계 4)"로 적혀 있다. 단계 4에서 컬럼 하나 때문에 마이그레이션을 하는 것보다 NULL 컬럼 하나가 싸다고 봤다. 원하면 빼고 단계 4에서 더해도 된다.
+8. **타입을 정했다.** 8-4는 지표 컬럼 타입을 정하지 않았다. 1-1의 원칙(정해진 정밀도의 `numeric`)대로 확률 `numeric(6,4)`, log loss `numeric(9,6)`, Brier `numeric(7,6)`, 점수 오차 `numeric(6,2)`/`numeric(10,2)`, CLV 수익률 `numeric(8,4)`로 했다. `double precision`(파이썬 float 그대로)도 가능했지만 1-1 목록 밖이고, 경기 단위 값은 6자리면 집계 오차가 무시할 만하다.
+9. **`seed`와 `code_version`을 NOT NULL로 했다.** 8-2는 NULL 여부를 말하지 않았다. 재현 정보가 빠진 행을 DB가 거부하는 쪽을 골랐다(9-1 6번).
+10. **모델링 품질 체크 3개는 표가 없으면 skip한다.** 이 PR이 머지된 뒤 PM이 개발 DB에 0002를 적용하기 전까지, launchd의 `ingest-daily`(P-024)는 새 코드로 품질 체크를 돌리는데 표가 아직 없다. 그때 `error`(종료 코드 1)가 아니라 `skip`(사유: "table ... does not exist (migration 0002)")이 되게 했다. 적용 뒤에는 빈 표에서 `features_after_tipoff`·`predictions_after_tipoff`는 pass(0행), `feature_drift`는 skip이다.
+
+### 9-10. 단계 4에서 추가될 표 (자리만, 승인 대상 아님)
+
+`recommendations`(예측 FK, `strategy_id`, 마켓, 쪽, 모델 확률, 시장 확률, edge, 스테이크, 추천 시각 = 기준 스냅숏 `as_of`, CLV 열)와 `bankroll_ledger`(`strategy_id`, 추천 FK, 정산, 잔액). modeling-v1 8-5 그대로이고, 설계는 단계 4 첫 티켓에서 한다.
+
+### 9-11. 확인한 방법
+
+- `values`를 따옴표 없이 컬럼 이름으로 쓸 수 있는지: 개발 컨테이너(`presagio-postgres-1`, PostgreSQL 17)에서 `BEGIN; CREATE TEMP TABLE kw_probe (values jsonb); INSERT INTO kw_probe (values) VALUES ('{}'); SELECT values FROM kw_probe; ROLLBACK;` → 성공(임시 표, 롤백. 개발 DB의 표는 건드리지 않았다).
+- 마이그레이션은 임시 DB(`presagio_test_*`)에서 `alembic upgrade head` → `alembic check`(차이 없음) → `alembic downgrade -1` → `alembic upgrade head`로 확인했고, 같은 내용을 `tests/db/`가 매번 돌린다. CHECK가 정상 행은 통과시키고 잘못된 행은 이름으로 거부하는 것은 `tests/db/test_modeling_schema.py`가 확인한다.
+- 개발 DB에는 0002를 적용하지 않았다(머지 뒤 PM).
 
 ---
 
@@ -581,6 +1079,9 @@ erDiagram
 
 ## 13. 변경 기록
 
+### v1.4 (2026-10-23, P-031)
+9장을 초안에서 **확정 DDL**로 바꿨다(마이그레이션 `0002`). 요구는 `docs/design/modeling-v1.md` 8장(D-049). 표 4개(`features`, `model_versions`, `predictions`, `evaluations`) + 인덱스 5개 + CHECK 48개 + 뷰 `predictions_recommendation_basis`. 초안과 다른 점: `model_versions` 한 행 = 설정 1개(주간 재학습은 `predictions.train_cutoff`), `predictions`의 키 `predicted_at` → `as_of`. 1-1 타입 목록에 `interval`·`text[]`·`smallint`를 더했다(9-1 7번). 대응표 9-8, 8장과 다르게 한 점 9-9. 머리말·부록 A 설명 갱신. 기존 표(0001)와 `games.is_neutral`은 바뀌지 않았다.
+
 ### v1.3 (2026-10-23, P-025)
 6-1 `is_neutral` 설명과 소스별 갱신 컬럼 표의 `scheduleleaguev2` 칸에 2023-24 보완 규칙 추가. 2023-24 일정 응답은 1,396경기 전부 `isNeutral=false`라 중립 경기 5개(멕시코시티 `0022300172`, 파리 `0022300527`, 라스베이거스 NBA컵 준결승 `0022301229`·`0022301230`, 결승 `0062300001`)를 raw `arenaCity`·`gameLabel`로 확인해 **game_id 고정 목록**으로 true로 만든다(`sources/nba_api/schedule.py`의 `UNFLAGGED_NEUTRAL_GAME_IDS`). `isNeutral=true`는 그대로 true. 스코어보드(`scoreboardv3`)도 `is_neutral`을 넣기·갱신하므로 같은 목록을 적용한다(응답에 `gameId`가 있다). 그러지 않으면 과거 2023-24 날짜로 매일 수집을 돌렸을 때 true가 false로 되돌아간다. 개최지 도시 목록 규칙은 쓰지 않았다: 중립 경기가 NBA 연고 도시에서도 열리고(2026-27 컵 결승 Indianapolis), 라스베이거스 프리시즌 경기는 소스가 중립이 아니라고 하며, 스코어보드 응답에는 `arenaCity`가 없어 도시 규칙을 두 경로에 똑같이 적용할 수 없다. 2024-25부터는 플래그가 모든 중립 경기(해외 경기, 컵 준결승·결승)를 표시하므로 새 개최지는 플래그가 잡는다. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
 
@@ -607,7 +1108,7 @@ erDiagram
 
 ## 부록 A. 검증용 DDL 스케치
 
-P-012는 이것을 SQLAlchemy 모델 + Alembic으로 옮긴다. **이 파일은 마이그레이션이 아니다.** 제약 이름은 P-012에서 명명 규칙에 맞춰 정한다.
+P-012는 이것을 SQLAlchemy 모델 + Alembic으로 옮긴다. **이 파일은 마이그레이션이 아니다.** 제약 이름은 P-012에서 명명 규칙에 맞춰 정한다. 이 블록은 마이그레이션 `0001`과 같다(테스트가 고정). 모델링 레이어(마이그레이션 `0002`)의 DDL은 9-7에 있고, 테스트는 이 블록 다음에 9-7을 적용한 결과를 `head`와 비교한다.
 
 ```sql
 CREATE TABLE ingestion_runs (
