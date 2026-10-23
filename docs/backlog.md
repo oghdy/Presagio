@@ -428,7 +428,7 @@
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
 | P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | REVIEW (PR #23, 기준 5 대기) | P-017 |
-| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | REVIEW (PR #21, PM 수락, 사람 머지 대기) | P-021 |
+| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | REVIEW (PR #22) | P-021 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (features, model_versions, predictions as_of 스냅숏, 참조 배당) → 마이그레이션 0002 (`is_neutral` 컬럼 추가 없음, D-046) | data-engineer | TODO | P-030 승인 |
@@ -494,7 +494,7 @@
   - 2026-10-23 PM 12:44: 사람이 uv의 데스크탑 폴더 접근을 허용 → 멈춰 있던 실행이 12:42 `skip: no slot now (23:42 ET, 12:42 KST)` 로그를 남기고 정상 종료, 잡 로드 상태(마지막 종료 코드 0). reviewer(Opus 5.5 높음) 서브에이전트가 detached worktree에서 리뷰 시작(설치된 잡은 건드리지 않음, 기준 5는 "대기"로 표시). **16:00 KST 뒤 PM이 `ingestion_runs`·`~/Library/Logs/Presagio/ingest-2026-10-23.log` 확인.** PM 지시 변경: 16:00 launchd 실행을 기다리지 말고 10:57 확인 뒤 PR을 먼저 열고, 기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 결과로 채우되 확인 쿼리를 PR에 적기. 설치한 잡은 제거하지 말 것(머지 후 PM이 공유 체크아웃에서 재설치). **16:00 이후 PM이 `ingestion_runs`로 본 실행 결과를 확인해야 한다.**
 
 ### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
-- **상태:** REVIEW (2026-10-23 PR #21 https://github.com/oghdy/Presagio/pull/21, 커밋 `f2bfce3`, CI 초록. 재리뷰 "수락 가능", **PM 수락**, 사람 머지 대기)
+- **상태:** DONE (2026-10-23, PR #21 squash merge `f77b691`. 사람 지시("그래 그러면 머지해줘", 추천대로 테스트 한 줄은 후속으로)로 PM이 머지. 머지 후 main에서 `backfill --season 2023-24 --force` 1회: run 96(자식 97~101) 5호출 succeeded, code_version `f77b691`, 행 수·중립 5경기 불변, 품질 체크 14 pass)
 - **담당 역할:** data-engineer
 - **단계:** 2 (단계 1 보수)
 - **의존:** P-021 (DONE), Q-015 (a) 승인
@@ -570,7 +570,7 @@
 - 단계 5: FastAPI 5개 엔드포인트, 테스트, 대시보드 기술 결정
 - 단계 6: 매일 흐름 묶기, Docker 이미지, 배포 비용 비교, 알림, 신선도 체크, 7일 연속 운영
   - (P-025 리뷰, 2026-10-23) `ingestion_runs.code_version`에 작업 트리 dirty 표시가 없어 미커밋 코드로 돌린 run이 커밋 해시로만 남는다 → 로더 버전 기록(D-042 2항)과 함께 처리.
-  - (P-025 리뷰) 진행 중 시즌에서 스코어보드가 보완 목록 밖 중립 경기에 `isNeutral=false`를 주면 일정의 true를 덮을 수 있다(스코어보드 raw 72·73에서는 미관찰). 2026-27 중립 경기(파리·맨체스터·멕시코시티·컵 결승) 날짜의 스코어보드 raw로 확인 후 필요하면 `is_neutral`을 일정만 갱신하게.
+  - (P-025 리뷰) 진행 중 시즌에서 스코어보드가 보완 목록 밖 중립 경기에 `isNeutral=false`를 주면 일정의 true를 덮을 수 있다(스코어보드 raw 72·73에서는 미관찰). 2026-27 중립 경기(파리·맨체스터·멕시코시티·컵 결승) 날짜의 스코어보드 raw로 확인 후 필요하면 `is_neutral`을 일정만 갱신하게. 같은 티켓에서 `tests/ingestion/sources/test_nba_api_scoreboard.py`의 중립 테스트에 "`isNeutral=true`는 그대로 true" 단언 한 줄 추가(P-025 재리뷰 [낮음] 1, 머지 시 후속으로 넘김).
 - 문서 정리(PM, P-038 또는 docs 티켓): `docs/research/nba_api.md` 7장 픽스처 표에 `scheduleleaguev2__2023-24_neutral.json` 추가, `docs/research/backfill-report-stage1.md` 10장 "중립 경기 여부가 DB에 없다" 문장을 D-046·P-025 이후로 갱신.
 - 단계 7(선택): 부상자, 선수 피처, MLflow, 드리프트
 
