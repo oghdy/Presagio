@@ -1,6 +1,6 @@
 # 모델링 설계안 v1 + 실험 계획 (P-030)
 
-- **작성:** ML Engineer, 2026-10-23. **v1.1** 2026-10-23 리뷰 1차 반영(바뀐 곳은 13장).
+- **작성:** ML Engineer, 2026-10-23. **v1.1** 리뷰 1차 반영, **v1.2** 리뷰 2차 반영(바뀐 곳은 13장).
 - **상태:** 🧑 사람 승인 대기. 승인 전에는 P-031(모델링 스키마)·P-032(walk-forward 틀)·P-033~P-035(기준선·Elo·피처)·P-037(실험 1차)을 시작하지 않는다.
 - **이 문서가 정하는 것:** 무엇을 예측하는지(1장), 어느 시각 기준으로 어떤 데이터를 쓰는지(2장), 피처 후보(3장), 시장 기준선(4장), 단순 기준선과 Elo(5장), 지표와 walk-forward 프로토콜과 보류 시즌(6장), 가설 목록과 실험 등록 양식(7장), P-031에 넘길 모델링 레이어 요구 사항(8장), 누수 자기 점검(9장), 사람이 결정할 지점 M-1~M-11(10장).
 - **정하지 않는 것:** DDL(P-031), 코드(P-032~P-035), 실험 결과(P-037), 배당 과거 백필 결제(사람, P-033 때, D-045).
@@ -91,14 +91,14 @@ D-038의 하루 4회 수집과 경기 시작 시각 분포(12-1 Q-M: 정규·플
 
 | 후보 | 정의 | 장점 | 단점 | 추천 |
 | --- | --- | --- | --- | --- |
-| **A0 일일 스냅숏(`daily`)** | as_of = 본 실행의 `prediction` 배당 수집 `captured_at`(실제 시각). 배당 단계가 `skipped`·실패면 본 실행 부모 run의 `finished_at`을 as_of로 쓰고 `market_status = no_snapshot_at_as_of`(제안). 백테스트에서는 그 동부 날짜의 **07:00 UTC**(= 16:00 KST, 서머타임 무관) | 스탯이 완전하고 오늘 경기가 전부 시작 전. 하루 1회라 단순. 사람이 오후에 "오늘 예측"을 볼 수 있다 | 배당이 9~20시간 전 값이라 라인업·부상 반영이 덜 됨 | **단계 2의 유일한 as_of. 추천 기준 시각(D-033 5항)도 A0** (**M-1**) |
+| **A0 일일 스냅숏(`daily`)** | as_of = 본 실행의 `prediction` 배당 수집 `captured_at`(실제 시각). 배당 단계가 `skipped`·실패면 본 실행 부모 run의 `finished_at`을 as_of로 쓴다(제안). 시장 피처와 `market_status`는 그 as_of에 R3를 그대로 적용한다(전날 21:45 ET 캡처가 24시간 안이면 그것을 쓰고, 24시간 안 스냅숏이 없을 때만 `no_snapshot_at_as_of`). 백테스트에서는 그 동부 날짜의 **07:00 UTC**(= 16:00 KST, 서머타임 무관) | 스탯이 완전하고 오늘 경기가 전부 시작 전. 하루 1회라 단순. 사람이 오후에 "오늘 예측"을 볼 수 있다 | 배당이 9~20시간 전 값이라 라인업·부상 반영이 덜 됨 | **단계 2의 유일한 as_of. 추천 기준 시각(D-033 5항)도 A0** (**M-1**) |
 | A1~A3 경기 전 스냅숏(`pre_tip_*`) | as_of = 그 캡처의 `captured_at`. 스탯 피처는 A0과 같고 시장 피처만 바뀜 | 시장을 피처로 쓸 때(H-09) 가장 신선한 가격. 추천의 CLV가 좋아짐 | 하루 4개 예측 행. 사람이 보기엔 늦은 시각(한국 새벽) | 단계 3(시장 피처 도입)부터 추가 저장. 추천 기준 시각을 "경기 전 마지막"으로 옮길지는 단계 4에서 재결정 |
 | 경기별 "시작 X시간 전" | as_of = `start_time_utc − X` | 경기마다 같은 정보 나이 | 수집 시각과 안 맞아 실제로는 그 시각의 배당이 없다(가장 가까운 이전 스냅숏을 써야 함) | 안 고름(11장) |
 
 - as_of는 **UTC timestamptz 하나**다. "그 시각까지 우리 DB에 있던 정보"가 정의다. 백테스트에서는 2-3의 가용 시각 규칙으로 흉내 낸다.
 - 같은 날의 모든 경기는 같은 as_of를 갖는다(실행 단위). 경기별 as_of가 아니라 **실행별 as_of**다.
 - 2026-27 실시간에서 as_of는 "배당 수집이 끝난 시각"이다. 예측 단계는 수집 단계 뒤에 실행된다(OVERVIEW 3장 4→5단계). 따라서 `odds_snapshots.captured_at ≤ as_of`가 그날 `prediction` 캡처를 포함한다(등호 포함, T6).
-- 예측 단계가 재시도나 지연으로 as_of보다 늦게 돌아도 **as_of 뒤에 들어온 행은 쓰지 않는다.** 보장 장치(제안): `input_fingerprint.max_stats_fetched_at ≤ as_of`를 품질 체크로, `computed_at − as_of ≤ 2시간`을 상한으로(넘으면 그날 `daily` 스냅숏을 만들지 않고 결손으로 기록).
+- 예측 단계가 재시도나 지연으로 as_of보다 늦게 돌아도 **as_of 뒤에 들어온 행은 쓰지 않는다.** 보장 장치(제안): `input_fingerprint.max_stats_fetched_at ≤ as_of`를 품질 체크로, **실시간(`origin = live`) 행에만** `computed_at − as_of ≤ 2시간`을 상한으로(넘으면 그날 `daily` 스냅숏을 만들지 않고 결손으로 기록). 백테스트 행과 결손 날을 나중에 채우는 행은 as_of가 과거라 상한을 걸지 않는다(R4, 8-1).
 
 ```mermaid
 flowchart LR
@@ -124,7 +124,7 @@ flowchart LR
 | `odds_closing_lines` (뷰) | **평가와 CLV 전용**(P-032 `evaluation/`). 피처·모델 코드는 이 뷰를 읽지 않는다(9장 Q4) | `price_decimal`, `point`, `lead_time`, `event_commence_time`, `game_id` | |
 | `raw_api_responses`, `ingestion_runs` | 읽지 않는다 | | 피처가 raw에 결합되면 소스 형식에 묶인다(D-044 대안 기각 이유와 같음) |
 
-`is_neutral`은 컬럼이 있고(D-046) 2023-24 값은 P-025가 채운다. 이 설계는 "P-025 뒤 2023-24 중립 5경기가 true"를 전제한다.
+`is_neutral`은 컬럼이 있고(D-046) 2023-24 값은 P-025(PR #21, 2026-10-23 `f77b691`로 main 머지)가 채웠다. 개발 DB 2023-24 중립 5경기가 true이고 main 코드로 다시 받은 뒤에도 유지된다(12-1 Q-A, Q-R3).
 
 ### 2-2. 시각 규칙 (수식)
 
@@ -136,7 +136,7 @@ flowchart LR
 
 **규칙 R3 (배당).** 예측 시점 시장 = `(odds_event_id, bookmaker_key, market_key, outcome_side)`마다 `captured_at ≤ as_of`인 마지막 스냅숏. 기준은 `captured_at`(우리가 받은 시각)이고 `bookmaker_last_update`는 기록만 한다(4-3). 마감 배당은 뷰 `odds_closing_lines`이며 평가에서만 읽는다.
 
-**규칙 R4 (저장 시 검사).** `features.as_of < games.start_time_utc`, `predictions.as_of < games.start_time_utc`, `predictions.train_cutoff ≤ predictions.as_of`, `features.as_of ≤ features.computed_at ≤ features.as_of + 2시간(제안)`. 표를 넘는 조건은 DB CHECK로 못 거니 로더와 품질 체크가 막는다(8장). `computed_at`과 `as_of`는 **같은 시계**(파이썬, raw `fetched_at`과 같은 시계)로 찍는다. DB `now()` 기본값을 섞으면 Docker Desktop VM 시계 차이(약 1ms)로 경계 테스트가 간헐적으로 실패한다(D-030 교훈).
+**규칙 R4 (저장 시 검사).** `features.as_of < games.start_time_utc`, `predictions.as_of < games.start_time_utc`, `predictions.train_cutoff ≤ predictions.as_of`, `features.as_of ≤ features.computed_at`, 그리고 **`origin = 'live'` 행에만** `computed_at ≤ as_of + 2시간(제안)`(백테스트 행은 as_of가 과거이고 계산은 지금이라 상한이 없다. 저장은 두 origin 모두 한다 — 6-2의 "저장 행만 읽는다"가 성립하려면 백테스트 피처도 저장돼야 한다). 표를 넘는 조건은 DB CHECK로 못 거니 로더와 품질 체크가 막는다(8장). `computed_at`과 `as_of`는 **같은 시계**(파이썬, raw `fetched_at`과 같은 시계)로 찍는다. DB `now()` 기본값을 섞으면 Docker Desktop VM 시계 차이(약 1ms)로 경계 테스트가 간헐적으로 실패한다(D-030 교훈).
 
 ### 2-3. 실시간(2026-27)과 백테스트(과거 시즌)의 정보량 차이 (누수 질문 1)
 
@@ -190,7 +190,7 @@ flowchart LR
 | F-08 | `days_rest`, `is_b2b`, `games_last_7d` | `days_rest = D(g) − D(이전 경기)`(같은 시즌, **`cup_final` 포함** — 실제로 뛴 경기이므로 일정 피처에는 넣는다), `is_b2b = (days_rest = 1)`, `games_last_7d` = `D(g) − 7 ≤ D(h) < D(g)`인 경기 수. 시즌 첫 경기는 NULL | `games`만 | R1 (일정은 미리 알 수 있으므로 **이전 경기가 끝났는지와 무관**. 단, 결과는 안 씀) | fv1 | 글로서리 "백투백". 12-1 Q-O: 정규시즌 팀-경기의 17.4~18.5%가 백투백 |
 | F-09 | `home_adv` | `home_adv = 0 if is_neutral else 1`. 행은 홈팀 관점 하나뿐이라 원정 값은 따로 없다 | `games` | 일정 값 | fv1 | D-042, D-046. 정규 홈 승률 0.543~0.544(Q-D) |
 | F-10 | `elo_home`, `elo_away`, `elo_diff_adj`, `elo_prob` | 5-2의 경기 전 레이팅. `elo_diff_adj = elo_home + HCA × home_adv − elo_away`, `elo_prob = 1 / (1 + 10^(−elo_diff_adj / 400))` | `games`(결과 순차 처리) | R1, R2 순서로 갱신. 갱신에 쓰는 경기는 `D(h) < D(g)` | fv1 (Elo 상수는 `model_versions`) | FiveThirtyEight NBA Elo(12-2) |
-| F-11 | `mkt_p_home`, `mkt_total_line`, `mkt_spread_home`, `mkt_age_h`, `mkt_n_books`, `mkt_bookmaker` | 4-3 예측 시점 시장. `mkt_p_home` = 마진 제거 홈 확률(합의 또는 기준 북메이커, **M-4**), `mkt_age_h = (as_of − captured_at)`/1h, 24시간 넘으면 전부 NULL | `odds_snapshots` ⨝ `odds_events` | **R3** (`captured_at ≤ as_of`). 뷰 `odds_closing_lines` 금지 | fv1 (값은 있을 때만. 2023-24~2025-26은 NULL) | 사람 메모 1 "시장을 가장 강한 피처로". 단계 2에서는 **기준선으로만** 쓰고 모델 입력으로는 단계 3(H-09) |
+| F-11 | `mkt_p_home`, `mkt_total_line`, `mkt_spread_home`, `mkt_age_h`, `mkt_n_books`, `mkt_bookmaker` | 4-3 예측 시점 시장. `mkt_p_home` = 마진 제거 홈 확률(합의 또는 기준 북메이커, **M-4**), `mkt_age_h = (as_of − captured_at)`/1h, 24시간(제안) 넘으면 전부 NULL | `odds_snapshots` ⨝ `odds_events` | **R3** (`captured_at ≤ as_of`). 뷰 `odds_closing_lines` 금지 | fv1 (값은 있을 때만. 2023-24~2025-26은 NULL) | 사람 메모 1 "시장을 가장 강한 피처로". 단계 2에서는 **기준선으로만** 쓰고 모델 입력으로는 단계 3(H-09) |
 | F-12 | Four Factors `efg_{N}`, `tov_pct_{N}`, `orb_pct_{N}`, `ftr_{N}` (공격) + 같은 것의 수비판(`opp_*`) | `efg = (Σfgm + 0.5 Σfg3m) / Σfga`, `tov_pct = Σtov / (Σfga + 0.44 Σfta + Σtov)`, `orb_pct = Σoreb / (Σoreb + Σ opp_dreb)`, `ftr = Σftm / Σfga` | `team_game_stats_primary`(상대 행 조인) | R1, R2 | fv1 | Oliver 2004 Four Factors. bref 정의(12-2: TOV% 분모 0.44) |
 | F-13 | 전술 대리 지표(가능한 것) `fg3a_rate_{N}`, `fta_rate_{N}`, `ast_rate_{N}` | `fg3a_rate = Σfg3a / Σfga`, `fta_rate = Σfta / Σfga`, `ast_rate = Σast / Σfgm`, 페이스는 F-04 | 같음 | R1, R2 | fv1 | 사람 메모 3. 기본 박스스코어로 계산 가능(Q-P) |
 | F-14 | 상대 성향별 성적 | 상대를 페이스 삼분위로 나눠 각 구간의 `net`. 삼분위 경계는 **as_of 이전 리그 분포**로 | 같음 | R1, R2 + 경계도 as_of 이전 | fv2 (단계 3) | 사람 메모 3 "상대 성향별 성적". 표본이 작아 단계 3 |
@@ -211,7 +211,7 @@ flowchart LR
 | DR-5 | 슛 위치(림 근처 비율), 플레이바이플레이 | 사람 메모 3 "림 근처 비율" | 별도 엔드포인트 조사 필요(미확인) | 단계 7 |
 | DR-6 | `cup_final` 팀 스탯(`BoxScoreTraditionalV3` 시즌당 1회) | M-3에서 "포함"을 고를 때만 | 시즌당 1호출 | M-3 결과에 따라 |
 | DR-7 | 과거 3시즌 배당 백필($59) | 시장 기준선·CLV를 과거 시즌에서 평가 | $59, 하루 ≤ 5스냅숏(odds_api.md 3.2) | 사람 결정, P-033 때(D-045) |
-| DR-8 | 주말(토·일) 낮 경기용 `--odds-only` 배당 캡처 추가. 1회(16:45 ET)면 `lead_time ≤ 2h` 커버 87.6% → 93.1%, 2회(14:45·16:45) 97.0%, 3회(12:15·14:45·16:45) 98.5% (4-4, 12-1 Q-U) | 4-4: 18:45 ET 전 시작 경기 492(12.4%, 주말 438)는 A0 뒤 마감 캡처가 없어 `lead_time`이 9시간 이상 | 캡처 1회당 월 약 26크레딧(주 2일 × 3크레딧 × 약 4.4주). 2회 +53 → 월 최대 425, 3회 +79 → 451 (< 500) | **M-9** (D-038·D-048 변경이라 사람 결정) |
+| DR-8 | 주말(토·일) 낮 경기용 `--odds-only` 배당 캡처 추가. 1회(16:45 ET)면 `lead_time ≤ 2h` 커버 87.6% → 93.1%, 2회(14:45·16:45) 97.0%, 3회(12:15·14:45·16:45) 98.5% (4-4, 12-1 Q-U) | 4-4: 18:45 ET 전 시작 경기 492(12.4%, 주말 438)는 A0 뒤 마감 캡처가 없어 `lead_time`이 9시간 이상 | 캡처 1회당 월 약 26크레딧(주 2일 × 3크레딧 × 약 4.4주). 2회 +53 → 월 최대 425, 3회 +79 → 451 (< 500) | **M-9** (D-027·D-038·D-048 변경이라 사람 결정. PM 결정: P-024는 4회 기준으로 끝내고 M-9 승인 시 후속 티켓) |
 
 종류: **지금 스키마로 계산할 수 없는 대리 지표** = DR-3·DR-4·DR-5(단계 3·7), **운영·수집 요청** = DR-1·DR-2·DR-6·DR-7·DR-8. "불가"로 분류한 것(림 근처 비율, 로테이션 깊이, 라인업, 부상)은 피처 표에 넣지 않았다. 단계 7(OVERVIEW)과 D-033 5항대로다. DR-3의 이동 거리는 비중립 경기라면 `teams` 도시 좌표표만으로 대부분 계산할 수 있다(리뷰어 지적).
 
@@ -224,7 +224,7 @@ flowchart LR
 | 개발 DB 규모(2023-24 정규 1,230경기, **경기 단위**, 12-1 Q-Q) | 평균 101.51 | 평균 99.05. **A − B 평균 2.47, 표준편차 0.69, 상관 0.991, A/B 비율 1.0249** |
 
 **어디서 차이가 나고 어디서 안 나는가(설계상 결론, 리뷰 발견 3).**
-- `fv1`의 효율(`100 × Σpts / Σposs`)과 페이스(`Σposs / Σ(min/240)`)는 포제션이 분모·분자에 각각 들어가고, T-B1은 둘을 곱한다: 한 팀 항은 `pace × (ortg + drtg)/100 = 240 × (Σpts + Σopp_pts) / Σmin`이라 **포제션이 약분된다.** 교차 항은 `pace_h / pace_a` 비율로만 공식에 의존하는데, B ≈ A / 1.0249(경기별 편차 0.69)라 비율 변화는 1e-3 수준이다. 그래서 **T-B1 총점과 비율 피처(F-01~F-04, F-12·F-13)에서는 두 공식의 차이가 0에 가깝다**(T-B1 차이 추정 0.05점 미만. 실험 전 추정이며 H-05(a)가 확인한다). NBA 공식 추정식 `0.96 × (FGA + 0.44 FTA − ORB + TO)`(12-2, 2차 출처)는 A의 상수배라 정확히 같은 결과를 낸다.
+- `fv1`의 효율(`100 × Σpts / Σposs`)과 페이스(`Σposs / Σ(min/240)`)는 포제션이 분모·분자에 각각 들어가고, T-B1은 둘을 곱한다: 한 팀 항은 `pace × (ortg + drtg)/100 = 240 × (Σpts + Σopp_pts) / Σmin`이라 **포제션이 약분된다.** 교차 항은 `pace_h / pace_a` 비율로만 공식에 의존하는데, B ≈ A / 1.0249(경기별 편차 0.69)라 비율 변화는 1e-3 수준이다. 그래서 **T-B1 총점에서는 두 공식의 차이가 0에 가깝다**(추정 0.05점 미만. 실험 전 추정이며 H-05(a)가 확인한다). 피처 값 자체는 다르다: F-01~F-04는 척도가 약 2.5% 움직이고(ortg·drtg ×1.025, pace ÷1.025), F-12·F-13(Four Factors, 시도 비율)은 포제션을 아예 쓰지 않는다. 척도만 바뀌는 피처는 로지스틱의 계수가 흡수하고 트리 모델의 분할에 영향이 없으므로 **모델 결과**가 0에 가깝게 같다. NBA 공식 추정식 `0.96 × (FGA + 0.44 FTA − ORB + TO)`(12-2, 2차 출처)는 A의 상수배라 정확히 같은 결과를 낸다.
 - 포제션의 **수준**이 직접 들어가는 곳은 **시뮬레이션(H-10)**뿐이다: 경기당 포제션 수와 포제션당 득점 분산이 총점 분포의 폭을 정한다. 거기서만 A와 B가 다른 결과를 낼 수 있다.
 - 따라서 v1 초안의 "T-B1 MAE로 비교"는 구분력이 없는 설계였고 D-035 유지가 실험 전에 정해진 셈이었다. v1.1은 **H-05를 둘로 나눈다**: (a) 약분 확인(설계 검증, 예상 결과 = 차이 없음), (b) H-10 시뮬레이션에서 A vs B. 판정 기준은 7-1 H-05. 기본은 A(단순, 입력 4개, 이미 코드·결정에 있음)이고 (b)가 기준을 넘을 때만 `fv2`에서 B로 바꾸고 D-035 갱신을 제안한다.
 - 0.44의 출처는 Oliver 2004(함수 docstring, D-035).
@@ -267,17 +267,17 @@ flowchart LR
 
 | 쓰임 | 규칙 | 이유 |
 | --- | --- | --- |
-| **시장 확률 기준선·피처 `mkt_p_home`** | **합의(consensus)**: as_of 이전 마지막 스냅숏이 **같은 `captured_at`**에 양쪽 다 있는 북메이커들의 마진 제거 확률의 **중앙값**. 북메이커 ≥ 3곳일 때만. 3곳 미만이면 기준 북메이커 값, 그것도 없으면 NULL | 한 북메이커의 늦은 갱신·실수에 강하다. 9곳 중 커버리지가 고르지 않다(Q-G) |
+| **시장 확률 기준선·피처 `mkt_p_home`** | **합의(consensus)**: as_of 이전 마지막 스냅숏이 **같은 `captured_at`**에 양쪽 다 있는 북메이커들의 마진 제거 확률의 **중앙값**. 북메이커 ≥ 3곳(제안)일 때만. 3곳 미만이면 기준 북메이커 값, 그것도 없으면 NULL | 한 북메이커의 늦은 갱신·실수에 강하다. 9곳 중 커버리지가 고르지 않다(Q-G) |
 | **기준 북메이커(라인·CLV·추천 가격)** | **DraftKings** (`draftkings`). 없으면 FanDuel → BetMGM 순서의 고정 목록 | 관찰 표본에서 유일하게 전 이벤트를 커버(246행). 라인(`point`)과 CLV는 **같은 북메이커·같은 마켓·같은 쪽**끼리 비교해야 뜻이 있다 |
 | **토탈 기준 라인 `L`** | 기준 북메이커의 as_of 이전 마지막 `totals` `point` | T3 정의(1-1). 북메이커 간 라인이 다른 이벤트가 41 중 16(Q-K) |
-| **예측 시점 배당** | R3: `(이벤트, 북메이커, 마켓, 쪽)`마다 `captured_at ≤ as_of` 마지막 행. `as_of − captured_at ≤ 24시간`, 아니면 "시장 없음" | 하루 4회 수집이면 나이는 최대 약 5시간(A0은 직전 21:45 ET 캡처 또는 자기 `prediction` 캡처) |
+| **예측 시점 배당** | R3: `(이벤트, 북메이커, 마켓, 쪽)`마다 `captured_at ≤ as_of` 마지막 행. `as_of − captured_at ≤ 24시간`(제안), 아니면 "시장 없음" | 하루 4회 수집이면 나이는 최대 약 5시간(A0은 직전 21:45 ET 캡처 또는 자기 `prediction` 캡처) |
 | 시각 기준 | **`captured_at`**(우리가 받은 시각). `bookmaker_last_update`는 저장만(지금 데이터에서 둘의 차이 17~71초) | "알 수 있었던 시각"은 우리가 받은 시각이다. 북메이커 시계는 우리 시계와 다를 수 있다(schema 7-2) |
 | Pinnacle | **없다**(`us` 지역 응답에 없음, Q-G). 문헌의 "가장 효율적인 마감"(Pinnacle 자체 자료, 12-2)을 그대로 쓸 수 없다 | **M-4** 대안 칸 |
 
 ### 4-4. 마감 배당과 `lead_time` 허용치
 
 - 마감 = 뷰 `odds_closing_lines`(이벤트 최신 시작 시각 전 마지막 스냅숏, 일정이 1시간 넘게 바뀐 스냅숏 제외, D-028 A-8).
-- **허용치(제안, M-9):** `lead_time ≤ 2시간`이면 "마감 있음". 넘으면 `market_status = no_closing_within_tolerance`로 CLV·마감 비교에서 제외(평가 행은 남기고 사유만 적음).
+- **허용치(제안, M-9):** `lead_time ≤ 2시간`이면 "마감 있음". 넘으면 `market_status = pred_only`(예측 시점 시장만 있음, 4-6)로 CLV·마감 비교에서 제외(평가 행은 남기고 사유만 적음).
 - 왜 2시간인가 — D-038 캡처 시각과 시작 시각 분포(12-1 Q-M)로 계산한 **기대 lead_time**:
 
 | 시작 시각(ET) | 경기 수(3시즌+14) | 비율 | 마지막 캡처 | 기대 lead_time |
@@ -293,8 +293,8 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 없음 (D-038) | 0 (월 최대 372) | 87.6% | 77.0% | 낮 경기 492 전부 |
 | 1회 11:45 (v1 초안 DR-8) | +26 (398) | **89.1%** | 77.2% | 12:00~13:00 60경기만 메움. 15:00·15:30·17:00·18:00은 3~6시간 밖 |
-| 1회 16:45 (1회 중 최선) | +26 (398) | 93.1% | 78.2% | 15:30 이전 시작 |
-| 2회 14:45·16:45 (2회 중 최선) | +53 (425) | 97.0% | 81.9% | 12:00~13:00 60 + 평일 낮 54 |
+| 1회 16:45 (1회 중 최선) | +26 (398) | 93.1% | 78.2% | 16:30 이전 시작(16:00 6, 16:30 1 포함) |
+| 2회 14:45·16:45 (2회 중 최선) | +53 (425) | 97.0% | 81.9% | 주말 12:00~14:00 67(12:00 7, 12:30 2, 13:00 51, 14:00 7) + 평일 낮 54 = 121 |
 | 3회 12:15·14:45·16:45 (3회 중 최선) | +79 (451) | 98.5% | 83.2% | 평일 낮 54(시즌당 약 18, 공휴일) + 소수 |
 | 3회 11:45·13:45·16:45 (리뷰어 예) | +79 (451) | 98.5% | 78.6% | 같음 |
 
@@ -311,7 +311,7 @@ flowchart LR
 - `beat_close = o_pred > o_close` (가격만 비교)
 - 토탈·스프레드: 라인이 같을 때만 `clv_return`을 계산하고 `line_move = L_close − L_pred`를 따로 저장. 라인이 다르면 `clv_return` NULL + `line_move`만.
 - 단위: 추천 1건(단계 4 `recommendations`)마다. 단계 2에서는 추천이 없으므로 CLV는 **"모델이 가치 있다고 본 쪽"(`p_model > p_fair_pred`인 쪽)**에 대해 계산해 분포만 본다(H-03 보조 지표).
-- 집계: 평균 `clv_return`, `beat_close` 비율, 부트스트랩 90% 구간(경기 단위 재표집 1,000회).
+- 집계: 평균 `clv_return`, `beat_close` 비율, 부트스트랩 90% 구간(경기 단위 재표집 1,000회, 제안).
 
 ### 4-6. 배당이 없는 경기·시즌의 처리 (D-026 "정직하게 불가로 표시")
 
@@ -326,7 +326,7 @@ flowchart LR
 | `unmatched_event` | `odds_events.game_id` NULL(D-036 매핑 실패) | 불가, 사유 |
 | `rescheduled` | 1-2 연기 규칙 | 불가, 사유 |
 
-- 모든 실험 표는 **두 줄**로 낸다: (a) 전체 경기(모델·기준선만), (b) 시장 있는 경기(모델·기준선·시장 모두, **같은 경기 집합**). (b)의 n을 항상 적는다. n < 100이면 시장 비교 숫자를 "참고(표본 부족)"로 표시한다.
+- 모든 실험 표는 **두 줄**로 낸다: (a) 전체 경기(모델·기준선만), (b) 시장 있는 경기(모델·기준선·시장 모두, **같은 경기 집합**). (b)의 n을 항상 적는다. n < 100(제안)이면 시장 비교 숫자를 "참고(표본 부족)"로 표시한다.
 - (b)의 정의는 비교 대상에 따라 다르다(리뷰 발견 15): **예측 시점 시장(B3)을 쓰는 비교**(H-02, H-03, H-09)는 `market_status IN ('available', 'pred_only')`, **마감·CLV를 쓰는 비교**(B4, H-11, H-12)는 `available`만. 마감 유무는 as_of 뒤에 정해지는 속성이라 B3 비교를 그것으로 거르면 낮 경기 12.4%가 체계적으로 빠진다.
 - 시장 포함 실험군(H-02, H-03, H-09, H-11, H-12)은 (b)만 쓴다. 시장 미포함 실험군은 (a)를 쓴다.
 
@@ -339,7 +339,7 @@ flowchart LR
 | ID | 이름 | 확률 | 학습 | 비고 |
 | --- | --- | --- | --- | --- |
 | B0 | 항상 홈 | `p_home = 학습 기간 홈 승률`(F-17 `league_home_rate_std`, as_of 이전 누적. 시즌 초는 전 시즌 값). 중립이면 0.5 | 없음 | 정확도용 "항상 홈 승"도 함께(= p ≥ 0.5) |
-| B1 | 시즌 승률 | 시즌 누적 승률이 높은 팀 승(동률·시즌 첫 경기는 홈). 확률판: `0.5 + 0.5 × (win%_h − win%_a)`를 [0.05, 0.95]로 자름 | 없음 | 확률판은 조잡하므로 log loss는 참고. 보정판은 H-06의 로지스틱 |
+| B1 | 시즌 승률 | 시즌 누적 승률이 높은 팀 승(동률·시즌 첫 경기는 홈). 확률판: `0.5 + 0.5 × (win%_h − win%_a)`를 [0.05, 0.95](제안)로 자름 | 없음 | 확률판은 조잡하므로 log loss는 참고. 보정판은 H-06의 로지스틱 |
 | B2 | Elo | 5-2 | 상수만(네스티드, 6-4) | 단계 2의 주 기준선 |
 | B3 | 시장(예측 시점) | `mkt_p_home`(4-3) | 없음 | 있을 때만. **가장 강한 기준선** |
 | B4 | 시장(마감) | `odds_closing_lines` 마진 제거 확률 | 없음 | 평가 전용. 모델이 이것을 이기면 안 되는 게 정상(정보가 더 많음). 참고선 |
@@ -363,7 +363,7 @@ flowchart LR
 
 | ID | 이름 | 식 | 학습 |
 | --- | --- | --- | --- |
-| T-B0 | 리그 최근 평균 | `league_total_100`(F-17): as_of 이전 리그 최근 100경기 평균 총점. 포스트시즌은 포스트시즌끼리 | 없음 |
+| T-B0 | 리그 최근 평균 | `league_total_100`(F-17): as_of 이전 리그 최근 100경기(제안) 평균 총점. 포스트시즌은 포스트시즌끼리 | 없음 |
 | T-B1 | 페이스 × 효율 | `poss = (pace_h,N + pace_a,N) / 2`, `total = poss × ((ortg_h,N + drtg_a,N) / 2 + (ortg_a,N + drtg_h,N) / 2) / 100`, N = 20(제안. 시즌 초 k < 20이면 있는 만큼, k < 5면 T-B0로 대체) | 없음 (N = 20은 단계 2 출발값. H-06(단계 3)이 바꿀 수 있다) |
 | T-B2 | 시장 라인 | 기준 북메이커 토탈 `point`(예측 시점) | 없음. 있을 때만 |
 | T-B3 | 시장 마감 라인 | `odds_closing_lines` 토탈 `point` | 평가 참고선 |
@@ -387,10 +387,10 @@ T-B1이 "P-034 총점 기준선(최근 N경기 평균)"이다. 평균 총점(202
 | ECE | `Σ_b (n_b / N) × abs(mean p_b − obs_b)` | 집계 | 보정 요약. 구간 10개 고정 |
 | 총점 MAE / RMSE | `mean(abs(μ − T))`, `sqrt(mean((μ − T)²))` | 경기 | |
 | 오버 확률 log loss / Brier | 위 식에 `p = over_prob`, `y = 1[T > L]`. `T = L`(push)은 제외 | 경기 | 예측할 때의 L과 평가할 때의 L이 **같은 값**(저장된 `reference_line`) |
-| 시장 대비 Δlog loss, ΔBrier | `LL_model − LL_market`, `Brier_model − Brier_market`, **같은 경기 집합**(`market_status = available`) | 집계 | 음수면 모델이 낫다. 예측 시점 시장(B3)과 마감 시장(B4) 각각 |
+| 시장 대비 Δlog loss, ΔBrier | `LL_model − LL_market`, `Brier_model − Brier_market`, **같은 경기 집합**(B3 비교는 `market_status IN ('available', 'pred_only')`, B4 비교는 `available`, 4-6) | 집계 | 음수면 모델이 낫다. 예측 시점 시장(B3)과 마감 시장(B4) 각각 |
 | Brier 스킬 점수 | `1 − Brier_model / Brier_market` | 집계 | 양수면 모델이 낫다 |
 | CLV | 4-5 | 추천(단계 4) / 경기(단계 2~3 분포) | |
-| 불확실성 | 경기 단위 재표집 부트스트랩 1,000회, 90% 백분위 구간. 시드 고정 | 집계 | 모든 "A가 B보다 낫다"에 붙인다 |
+| 불확실성 | 경기 단위 재표집 부트스트랩 1,000회(제안), 90% 백분위 구간(제안). 시드 고정 | 집계 | 모든 "A가 B보다 낫다"에 붙인다 |
 
 log loss·Brier는 적절한 점수 규칙(strictly proper scoring rule)이라 정직한 확률이 기대 점수를 최대화한다(Gneiting & Raftery 2007, 12-2). 정확도는 그렇지 않아 참고로만 둔다.
 
@@ -400,7 +400,7 @@ log loss·Brier는 적절한 점수 규칙(strictly proper scoring rule)이라 �
 | --- | --- | --- |
 | 반복 단위 | **동부 날짜 d**(예측일). d마다 `as_of = d 07:00 UTC`(백테스트) 또는 그날 실제 A0 `captured_at`(실시간) | 2-2. 매일 흐름과 같은 단위 |
 | 학습 집합 | `D(h) < fit_cutoff`이고 R2를 통과한 경기(결과 있음). `fit_cutoff` = d 이전 가장 최근 재학습일 | 미래 결과를 학습에 쓰지 않음(감사 방법 4) |
-| **학습 행의 피처** | 학습 행 h의 피처 = `features`에 **h 자신의 예측일 as_of(h)로 저장된 행** `(h, as_of(h), feature_version)`. **재학습 시점의 as_of로 다시 계산하지 않는다.** 저장 행이 없으면 as_of(h)로 계산해 저장한 뒤 읽는다(실행기는 피처 함수에 재학습 시점 as_of를 넘기지 못하게 `training_matrix(feature_version, fit_cutoff)`만 노출) | 재학습 시점 as_of로 계산하면 h 자신의 결과와 그 뒤 경기가 h의 피처에 들어가 **라벨이 샌다**(리뷰 발견 1). 저장 행을 읽으므로 재학습이 재현된다(8-2) |
+| **학습 행의 피처** | 학습 행 h의 피처 = `features`에 **h 자신의 예측일 as_of(h)로 저장된 행** `(h, as_of(h), feature_version)`. **재학습 시점의 as_of로 다시 계산하지 않는다.** 저장 행이 없으면 as_of(h)로 계산해 저장한 뒤 읽는다(실행기는 피처 함수에 재학습 시점 as_of를 넘기지 못하게 `training_matrix(feature_version, fit_cutoff)`만 노출). 같은 경기에 `origin = live` 행과 `backtest` 행이 둘 다 있으면(2026-27) **live 행을 우선**하고 없을 때만 backtest 행을 쓴다(제안. 실제 운영이 본 정보량이 live이고, 어느 행을 썼는지 `feature_id`로 남는다) | 재학습 시점 as_of로 계산하면 h 자신의 결과와 그 뒤 경기가 h의 피처에 들어가 **라벨이 샌다**(리뷰 발견 1). 저장 행을 읽으므로 재학습이 재현된다(8-2) |
 | 창 | **확장(expanding)**: 학습 시작은 항상 첫 시즌 첫 날 | 표본이 2시즌뿐이라 슬라이딩은 표본을 더 줄인다 |
 | 재학습 주기 | 학습이 있는 모델(로지스틱, LightGBM, 보정기)은 **7일마다**(제안, **M-6**). Elo·롤링·시즌 누적·기준선은 학습이 아니라 순차 갱신이라 **매일** | 매일 재학습은 비용 ×7인데 NBA 하루 6~7경기(Q-N)로 모델이 바뀔 이유가 적다. 시즌 단위는 수개월간 낡는다 |
 | 최소 학습 | 학습 모델: **2023-24 전체**가 끝난 뒤 첫 예측(2024-25 개막부터). 비학습 기준선: 2023-24 개막부터 예측하되 **2024-01-01 이후**만 보고(워밍업) | 콜드 스타트 구간을 지표에서 분리 |
@@ -441,7 +441,7 @@ log loss·Brier는 적절한 점수 규칙(strictly proper scoring rule)이라 �
 
 - 2024-25는 "보고" 시즌이지만 가설마다 한 번씩 보므로 여러 가설을 거치면 약하게 튜닝된다. 그래서 가설마다 **사전 등록된 비교 하나**만 2024-25에서 판정하고, 탐색 변형은 `exploratory`로 표시해 선택 근거로 쓰지 않는다. 최종 방어선이 보류 시즌(6-3)이다.
 - 하이퍼파라미터 탐색 결과(격자 전체 표)도 실험 기록에 남긴다(실패 포함).
-- 시간 순서를 무시하는 교차검증 도구(`KFold`, `cross_val_score`, `GridSearchCV` 등)는 쓰지 않는다. 분할은 위 표의 시간 분할뿐이다(T9가 import 단위로 막는다).
+- 시간 순서를 무시하는 교차검증 도구(`KFold`, `cross_val_score`, `GridSearchCV`, `lightgbm.cv`, `xgboost.cv` 등 교차검증 함수 전반)는 쓰지 않는다. 분할은 위 표의 시간 분할뿐이다(T9가 import 단위로 막는다).
 
 ---
 
@@ -455,12 +455,12 @@ log loss·Brier는 적절한 점수 규칙(strictly proper scoring rule)이라 �
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | **H-01** | 문헌 출발 상수의 Elo(B2)는 항상 홈(B0)·시즌 승률(B1)보다 확률 품질이 좋다 | B2 vs B0, B1 | log loss, Brier, 정확도 | `LL_B2 ≤ LL_B0 − 0.02` **그리고** `Brier_B2 ≤ Brier_B0 − 0.005` **그리고** `acc_B2 ≥ acc_B1`. 하나라도 어기면 구현을 먼저 의심(감사) | 시장 미포함 | 2 | 2024-25 전체 + 2023-24 후반(참고) |
 | **H-02** | 마진 제거 방식(Shin, power)은 비례 배분보다 시장 확률의 log loss를 낮춘다 | 비례 vs Shin vs power (모델 없음) | 시장 확률의 log loss, Brier | 대안 채택 조건: `LL_대안 ≤ LL_비례 − 0.002` **그리고** 부트스트랩 90% 구간이 0을 제외 **그리고** n ≥ 500. 아니면 비례 유지 | 시장 포함 | 2 (표본 부족이면 3에서 재판정) | 시장 있는 경기(2026-27 누적, DR-7 시 과거). 6-4 분할 |
-| **H-03** | 예측 시점 시장 확률(B3)은 Elo(B2)보다 낫다 — "시장이 가장 강한 기준선"의 확인 | B3 vs B2, 그리고 B4(마감) vs B3 | log loss, Brier, Δ | 확인 조건: `LL_B3 ≤ LL_B2 − 0.01`. **거꾸로**(`LL_B2 < LL_B3`)면 승리 선언이 아니라 **누수·매핑 버그 감사 먼저**. 보조: `LL_B4 ≤ LL_B3`(마감이 더 정보가 많다) | 시장 포함 | 2 | 같은 경기 집합(`available`) |
+| **H-03** | 예측 시점 시장 확률(B3)은 Elo(B2)보다 낫다 — "시장이 가장 강한 기준선"의 확인 | B3 vs B2, 그리고 B4(마감) vs B3 | log loss, Brier, Δ | 확인 조건: `LL_B3 ≤ LL_B2 − 0.01`. **거꾸로**(`LL_B2 < LL_B3`)면 승리 선언이 아니라 **누수·매핑 버그 감사 먼저**. 보조: `LL_B4 ≤ LL_B3`(마감이 더 정보가 많다) | 시장 포함 | 2 | 주 판정(B3 vs B2): `market_status IN ('available', 'pred_only')`. 보조(B4 vs B3): `available`. 각각 같은 경기 집합 안에서 비교(4-6) |
 | **H-04** | 네스티드로 고른 Elo 상수(K·HCA, DR-1이 있으면 carry)와 점수 차 배수(MOV)는 538 출발값보다 2024-25에서 낫다 | (a) 격자 최적(2023-24) vs K=20/HCA=100/carry=0.75, (b) (a)의 결과 위에 MOV 유무 | log loss | (a) 채택 조건 `LL_튜닝 ≤ LL_출발 − 0.005`(2024-25), 아니면 출발값 유지. (b) MOV는 추가로 `≤ −0.005` 개선 시 채택(식은 1차 출처 확인 뒤, 5-2). carry는 DR-1 없으면 0.75 고정(6-4) | 시장 미포함 | 2 | 선택 2023-24, 판정 2024-25 |
-| **H-05** | 포제션 공식(D-035 vs basketball-reference)은 비율 피처·T-B1에서는 약분되어 차이가 없고, 포제션 수가 직접 들어가는 시뮬레이션(H-10)의 총점 분포에서만 차이가 난다 | (a) 설계 검증: T-B1(d035) vs T-B1(bref), (b) H-10 시뮬레이션을 두 공식으로 | (a) 총점 MAE 차이, (b) H-10의 MAE·PIT | (a) `abs(MAE_d035 − MAE_bref) ≤ 0.05`점이면 "약분 확인"(**예상 결과**. 넘으면 구현 오류를 먼저 의심). (b) bref 채택 조건: H-10의 총점 MAE가 d035 대비 `≤ −0.3`점 **그리고** PIT 균등성이 나빠지지 않음. 아니면 D-035 유지 | 시장 미포함 | 3 (H-10과 함께. (a)는 P-034에서 먼저 가능) | (a) 2023-24, (b) 2024-25 |
+| **H-05** | 포제션 공식(D-035 vs basketball-reference)은 비율 피처·T-B1에서는 약분되어 차이가 없고, 포제션 수가 직접 들어가는 시뮬레이션(H-10)의 총점 분포에서만 차이가 난다 | (a) 설계 검증: T-B1(d035) vs T-B1(bref), (b) H-10 시뮬레이션을 두 공식으로 | (a) 총점 MAE 차이, (b) H-10의 MAE·PIT | (a) `abs(MAE_d035 − MAE_bref) ≤ 0.05`점이면 "약분 확인"(**예상 결과**. 넘으면 구현 오류를 먼저 의심). (b) bref 채택 조건: H-10의 총점 MAE가 d035 대비 `≤ −0.3`점 **그리고** PIT 균등성 KS 통계량 `KS_bref ≤ KS_d035` **그리고** KS p > 0.05 유지. 아니면 D-035 유지 | 시장 미포함 | 3 (H-10과 함께. (a)는 P-034에서 먼저 가능) | (a) 2023-24, (b) 2024-25 |
 | **H-06** | 롤링 창 길이는 10(승패)·20(총점)이 5보다 낫고 20과 비슷하다 | N ∈ {5, 10, 20}, 단일 피처 로지스틱(`diff_net_N` + `home_adv`)와 T-B1(N) | log loss(승패), MAE(총점) | 2023-24 후반에서 고른 N이 2024-25에서 기본값(10/20)보다 `≥ 0.003` LL 또는 `≥ 0.15`점 MAE 나을 때만 기본값 교체 | 시장 미포함 | 3 | 선택 2023-24, 판정 2024-25 |
 | **H-07** | 휴식(`days_rest`, `is_b2b`)은 Elo 위에 작지만 양의 정보를 더한다 | 로지스틱 `[elo_diff_adj]` vs `[elo_diff_adj, diff_days_rest, home_b2b, away_b2b]` | log loss, 계수 부호 | `LL 개선 ≥ 0.002` **그리고** 자기 팀 백투백 계수 < 0(90% 구간이 0 제외). 개선이 0.002 미만이면 "효과 없음(이미 Elo에 흡수)"으로 기록 | 시장 미포함 | 3 | 2024-25 |
-| **H-08** | `fv1` 전체 피처의 로지스틱(L2)·LightGBM은 Elo보다 낫고 보정도 좋다 | 로지스틱, LightGBM vs B2 | log loss, Brier, ECE | 채택 조건: `LL ≤ LL_B2 − 0.01`(2024-25, 주 7일 재학습) **그리고** 보정: 모델 ECE가 **자기 예측 확률에서 결과를 1,000회 모의한 완전 보정 ECE 분포의 90번째 백분위 이하**이고 `ECE_model ≤ ECE_B2`. (고정 임계값 0.03은 n=1,320·10구간에서 완전 보정 예측기도 약 35%가 넘는 잡음 수준이라 버렸다, 리뷰어 모의.) 보류 시즌 1회 평가에서 `≤ −0.005` 유지. 둘 중 더 나은 모델을 **2024-25 결과로** 고정한 뒤 보류 시즌을 연다 | 시장 미포함 | 3 | 2024-25 → 보류 시즌 1회 |
+| **H-08** | `fv1` 전체 피처의 로지스틱(L2)·LightGBM은 Elo보다 낫고 보정도 좋다 | 로지스틱, LightGBM vs B2 | log loss, Brier, ECE | 채택 조건: `LL ≤ LL_B2 − 0.01`(2024-25, 주 7일 재학습) **그리고** 보정: 모델 ECE가 **자기 예측 확률에서 결과를 1,000회 모의한 완전 보정 ECE 분포의 90번째 백분위 이하**이고 `ECE_model ≤ ECE_B2`. (고정 임계값 0.03은 잡음 수준이라 버렸다 — 리뷰어 모의: p ~ Beta(5.5, 4.5), n = 1,320, 10구간, 2,000회, 시드 0 → 완전 보정 예측기의 ECE 중앙값 0.0265, P(ECE > 0.03) = 0.35; n = 2,640이면 0.0189, 0.03.) 보류 시즌 1회 평가에서 `≤ −0.005` 유지. 둘 중 더 나은 모델을 **2024-25 결과로** 고정한 뒤 보류 시즌을 연다 | 시장 미포함 | 3 | 2024-25 → 보류 시즌 1회 |
 | **H-09** | 시장 확률에 모델을 얹으면(스태킹: 로지스틱 `[logit(mkt_p), logit(p_model)]`) 시장 단독보다 낫고, 시장이 체계적으로 틀리는 구간이 있다 | 스태킹 vs B3 | log loss, Brier, 구간별 잔차 | 개선 조건: `LL ≤ LL_B3 − 0.003`, 90% 구간 0 제외. 구간 분석은 **사전 등록 구간만**: 백투백 여부, `days_rest ≥ 3`, 포스트시즌, `season_day < 30`, `mkt_age_h > 12`, 라인 이동 `abs(line_move) ≥ 1`. 구간별 `mean(y − mkt_p)`의 90% 구간이 0을 제외하면 "체계적 오류 후보"로 기록(채택 아님) | 시장 포함 | 3 | 시장 있는 경기(2026-27 누적·DR-7) |
 | **H-10** | 포제션 기반 시뮬레이션(페이스 × 효율 + 분산, 경기당 N회)은 총점 분포에서 정규 근사보다 낫다 | 시뮬레이션 vs T-B1 + 정규 근사 | 총점 MAE, CRPS(분포 점수, 라인 불필요), 분포 보정(PIT 균등성 KS) | `MAE ≤ MAE_T-B1 − 0.3`점 **그리고** `CRPS_sim ≤ CRPS_정규 − 0.1`점 **그리고** PIT 히스토그램 균등성 KS 검정 p > 0.05 (2024-25). **오버 확률 log loss는 라인이 있는 경기에서만**(2026-27 누적 또는 DR-7) 시장 포함 변형으로 따로 보고한다(2024-25는 라인이 없어 계산 불가, 리뷰 발견 5). 입력: D-035 포제션(H-05(b)에서 B도), F-01~F-04, 포제션당 득점 분산. 출력: 점수 차·총점 분포 → p_home·over_prob | 시장 미포함 (오버 LL 변형만 포함) | 3 | 2024-25 → 보류 시즌 1회 |
 | **H-11** | 사전 등록된 가상 베터(전략) 중 양의 CLV를 꾸준히 내는 전략이 있다 | 전략 집합 S = {H-08/H-09 최종 모델} × 우위 임계값 {2%, 4%, 6%} × 스테이킹 {정액 1%, 1/4 Kelly} × 마켓 {h2h, totals}. **주 전략 1개를 미리 지정**(H-09 모델, 4%, 정액 1%, h2h) | 평균 `clv_return`(주), `beat_close` 비율, ROI, 최대 낙폭 | "우위 있음" 조건: 주 전략의 `mean clv_return > 0`, 90% 구간 0 제외, 베팅 ≥ 300건. 다른 전략은 보고만(사후 최고 선택 금지). ROI는 판정 기준이 아니다(분산이 큼) | 시장 포함 | 4 | 2026-27 후반 + 보류 시즌(DR-7 시) 1회 |
@@ -508,10 +508,10 @@ DDL이 아니라 **요구**다. 컬럼 이름·타입·제약 이름은 P-031이
 | --- | --- | --- |
 | 키 | `UNIQUE (game_id, as_of, feature_version)` + 대리키 `feature_id` | schema-v1 9장 |
 | 값 | `values jsonb` 한 칸(키 = 3-1의 이름, `home_*`/`away_*`/`diff_*`). NULL 허용(콜드 스타트). 안정되면 자주 쓰는 열(`elo_home`, `elo_away`, `mkt_p_home`)을 일반 컬럼으로 승격 검토(마이그레이션) | 피처가 자주 바뀌는 단계 |
-| 시각 | `as_of timestamptz`, `computed_at timestamptz`(실제 계산 시각, `as_of ≤ computed_at ≤ as_of + 2h`(제안). as_of와 같은 시계로 찍는다, R4), `snapshot_kind text`(`daily`, `pre_tip_1845`, `pre_tip_1945`, `pre_tip_2145`), `origin text`(`live`, `backtest`. 백테스트의 daily와 pre_tip를 구분하기 위해 종류와 출처를 나눈다) | 1-3 |
+| 시각 | `as_of timestamptz`, `computed_at timestamptz`(실제 계산 시각, `as_of ≤ computed_at`. 상한 `≤ as_of + 2h`(제안)는 **`origin = live` 행에만**. as_of와 같은 시계로 찍는다, R4), `snapshot_kind text`(`daily`, `pre_tip_1845`, `pre_tip_1945`, `pre_tip_2145`), `origin text`(`live`, `backtest`. 백테스트의 daily와 pre_tip를 구분하기 위해 종류와 출처를 나눈다) | 1-3 |
 | 입력 지문 | `input_fingerprint jsonb`: `{max_stats_fetched_at, n_prior_games_home, n_prior_games_away, input_completeness: {home: k/n, away: k/n}, odds_captured_at, odds_snapshot_count, availability_lag_hours, poss_formula}` | 2-3, 누수 질문 5 |
 | **덮어쓰기 금지** | 적재는 `INSERT ... ON CONFLICT DO NOTHING`. 같은 키로 다시 계산한 값이 저장값과 다르면 **갱신하지 않고** 품질 체크(`feature_drift`)가 건수와 예시를 보고한다. 정의가 바뀌면 `feature_version`을 올려 새 행 | D-030 교훈(clean 표는 최신 값만 가지므로 지난 예측의 재현성은 이 표가 맡는다) |
-| 시점 CHECK | `as_of < games.start_time_utc`는 표를 넘는 조건이라 로더가 검사 + 품질 체크 `features_after_tipoff = 0`. `as_of <= computed_at`은 CHECK, `computed_at - as_of <= interval '2 hours'`(제안)도 CHECK. `daily` 행은 품질 체크 `max_stats_fetched_at <= as_of` | R4 |
+| 시점 CHECK | `as_of < games.start_time_utc`는 표를 넘는 조건이라 로더가 검사 + 품질 체크 `features_after_tipoff = 0`. `as_of <= computed_at`은 CHECK. 상한은 **`CHECK (origin <> 'live' OR computed_at - as_of <= interval '2 hours')`**(제안) — 백테스트 행(as_of 과거, computed_at 지금)과 결손 날을 나중에 채우는 행이 저장돼야 6-2·8-2·T11·T12·T14의 "저장 행만 읽는다"가 성립한다(리뷰 2차 N1). `daily` live 행은 품질 체크 `max_stats_fetched_at <= as_of` | R4 |
 | 인덱스 | 키 인덱스, `(as_of)`, `(feature_version)` | walk-forward가 날짜 범위로 읽음 |
 | 크기 | 경기당 as_of 1~4개 × 버전 수. 4시즌 5,300경기 × 4 × 3버전 ≈ 6만 행. 행당 jsonb 크기는 **미측정**(키 약 100개 × 숫자면 수 KB로 추정) → 전체 수백 MB 이내(추정) | 부담 없음 |
 | 학습 입력 | 학습은 이 표의 **저장 행** `(h, as_of(h), feature_version)`만 읽는다(6-2). 재학습 시점으로 재계산하지 않는다 | 리뷰 발견 1 |
@@ -589,13 +589,13 @@ DDL이 아니라 **요구**다. 컬럼 이름·타입·제약 이름은 P-031이
 
 ### 9-2. 감사관 질문 1~8에 대한 답
 
-**Q1. "as_of 이전"의 기준.** `fetched_at`도 종료 시각도 아니다. 기준은 **동부 날짜 R1 + 가용 시각 R2**(2-2). 실시간에서 `fetched_at ≤ as_of`는 저절로 참이고(as_of = 수집 뒤), 백테스트에서 `fetched_at`은 백필 시각(2026-10-22)이라 쓸 수 없다. 그래서 `start_time_utc + Δ`(Δ = 3시간, M-10)로 가용 시각을 흉내 내고, 실시간과의 차이(partial 날, 정정)는 `input_completeness`와 DR-2로 **측정**한다(2-3). 지연을 무시하지 않고, 흉내 내되 가정을 파라미터(`availability_lag_hours`)로 기록한다.
+**Q1. "as_of 이전"의 기준.** `fetched_at`도 종료 시각도 아니다. 기준은 **동부 날짜 R1 + 가용 시각 R2**(2-2). 실시간에서 `fetched_at ≤ as_of`는 저절로 참이고(as_of = 수집 뒤), 백테스트에서 `fetched_at`은 백필 시각(2026-10-22. 2023-24는 P-025 재수집으로 2026-10-23)이라 쓸 수 없다. 그래서 `start_time_utc + Δ`(Δ = 3시간, M-10)로 가용 시각을 흉내 내고, 실시간과의 차이(partial 날, 정정)는 `input_completeness`와 DR-2로 **측정**한다(2-3). 지연을 무시하지 않고, 흉내 내되 가정을 파라미터(`availability_lag_hours`)로 기록한다.
 
 **Q2. off-by-one.** 수식: 경기 h가 g의 피처에 들어가려면 `D(h) < D(g)` **그리고** `start_time_utc(h) + Δ ≤ as_of` **그리고** `status_code(h) = 3` **그리고** 팀 행 2개 존재. 부등호는 날짜에 **엄격**(`<`), 가용 시각에 `≤`. g 자신은 `D(h) = D(g)`라 자동 제외. 같은 동부 날짜의 다른 경기(최대 15경기, Q-N)도 전부 제외 — 그 시각에 끝났더라도. 이것이 실시간 DB의 실제 정보량과 같다(같은 날짜 결과는 다음 날 A0에 들어온다).
 
 **Q3. 콜드 스타트·시즌 경계.** 2-4 표. 요약: 시즌 경계 = `games.season`; 롤링은 시즌 안에서만(k < N이면 있는 만큼 + `n_games_available`, 0이면 NULL); 누적은 NULL; 전 시즌 값은 별도 피처; Elo는 새 시즌 첫 경기 직전 `0.75 × R + 0.25 × 1505`(출처 2차, M-7. carry 탐색은 DR-1이 있을 때만); 플레이인·플레이오프는 롤링 창과 Elo에 포함; `cup_final`은 스탯·Elo 제외, 일정 피처 포함(M-3).
 
-**Q4. 시장 피처의 시점.** 예측 시점 = `captured_at ≤ as_of`인 마지막 스냅숏(R3). 마감(`odds_closing_lines`)은 평가·CLV 전용. 경계는 세 겹: (1) 모듈: `features/`·`models/`는 `odds_snapshots`만, `evaluation/`만 `odds_closing_lines`. (2) 테스트: `grep -rn odds_closing_lines src/presagio/features src/presagio/models`가 0줄이어야 통과. (3) 데이터: `features.input_fingerprint.odds_captured_at`과 `predictions.market_reference.captured_at`이 저장되므로 감사관이 `captured_at ≤ as_of`를 쿼리로 검증할 수 있다. (4) import 경계: `features/`·`models/`는 `presagio.evaluation`을 import하지 않는다(T6. 뷰 이름을 상수로 감싸 우회하는 것을 막는다). 기준 시각은 **`captured_at`**(우리가 받은 시각). `bookmaker_last_update`는 북메이커 시계이고 우리가 받기 전일 수도 있어 기준으로 쓰지 않는다(차이 17~71초, Q-J).
+**Q4. 시장 피처의 시점.** 예측 시점 = `captured_at ≤ as_of`인 마지막 스냅숏(R3). 마감(`odds_closing_lines`)은 평가·CLV 전용. 경계는 네 겹: (1) 모듈: `features/`·`models/`는 `odds_snapshots`만, `evaluation/`만 `odds_closing_lines`. (2) 테스트: `grep -rn odds_closing_lines src/presagio/features src/presagio/models`가 0줄이어야 통과. (3) 데이터: `features.input_fingerprint.odds_captured_at`과 `predictions.market_reference.captured_at`이 저장되므로 감사관이 `captured_at ≤ as_of`를 쿼리로 검증할 수 있다. (4) import 경계: `features/`·`models/`는 `presagio.evaluation`을 import하지 않는다(T6. 뷰 이름을 상수로 감싸 우회하는 것을 막는다). 기준 시각은 **`captured_at`**(우리가 받은 시각). `bookmaker_last_update`는 북메이커 시계이고 우리가 받기 전일 수도 있어 기준으로 쓰지 않는다(차이 17~71초, Q-J).
 
 **Q5. 재현성.** `features`에 계산 당시 값 + `input_fingerprint`(최대 `fetched_at`, 경기 수, 완전성, 배당 `captured_at`) + `computed_at` + `code_version`을 저장하고 덮어쓰지 않는다(8-1). 이것으로 "그때 무엇을 보고 예측했나"는 재현된다. **충분하지 않은 것:** 과거 시즌 백테스트는 정정 뒤 값으로 계산되므로 "그 당시 값"이 아니다(schema 1-5가 이미 적은 한계). 보완은 DR-2(정정 빈도 측정)와, 정정이 잦으면 raw 버전으로 "as_of 당시 값"을 재구성하는 단계 7 과제. 피처 버전은 `features.feature_version`, 코드 버전은 `code_version`, 학습 범위는 `predictions.train_cutoff` + `model_versions.training_window`에 기록한다.
 
@@ -616,17 +616,17 @@ DDL이 아니라 **요구**다. 컬럼 이름·타입·제약 이름은 P-031이
 | **T3 같은 날짜 제외(리그 단위)** | d10 15:00 ET C vs D(종료, 총점 300), 대상 g = A vs B(d10 20:00 ET). 같은 팀이 같은 날 두 경기를 하는 경우는 없으므로(품질 체크 `one_game_per_team_day`, D-040) 팀 단위 피처는 이 경로가 없고, R1이 실제로 막는 것은 **리그 단위 피처**다 | `as_of = d10 19:45 ET`(C vs D는 끝났고 R2도 통과) | g의 `league_total_N`, `league_home_rate_std`(F-17)와 F-14 삼분위 경계가 C vs D를 **포함하지 않음**(C vs D 삽입 전 값과 같음) |
 | **T4 가용 지연** | d10 22:30 ET 경기(h), as_of = d11 01:00 ET(`start + 2.5h`) | Δ = 3h로 계산 | h 제외. Δ = 2h로 바꾸면 포함(파라미터가 효력을 가짐) |
 | **T5 스탯 미반영** | 경기 h가 `status_code = 3`인데 `team_game_stats` 행 없음 | 계산 | h 제외 + `input_completeness`에 0/1 기록 |
-| **T6 스냅숏 경계와 모듈 경계** | 같은 이벤트·북메이커의 h2h **양쪽** 가격을 `captured_at = as_of − 1분`(1.90/2.00), `= as_of`(1.95/1.95), `= as_of + 1분`(2.50/1.60), 시작 10분 전(3.00/1.40)에 둔다 | `compute_features(g, as_of)` | `mkt_p_home = 0.5`(**등호 포함**: `captured_at = as_of` 스냅숏이 선택됨 — 실시간 as_of가 곧 그날 캡처 시각이므로 기본 경로다), `input_fingerprint.odds_captured_at = as_of`. 모듈 경계: `src/presagio/features`·`models`의 어느 파일도 `presagio.evaluation`을 import하지 않고 문자열 `odds_closing_lines`를 포함하지 않는다(AST로 import 검사 + grep 0줄) |
+| **T6 스냅숏 경계와 모듈 경계** | 같은 이벤트·북메이커(`bookmaker_key = draftkings`. 기준 북메이커이고 1곳뿐이라 합의(≥ 3곳) 대신 기준 북메이커 값이 쓰인다)의 h2h **양쪽** 가격을 `captured_at = as_of − 1분`(1.90/2.00), `= as_of`(1.95/1.95), `= as_of + 1분`(2.50/1.60), 시작 10분 전(3.00/1.40)에 둔다 | `compute_features(g, as_of)` | `mkt_p_home = 0.5`(**등호 포함**: `captured_at = as_of` 스냅숏이 선택됨 — 실시간 as_of가 곧 그날 캡처 시각이므로 기본 경로다), `input_fingerprint.odds_captured_at = as_of`. 모듈 경계: `src/presagio/features`·`models`의 어느 파일도 `presagio.evaluation`을 import하지 않고 문자열 `odds_closing_lines`를 포함하지 않는다(AST로 import 검사 + grep 0줄) |
 | **T7 시즌 경계** | 시즌 S의 마지막 경기 뒤 시즌 S+1 첫 경기 g | 계산 | 롤링·누적 NULL(`n_games_available = 0`), `prev_season_*`는 S 값, Elo는 `0.75 × R_S + 0.25 × 1505` |
 | **T8 walk-forward 순서** | 2시즌 픽스처, 재학습 7일 | 실행기 실행 후 `predictions` 전수 검사 | 모든 행 `train_cutoff ≤ as_of < start_time_utc`. 학습에 쓴 경기 집합의 `max(available_at) ≤ train_cutoff`(실행기가 학습 집합의 지문을 로그로 남김) |
-| **T9 무작위 분할·교차검증 금지** | 코드(`src/presagio/features`, `models`, `evaluation`) | AST로 import와 호출을 걷는다 | `sklearn.model_selection`에서 import하는 이름은 `TimeSeriesSplit`뿐. 다음 이름은 어디에도 없음: `train_test_split`, `KFold`, `StratifiedKFold`, `GroupKFold`, `ShuffleSplit`, `cross_val_score`, `cross_validate`, `GridSearchCV`, `RandomizedSearchCV`, 키워드 인자 `shuffle=True`. `random_state`는 추정기 생성자에서 **허용**(시드 고정) — 분할 함수에서만 금지 |
+| **T9 무작위 분할·교차검증 금지** | 코드(`src/presagio/features`, `models`, `evaluation`) | AST로 import와 호출을 걷는다 | `sklearn.model_selection`에서 import하는 이름은 `TimeSeriesSplit`뿐. 다음 이름은 어디에도 없음: `train_test_split`, `KFold`, `StratifiedKFold`, `GroupKFold`, `ShuffleSplit`, `cross_val_score`, `cross_validate`, `GridSearchCV`, `RandomizedSearchCV`, `lightgbm.cv`, `xgboost.cv`, `.sample(frac=1)`(데이터프레임 셔플), 키워드 인자 `shuffle=True`. `random_state`는 추정기 생성자에서 **허용**(시드 고정) — 분할 함수에서만 금지. (`lightgbm.cv`의 `shuffle`·`stratified` 기본값은 이 환경에 lightgbm이 없어 **미확인** — 구현 전 문서로 확인한다. 어느 쪽이든 교차검증 함수 자체를 금지하므로 기본값과 무관하게 막힌다) |
 | **T10 보류 시즌 잠금** | 실행기 | `backtest run --seasons 2025-26` | 종료 코드 ≠ 0, 메시지에 `holdout`. `--unlock-holdout "H-08 final"`이면 실행 + `holdout_unlocked_reason` 기록 |
 | **T11 덮어쓰기 금지** | `features` 행 1개 | 같은 키로 값이 다른 행 적재 시도 | 행 수 그대로, 품질 체크 `feature_drift = 1` |
 | **T12 결정성** | 같은 실험 두 번 | `backtest run` 2회 | `predictions`의 `p_home`·`total_mean` 전 행 동일 |
 | **T13 Elo 정렬** | 날짜 순과 `game_id` 순이 다른 경기(실제 사례: `0022300001`은 2023-11-03, 개막 `0022300061`은 2023-10-24, 12-1 Q-V) | Elo 순차 계산 | 갱신 순서가 `start_time_utc` 순 |
-| **T14 학습 행 피처의 as_of** | 2시즌 픽스처, 재학습 7일 | 실행기의 `training_matrix(feature_version, fit_cutoff)`가 돌려주는 (h, feature_id) 목록을 검사. 그 뒤 학습 경기 h 하나의 점수·스탯을 극단값으로 바꾸고 다시 호출 | 모든 학습 행에서 `features.as_of = as_of(h)` **그리고** `features.as_of < start_time_utc(h)`. 변경 후에도 **학습 행렬이 완전히 같다**(저장 행을 읽으므로 h의 행도, h 뒤 경기의 행도 불변). 저장 행이 없어 새로 계산되는 경우는 as_of(h) 기준이라 h의 결과를 포함하지 않는다(T1과 같은 단언) |
+| **T14 학습 행 피처의 as_of** | 2시즌 픽스처, 재학습 7일 | 실행기의 `training_matrix(feature_version, fit_cutoff)`가 돌려주는 (h, feature_id) 목록을 검사. 그 뒤 학습 경기 h 하나의 점수·스탯을 극단값으로 바꾸고 다시 호출 | 모든 학습 행에서 `features.as_of = as_of(h)` **그리고** `features.as_of < start_time_utc(h)`. 변경 후에도 **피처 행렬 X가 완전히 같다**(라벨 y는 h의 점수가 바뀌었으니 바뀌는 것이 정상. 저장 행을 읽으므로 h의 X 행도, h 뒤 경기의 X 행도 불변). 2026-27 경기에 live·backtest 행이 둘 다 있으면 live 행이 선택된다(6-2). 저장 행이 없어 새로 계산되는 경우는 as_of(h) 기준이라 h의 결과를 포함하지 않는다(T1과 같은 단언) |
 
-감사관이 **실제 데이터**로 T1·T2를 돌리려면 개발 DB를 임시 DB로 복제한 뒤(D-030 3항 방식, `CREATE DATABASE ... TEMPLATE` 또는 `pg_dump`) 그 복제본에서 한다: (1) 2024-25 경기 g를 골라 `f1 = compute_features(g, as_of(g))`, (2) **복제본에서** as_of(g) 이후 경기(2025-26 포함)의 점수·스탯을 극단값으로 바꾸거나 행을 지운 뒤 `f2`를 계산, (3) `f1 == f2` 단언. 같은 DB를 두 번 계산하는 것은 결정성 확인일 뿐 누수를 잡지 못한다(v1 초안의 절차는 그 오류였다, 리뷰 발견 6). 보류 시즌의 결과는 이 과정에서 집계하지 않는다(값을 바꾸거나 지울 뿐).
+감사관이 **실제 데이터**로 T1·T2를 돌리려면 개발 DB를 임시 DB로 복제한 뒤(D-030 3항 방식. `pg_dump presagio | psql <임시 DB>`. `CREATE DATABASE ... TEMPLATE`는 원본에 다른 접속이 있으면 — launchd 실행 중 등 — 실패한다) 그 복제본에서 한다: (1) 2024-25 경기 g를 골라 `f1 = compute_features(g, as_of(g))`, (2) **복제본에서** as_of(g) 이후 경기(2025-26 포함)의 점수·스탯을 극단값으로 바꾸거나 행을 지운 뒤 `f2`를 계산, (3) `f1 == f2` 단언. 같은 DB를 두 번 계산하는 것은 결정성 확인일 뿐 누수를 잡지 못한다(v1 초안의 절차는 그 오류였다, 리뷰 발견 6). 보류 시즌의 결과는 이 과정에서 집계하지 않는다(값을 바꾸거나 지울 뿐).
 
 ---
 
@@ -644,7 +644,7 @@ P-011 설계안의 A-1~A-11과 같은 방식이다. 번호로 답해 주면 PM�
 | **M-6** | walk-forward 단위 | **확장 창, 학습 모델은 7일마다 재학습, Elo·롤링·기준선은 매일 순차 갱신, 최소 학습 = 2023-24 전체.** 비학습 기준선은 2024-01-01 이후만 보고 | 매일 재학습(비용 ×7, 이득 적음) / 시즌 단위(수개월 낡음) / 슬라이딩 창(표본 감소) | 6-2, 8-3 `train_cutoff` |
 | **M-7** | Elo 출발 상수와 출처 | **K = 20, HCA = 100, carry = 0.75(1505 쪽 25% 회귀), MOV 없음, 초기 1500.** 출처: FiveThirtyEight 2015(K·HCA는 검색 요약으로 확인, carry는 2차 출처). H-04로 K·HCA 네스티드 탐색과 MOV 비교. **carry는 DR-1(M-11)이 있을 때만 탐색, 없으면 0.75 고정** | 우리 데이터로 처음부터 격자 탐색(출발값 없이. 2023-24만으로 고르면 과적합 위험) / Elo 대신 Glicko(불확실성 포함, 복잡) | 5-2, F-10, H-01·H-04, 6-4 |
 | **M-8** | 시장 비교 불가 기간의 처리 | **`market_status` 6값으로 사유 표시, 시장 지표 NULL, 모든 표를 "전체 / 시장 있음(n)" 두 줄로, n < 100이면 "참고(표본 부족)".** 시장 포함 가설은 표본이 될 때까지 판정 보류. DR-7($59)은 P-033 때 사람 결정(D-045) — 되면 2023-24·2024-25에서 바로 판정 가능 | 시장 없는 경기를 평가에서 아예 제외(모델 지표까지 잃음) / 배당 없는 시즌에 "평균 마진" 가정의 가짜 시장(금지: 추측) | 4-6, 8-4, 7-1 |
-| **M-9** | 마감 배당 `lead_time` 허용치와 주말 낮 경기 캡처 | **허용치 2시간(제안)**(넘으면 `pred_only`/`no_closing_within_tolerance`). **DR-8: 토·일 14:45·16:45 ET `--odds-only` 캡처 2회 추가**(캡처 1회당 월 약 26크레딧 → 월 최대 425 < 500). `lead_time ≤ 2h` 커버리지 87.6% → 97.0%(4-4 표). D-038·D-048 변경이라 사람 결정 + platform-engineer 소형 티켓 | 3회(12:15·14:45·16:45, +79 → 451): 98.5%, 재시도 여유 49크레딧 / 1회(16:45, +26 → 398): 93.1% / 1회 11:45(v1 초안): 89.1%로 효과 작음 / 추가 없이 낮 경기 12.4%는 마감 없음 / 허용치 24시간(낮 경기도 "마감"으로 치되 lead_time 9시간 이상이라 CLV 의미가 약함) | 4-4, 8-4 `closing_lead_time`. 평일 낮 54경기(시즌당 약 18)는 어느 안에서도 메우지 않음 |
+| **M-9** | 마감 배당 `lead_time` 허용치와 주말 낮 경기 캡처 | **허용치 2시간(제안)**(넘으면 `pred_only`). **DR-8: 토·일 14:45·16:45 ET `--odds-only` 캡처 2회 추가**(캡처 1회당 월 약 26크레딧 → 월 최대 425 < 500). `lead_time ≤ 2h` 커버리지 87.6% → 97.0%(4-4 표). D-038·D-048 변경이라 사람 결정 + platform-engineer 소형 티켓 | 3회(12:15·14:45·16:45, +79 → 451): 98.5%, 재시도 여유 49크레딧 / 1회(16:45, +26 → 398): 93.1% / 1회 11:45(v1 초안): 89.1%로 효과 작음 / 추가 없이 낮 경기 12.4%는 마감 없음 / 허용치 24시간(낮 경기도 "마감"으로 치되 lead_time 9시간 이상이라 CLV 의미가 약함) | 4-4, 8-4 `closing_lead_time`. 평일 낮 54경기(시즌당 약 18)는 어느 안에서도 메우지 않음. **따라오는 변경:** 토·일은 하루 6회 수집이 되어 D-027("하루 최대 4회")을 개정해야 하고, 진행 중인 P-024 완료 기준 2("하루 정확히 4회")와도 어긋난다. **PM 결정(2026-10-23): P-024는 지금 기준(4회)으로 끝내고, M-9가 승인되면 DR-8을 후속 티켓으로 만든다** |
 | **M-10** | 백테스트 가용 지연 Δ | **Δ = 3시간(제안)**(`availability_lag_hours = 3`, R2). R1(동부 날짜 엄격)이 주 방어이고 Δ는 가정의 명시. 경기 길이 데이터가 없어 상식(약 2.5시간, 미확인)에 여유를 더한 값. 운영 첫 2주 partial 일수(D-039)로 재검토 | Δ = 24시간(A0에서 어제 경기가 **전부** 빠진다: 어제 가장 이른 12:00 ET 시작도 `+24h`가 as_of 뒤라 `D(h) ≤ D(g) − 2`가 되어 롤링·누적·Elo가 하루 늦어진다 — 정보를 버리는 대안. v1 초안의 "R1과 같은 효과"는 틀렸다) / Δ = 0(경기 시작 = 결과 앎. 비현실) | 2-2, 2-3, T4 |
 | **M-11** | 2022-23 시즌 추가 수집(DR-1) | **수집한다**(nba_api 4호출, data-engineer 소형 티켓). 용도는 Elo 워밍업, `prev_season_*`, 그리고 **Elo carry 탐색의 유일한 시즌 경계**(H-04). 학습·평가 대상에는 넣지 않음(배당 없음, 범위 밖) | 안 함(2023-24 첫 수십 경기의 Elo가 전 팀 1500에서 출발 → 학습 첫 시즌 전반이 오염, carry는 0.75 고정. 비학습 기준선 보고를 2024-01-01 이후로 미루는 것으로 일부 완화) | 2-4, 5-2, 6-4, D-023 "다시 볼 때" |
 
@@ -671,7 +671,7 @@ P-011 설계안의 A-1~A-11과 같은 방식이다. 번호로 답해 주면 PM�
 
 ### 12-1. 개발 DB 쿼리 원문 (컨테이너 `presagio-postgres-1`, 마이그레이션 `0001`)
 
-전부 읽기 전용이다. 레포 루트(또는 어느 worktree)에서 그대로 실행하면 같은 값이 나와야 한다(2026-27 행은 매일 수집이 돌기 시작하면 늘어난다). **실행 시각:** v1 초안 2026-10-23 00:1x UTC, **v1.1 재실행 2026-10-23 01:18~01:19 UTC**(아래 결과는 재실행 값). 두 실행 사이에 바뀐 것은 둘뿐이고 원인은 P-025의 2023-24 `--force` 백필(run 84~95, 00:23~00:24 UTC)이다: Q-A 2023-24 `neutral` 0 → **5**, Q-R 마지막 run 83 → **95**.
+전부 읽기 전용이다. 레포 루트(또는 어느 worktree)에서 그대로 실행하면 같은 값이 나와야 한다(2026-27 행은 매일 수집이 돌기 시작하면 늘어난다). **실행 시각:** v1 초안 2026-10-23 00:1x UTC, **v1.1 재실행 2026-10-23 01:18~01:19 UTC**(아래 결과는 재실행 값). 두 실행 사이에 바뀐 것은 둘뿐이고 원인은 P-025의 2023-24 `--force` 백필(run 84~95, 00:23~00:24 UTC)이다: Q-A 2023-24 `neutral` 0 → **5**, Q-R 마지막 run 83 → **95**. **v1.2 재확인 2026-10-23 03:57 UTC**(Q-R3): P-025가 main에 머지된 뒤(`f77b691`, 03:53 UTC) main 코드로 2023-24를 다시 받은 run 96~101이 추가됐고 `neutral`은 5 / 6 / 6 / 4 그대로, 매일 수집(`incremental`) 마지막 run은 여전히 82.
 
 ```bash
 # Q-A 시즌·유형별 경기 수, 종료·예정·미정·중립 (1-2, 2-1)
@@ -749,27 +749,31 @@ docker compose exec postgres psql -U presagio -d presagio -c "WITH p AS (SELECT 
 
 # Q-R 최근 실행 기록 (4-1: 매일 수집은 아직 안 돌고 있음)
 docker compose exec postgres psql -U presagio -d presagio -c "SELECT run_id, job_type, scope_key, status, started_at, api_calls FROM ingestion_runs ORDER BY run_id DESC LIMIT 6"
-# 결과(01:19 UTC): 마지막 run 95, 2026-10-23 00:24:17 UTC = P-025의 2023-24 `--force` 백필(run 84~95, 2회 × 6단위). 매일 수집(`incremental`) 마지막 run은 82(2026-10-22 14:59) → 매일 수집 미가동(P-024 설치 전). v1 초안의 "마지막 run 83"은 커밋 시점에 이미 옛 값이었다
+# 결과(01:19 UTC): 마지막 run 95, 2026-10-23 00:24:17 UTC = P-025의 2023-24 `--force` 백필(run 84~95, 2회 × 6단위). 매일 수집(`incremental`) 마지막 run은 82(2026-10-22 14:59) → 매일 수집 미가동(P-024 설치 전). v1 초안의 "마지막 run 83"은 커밋 시점에 이미 옛 값이었다. (03:57 UTC 재확인: 마지막 run 101, Q-R3)
 # Q-R2 run 83 이후의 실행과 마지막 매일 수집 run
 docker compose exec postgres psql -U presagio -d presagio -c "SELECT run_id, job_type, scope_key, status, started_at FROM ingestion_runs WHERE run_id > 83 ORDER BY run_id"
 docker compose exec postgres psql -U presagio -d presagio -c "SELECT max(run_id) FILTER (WHERE job_type IN ('incremental')) AS last_daily_run, max(run_id) AS last_run FROM ingestion_runs"
 # 결과: 84~95 전부 2026-10-23 00:23:53~00:24:17 UTC, scope `seasons=2023-24;...`(backfill 부모 2 + teams·schedule·gamelog 3 자식). last_daily_run 82, last_run 95
+# Q-R3 (v1.2, 03:57 UTC) P-025 머지 뒤 main 코드(`f77b691`)의 2023-24 재수집과 중립 경기 수
+docker compose exec postgres psql -U presagio -d presagio -c "SELECT run_id, job_type, scope_key, status, started_at, code_version FROM ingestion_runs WHERE run_id > 95 ORDER BY run_id"
+docker compose exec postgres psql -U presagio -d presagio -c "SELECT season, count(*) FILTER (WHERE is_neutral) AS neutral FROM games GROUP BY 1 ORDER BY 1"
+# 결과: run 96(backfill 부모)~101, 전부 2026-10-23 03:53:48~53 UTC, code_version f77b691, succeeded. neutral 2023-24 5 / 2024-25 6 / 2025-26 6 / 2026-27 4. last_daily_run 82, last_run 101
 
 # Q-S 시즌별 첫·마지막 종료 경기 날짜 (6-2)
 docker compose exec postgres psql -U presagio -d presagio -c "SELECT season, min(start_time_utc)::date AS first_game, max(start_time_utc)::date AS last_game FROM games WHERE status_code=3 GROUP BY 1 ORDER BY 1"
 # 결과: 2023-24 2023-10-24 ~ 2024-06-18. 2024-25 2024-10-22 ~ 2025-06-23. 2025-26 2025-10-21 ~ 2026-06-14. 2026-27 2026-10-20 ~ 2026-10-22
 
 # Q-T (v1.1) 동부 시작 시각(분 단위) × 주말 여부 히스토그램, 종료 경기 전 시즌(일정 구조). 4-4, Q-U의 입력
-docker compose exec postgres psql -U presagio -d presagio -A -t -F, -c "SELECT (extract(dow FROM start_time_utc AT TIME ZONE 'America/New_York') IN (0,6))::int AS weekend, to_char((start_time_utc AT TIME ZONE 'America/New_York')::time, 'HH24:MI') AS tip_et, count(*) AS n FROM games WHERE status_code=3 AND NOT is_time_tbd AND game_type IN ('regular','playin','playoffs') GROUP BY 1,2 ORDER BY 1,2" > tips.csv
+docker compose exec -T postgres psql -U presagio -d presagio -A -t -F, -c "SELECT (extract(dow FROM start_time_utc AT TIME ZONE 'America/New_York') IN (0,6))::int AS weekend, to_char((start_time_utc AT TIME ZONE 'America/New_York')::time, 'HH24:MI') AS tip_et, count(*) AS n FROM games WHERE status_code=3 AND NOT is_time_tbd AND game_type IN ('regular','playin','playoffs') GROUP BY 1,2 ORDER BY 1,2" > /tmp/presagio-tips.csv
 docker compose exec postgres psql -U presagio -d presagio -c "SELECT count(*) FILTER (WHERE extract(dow FROM start_time_utc AT TIME ZONE 'America/New_York') IN (0,6)) AS weekend_daytime, count(*) FILTER (WHERE extract(dow FROM start_time_utc AT TIME ZONE 'America/New_York') NOT IN (0,6)) AS weekday_daytime FROM games WHERE status_code=3 AND NOT is_time_tbd AND game_type IN ('regular','playin','playoffs') AND (start_time_utc AT TIME ZONE 'America/New_York')::time < time '18:45'"
-# 결과: 46행(주말 여부 × 시각). 18:45 전 시작: 주말 438 / 평일 54. 주말 낮 시작 시각: 18:00 167, 15:30 107, 13:00 51, 15:00 41, 17:00 40, 12:00 7, 14:00 7, 16:00 6, 17:30 5, 18:30 4, 12:30 2, 16:30 1
+# 결과: 47행(평일 27 + 주말 20). 18:45 전 시작: 주말 438 / 평일 54. 주말 낮 시작 시각: 18:00 167, 15:30 107, 13:00 51, 15:00 41, 17:00 40, 12:00 7, 14:00 7, 16:00 6, 17:30 5, 18:30 4, 12:30 2, 16:30 1
 
 # Q-V (v1.1) game_id 순서와 시작 시각 순서가 다른 실제 사례 (T13)
 docker compose exec postgres psql -U presagio -d presagio -c "SELECT game_id, (start_time_utc AT TIME ZONE 'America/New_York')::date AS et_date FROM games WHERE game_id IN ('0022300001','0022300061') ORDER BY 1"
 # 결과: 0022300001 → 2023-11-03, 0022300061 → 2023-10-24 (번호가 작은 경기가 더 늦다)
 ```
 
-**Q-U (v1.1) 캡처 시각 후보의 마감 커버리지(4-4 표의 출처).** Q-T의 `tips.csv`를 읽어, 예측 시점 03:00 ET(EST면 02:00이지만 늦은 쪽 03:00으로 계산 — 낮 경기에는 어차피 9시간 이상 전) + 마감 캡처 시각 집합마다 각 경기의 `lead_time = 시작 − 직전 캡처`를 구해 `≤ 2h`·`≤ 1h` 비율을 센다. 주말 추가 캡처는 11:00~17:30, 과거 백필의 마감 4회는 11:00~22:45의 15분 격자를 전수 탐색한다. 스크립트(파이썬 표준 라이브러리만):
+**Q-U (v1.1) 캡처 시각 후보의 마감 커버리지(4-4 표의 출처).** Q-T의 `/tmp/presagio-tips.csv`(레포 밖에 두어 실수로 커밋하지 않게)를 읽어, 예측 시점 03:00 ET(EST면 02:00이지만 늦은 쪽 03:00으로 계산 — 낮 경기에는 어차피 9시간 이상 전) + 마감 캡처 시각 집합마다 각 경기의 `lead_time = 시작 − 직전 캡처`를 구해 `≤ 2h`·`≤ 1h` 비율을 센다. 주말 추가 캡처는 11:00~17:30, 과거 백필의 마감 4회는 11:00~22:45의 15분 격자를 전수 탐색한다. 스크립트(파이썬 표준 라이브러리만):
 
 ```python
 import csv
@@ -857,7 +861,7 @@ for w in (0, 1):
 - 경기 종료 시각·경기 길이는 DB에 없다. Δ(M-10)의 근거 "약 2.5시간"은 상식이며 미확인이다.
 - `features` 행의 jsonb 크기(8-1)는 미측정이다.
 - 과거 백필의 마감 스냅숏 시각(4-4의 평일·주말 최적 시각)은 `≤ 2h` 비율만 최대화한 제안값이다. 백필 설계 때 목표를 정해 다시 계산한다.
-- 진행 중 시즌(2026-27)에서 스코어보드 갱신이 일정의 `is_neutral = true`를 false로 덮어쓸 위험(P-025 PR #21이 후속 후보로 적음. 스코어보드 응답에 `arenaCity`가 없음). F-09·Elo 홈 어드밴티지는 "일정 기준 값"을 전제하므로, P-031 전에 Data Engineer가 확인·보완해야 한다. 2023-24 값 보완은 P-025(PR #21, **REVIEW 상태, 미머지**)가 개발 DB에 적용해 true 5가 됐다(12-1 Q-A 재실행 값). 보완 규칙은 아직 main에 없으므로 main 코드로 2023-24 일정을 다시 받으면 false로 돌아갈 수 있다. 이 설계는 **P-025 머지**를 전제한다.
+- 진행 중 시즌(2026-27)에서 스코어보드 갱신이 일정의 `is_neutral = true`를 false로 덮어쓸 위험(P-025 PR #21이 후속 후보로 적음. 스코어보드 응답에 `arenaCity`가 없음). F-09·Elo 홈 어드밴티지는 "일정 기준 값"을 전제하므로, P-031 전에 Data Engineer가 확인·보완해야 한다. 2023-24 값 보완은 P-025(PR #21)가 **2026-10-23 03:53 UTC `f77b691`로 main에 머지**됐고, main 코드로 2023-24를 다시 받은 run 96~101(code_version `f77b691`)에서도 `is_neutral` true 5가 유지된다(12-1 Q-R3). 전제는 충족됐다.
 
 ### 12-4. 완료 기준 1~9가 어디에 있나
 
@@ -898,7 +902,23 @@ for w in (0, 1):
 | 15 시장 비교 집합 | 4-6: B3 비교는 `available ∪ pred_only`, 마감·CLV 비교만 `available` |
 | 16 computed_at 시계 | R4·8-1: 같은 시계, 상한 2시간(제안) |
 | 17 실시간 as_of 정의 | 1-3: 배당 단계 실패 시 대체 as_of, `max_stats_fetched_at ≤ as_of` 품질 체크, `computed_at − as_of` 상한 |
-| 18 숫자·출처 | 2.5시간(미확인), 플레이오프 −17.2/−10.2점(Q-D), Q-R 갱신(run 95) + Q-R2, DR-1 호출 시간, 9~15h → EDT/EST 구분, jsonb 크기 미측정, P-025 미머지 전제 |
+| 18 숫자·출처 | 2.5시간(미확인), 플레이오프 −17.2/−10.2점(Q-D), Q-R 갱신(run 95) + Q-R2, DR-1 호출 시간, 9~15h → EDT/EST 구분, jsonb 크기 미측정, P-025 미머지 전제(v1.2에서 머지 반영) |
 | 19 식별 불가 출처 | 12-2: APBR 글 제목·URL, HSAC 제목·URL, Annals of OR DOI, arXiv 제목 |
 | 20 cup_final 휴식 피처 | 1-2, 2-4, F-08, 9-1, M-3: 일정 피처에는 포함 |
 | 참고 | 2025-26 결과 인용 삭제(머리말·6-3·12-1), `origin`(live/backtest) 추가(6-2, 8-1, 8-3), 시즌 누적에 포스트시즌 포함 명시(2-4), T-B1 N은 단계 2 출발값(5-3), M-1 (b) 설명 수정, DR 종류 구분(3-2), 사실 숫자/제안값 표기 규칙(머리말) |
+
+### v1.2 (2026-10-23, 리뷰 2차 반영. 리뷰 보고서 `P-030-review-2.md`의 N 번호 기준)
+
+| 발견 | 바뀐 곳 |
+| --- | --- |
+| N1 [중간] `computed_at − as_of ≤ 2h` CHECK가 백테스트 피처 저장을 막음 | 상한을 `origin = live` 행에만: 1-3(줄 "보장 장치"), R4, 8-1 시각·시점 CHECK 행(`CHECK (origin <> 'live' OR computed_at - as_of <= interval '2 hours')`). 백테스트 행은 `as_of ≤ computed_at`만. "재학습 시점 재계산"으로는 풀지 않았다 |
+| N2 [중간] 시장 비교 집합 불일치 | 6-1 Δ 정의와 H-03 평가 데이터를 4-6과 같게: 주 판정(B3) `available ∪ pred_only`, 보조(B4) `available` |
+| N3 M-9가 D-027·P-024에 미치는 영향 | M-9 영향 칸, DR-8 우선순위 칸: D-027 개정 필요, PM 결정 "P-024는 4회 기준으로 종료, M-9 승인 시 DR-8 후속 티켓" |
+| N4 T9의 LightGBM·XGBoost CV 빈틈 | T9 금지 목록에 `lightgbm.cv`·`xgboost.cv`·`.sample(frac=1)` 추가(기본값 미확인 표시), 6-4 문장 일반화 |
+| N5 H-05(b) 비숫자 기준 | `KS_bref ≤ KS_d035` **그리고** KS p > 0.05 유지 |
+| N6 서술 오기 | 4-4 표(2회안 미커버 67 + 54 = 121, 1회안 "16:30 이전"), Q-T 47행, 3-3 피처 척도 문장(F-12·F-13은 포제션 미사용, F-01~F-04는 약 2.5% 이동, 0에 가까운 것은 모델 결과와 T-B1), Q4 "네 겹" |
+| N7 테스트·학습 규칙 모호성 | T14 "피처 행렬 X(라벨 제외)", 6-2 `training_matrix`의 origin 우선순위(live 우선), T6 픽스처 `bookmaker_key = draftkings` |
+| N8 market_status 값·대체 규칙 불일치 | `no_closing_within_tolerance`를 `pred_only`로 통일(4-4, M-9), 1-3 대체 as_of에서 R3 그대로 적용(24시간 안 스냅숏 없을 때만 `no_snapshot_at_as_of`) |
+| N9 "(제안)" 표시 누락 | 부트스트랩 1,000회·90% 구간, 시장 나이 24시간, 합의 ≥ 3곳, n < 100, B1 [0.05, 0.95], T-B0 100경기 |
+| P-025 상태 | 2-1·12-3: PR #21 머지(`f77b691`), run 96~101 뒤에도 2023-24 `is_neutral` 5 유지(12-1 Q-R3) |
+| 참고 | Q-T 덤프를 레포 밖 경로(`/tmp/presagio-tips.csv`)와 `-T`로, 9-3 임시 DB는 `pg_dump`로 덤프해 `psql`로 복원, H-08의 리뷰어 모의 조건 명시, Q1 백필 시각 보충 |
