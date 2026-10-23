@@ -17,7 +17,9 @@ Subcommands (run from the repository with `uv run python <this file> ...`):
   plan      print the decision for every wake-up over a date range (dry run, no command run)
 
 Exit codes of `run` are the ones of ingest-daily (D-037): 0 ok or skipped, 1 failed/partial,
-2 blocked (HTTP 403/429), 64 bad arguments.
+2 blocked (HTTP 403/429), 64 bad arguments; 124 when the wrapper killed a run that took too long.
+The child is the venv's own `presagio` console script (not `uv run`), so an exit code 2 can only
+come from ingest-daily, and it is only read as a block when ingest-daily printed its block line.
 """
 
 from __future__ import annotations
@@ -44,21 +46,30 @@ ODDS = "odds"
 # fires on the minute while the Mac is awake; a wake-up after sleep comes late (coalesced), and
 # a capture much later than 15 min before tip-off is no longer a pre-tip price, so it is skipped.
 SLOT_TOLERANCE = timedelta(minutes=10)
-# After exit code 2 (blocked, D-037) every run is skipped for this long; delete the file to resume.
-BLOCK_PAUSE = timedelta(hours=24)
+# After exit code 2 (blocked, D-037) every slot scheduled less than this after the blocked slot is
+# skipped: the next day's same slot runs again, the (up to three) slots in between do not. Slot
+# times are compared, not wall clocks, so seconds of start-up jitter never decide it. Delete the
+# file to resume earlier.
+BLOCK_PAUSE = timedelta(hours=24) - SLOT_TOLERANCE
 BLOCKED_FILE = "blocked"
 SLOTS_DIR = "slots"
 # Slot markers older than this are deleted on each run.
 MARKER_KEEP = timedelta(days=14)
 # Days whose wall-clock offset ET -> KST differ: one in winter (EST), one in summer (EDT).
 SAMPLE_DAYS = (date(2027, 1, 15), date(2027, 7, 15))
-EXIT_OK, EXIT_FAILED, EXIT_BLOCKED, EXIT_USAGE = 0, 1, 2, 64
+# A normal run takes about a minute; one this long is stuck (e.g. waiting on a database lock) and
+# would make launchd drop every later wake-up while it runs.
+RUN_TIMEOUT = timedelta(minutes=30)
+EXIT_OK, EXIT_FAILED, EXIT_BLOCKED, EXIT_USAGE, EXIT_TIMEOUT = 0, 1, 2, 64, 124
 EXIT_MEANING = {
     EXIT_OK: "OK",
     EXIT_FAILED: "FAILED (a unit failed or ended partial; see the report above)",
-    EXIT_BLOCKED: "BLOCKED (HTTP 403/429): tell a human. All runs pause for 24 h",
+    EXIT_BLOCKED: "BLOCKED (HTTP 403/429): tell a human. Runs pause until the same slot tomorrow",
     EXIT_USAGE: "USAGE (bad arguments: a wrapper bug)",
+    EXIT_TIMEOUT: f"TIMEOUT (killed after {RUN_TIMEOUT.seconds // 60} min)",
 }
+# What ingest-daily prints when it stops on a block (src/presagio/ingestion/incremental.py).
+BLOCK_LINE = "Stopped: the source blocked us"
 TAG = "[presagio-launchd]"
 
 Runner = Callable[..., Any]
@@ -143,9 +154,14 @@ def calendar_entries(full_kst: time, closing_et: Sequence[time]) -> list[tuple[i
     return sorted(entries)
 
 
-def command_for(slot: Slot, uv: str, dry_run: bool = False) -> list[str]:
+def presagio_script() -> str:
+    """The `presagio` console script of the venv this wrapper runs in (uv run --project REPO)."""
+    return str(Path(sys.executable).parent / "presagio")
+
+
+def command_for(slot: Slot, presagio: str, dry_run: bool = False) -> list[str]:
     """The ingest-daily command line for a slot, with an explicit --date."""
-    cmd = [uv, "run", "presagio", "ingest-daily", "--date", slot.base_date.isoformat()]
+    cmd = [presagio, "ingest-daily", "--date", slot.base_date.isoformat()]
     if slot.kind == ODDS:
         cmd.append("--odds-only")
     if dry_run:
@@ -181,17 +197,26 @@ def prune_markers(state_dir: Path, now: datetime) -> None:
 
 
 def blocked_until(state_dir: Path) -> datetime | None:
-    """End of the pause after an exit code 2, or None when there is no pause file."""
+    """First slot time that runs again after an exit code 2, or None without a pause file.
+
+    The file holds the blocked slot's scheduled time; an unreadable file counts from its mtime.
+    """
     path = state_dir / BLOCKED_FILE
     if not path.is_file():
         return None
-    return datetime.fromisoformat(path.read_text().split()[0]) + BLOCK_PAUSE
+    try:
+        blocked_at = datetime.fromisoformat(path.read_text().split()[0])
+        if blocked_at.tzinfo is None:
+            raise ValueError("naive time")
+    except (IndexError, ValueError):
+        blocked_at = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+    return blocked_at + BLOCK_PAUSE
 
 
 def record_block(state_dir: Path, now: datetime, slot: Slot) -> None:
-    """Start the pause: write when and which slot was blocked."""
+    """Start the pause: the blocked slot's scheduled time, its key and when it happened."""
     state_dir.mkdir(parents=True, exist_ok=True)
-    (state_dir / BLOCKED_FILE).write_text(f"{now.isoformat()} {slot.key}\n")
+    (state_dir / BLOCKED_FILE).write_text(f"{slot.at.isoformat()} {slot.key} {now.isoformat()}\n")
 
 
 # --- run ----------------------------------------------------------------------------------------
@@ -229,7 +254,7 @@ def run(
     full_kst: time,
     closing_et: Sequence[time],
     repo: Path,
-    uv: str,
+    presagio: str,
     log_dir: Path,
     state_dir: Path,
     dry_run: bool = False,
@@ -248,23 +273,23 @@ def run(
         if slot is None:
             say(
                 f"skip: no slot now ({now.astimezone(EASTERN):%H:%M} ET, "
-                f"{now.astimezone(SEOUL):%H:%M} KST)"
+                f"{now.astimezone(SEOUL):%H:%M} KST){off_calendar_note(now, full_kst, closing_et)}"
             )
             return EXIT_OK
         if not dry_run:
             prune_markers(state_dir, now)
             until = blocked_until(state_dir)
-            if until is not None and now < until:
+            if until is not None and slot.at < until:
                 say(
-                    f"skip {slot.describe()}: paused after a block until {stamp(until)} "
+                    f"skip {slot.describe()}: paused after a block; slots from {stamp(until)} run "
                     f"(delete {state_dir / BLOCKED_FILE} to resume)"
                 )
                 return EXIT_OK
             if not claim_slot(state_dir, slot):
                 say(f"skip {slot.describe()}: this slot already ran (marker {slot.key})")
                 return EXIT_OK
-        cmd = command_for(slot, uv, dry_run)
-        say(f"start {slot.describe()}: {' '.join(cmd[1:])} (in {repo})")
+        cmd = command_for(slot, presagio, dry_run)
+        say(f"start {slot.describe()}: presagio {' '.join(cmd[1:])} (in {repo})")
         return execute(cmd, slot, now, repo, log, say, state_dir, dry_run, runner)
 
 
@@ -282,18 +307,57 @@ def execute(
     """Run the command with stdout and stderr appended to the log; log a RESULT line."""
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     started = monotonic_time.monotonic()
+    log.flush()
+    output_from = log.tell()
     try:
-        code = runner(cmd, cwd=repo, stdout=log, stderr=subprocess.STDOUT, env=env).returncode
-    except OSError as exc:  # uv missing or repo gone: still one RESULT line
+        code = runner(
+            cmd,
+            cwd=repo,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env=env,
+            timeout=RUN_TIMEOUT.total_seconds(),
+        ).returncode
+    except subprocess.TimeoutExpired:  # subprocess.run has killed the child
+        code = EXIT_TIMEOUT
+    except OSError as exc:  # script missing or repo gone: still one RESULT line
         log.flush()
         say(f"cannot start {cmd[0]}: {exc}")
         code = EXIT_FAILED
     log.flush()
     meaning = EXIT_MEANING.get(code, "UNEXPECTED exit code")
+    blocked = code == EXIT_BLOCKED and BLOCK_LINE in read_from(Path(log.name), output_from)
+    if code == EXIT_BLOCKED and not blocked:
+        meaning = f"UNEXPECTED (exit 2 without ingest-daily's '{BLOCK_LINE}' line; no pause)"
     say(f"RESULT exit={code} {meaning} [{slot.key}] {monotonic_time.monotonic() - started:.1f} s")
-    if code == EXIT_BLOCKED and not dry_run:
+    if blocked and not dry_run:
         record_block(state_dir, now, slot)
     return code
+
+
+def read_from(path: Path, offset: int) -> str:
+    """The log text written after a byte offset (this run's output)."""
+    with path.open("rb") as log:
+        log.seek(offset)
+        return log.read().decode("utf-8", errors="replace")
+
+
+def off_calendar_note(now: datetime, full_kst: time, closing_et: Sequence[time]) -> str:
+    """A hint when a skip happens away from every wake-up the current settings would schedule.
+
+    launchd's wake-ups are computed at install time; if .env times changed since, every wake-up
+    skips until install.sh is run again. Manual kickstarts at other times also show the hint.
+    """
+    local = now.astimezone(SEOUL)
+    for hour, minute in calendar_entries(full_kst, closing_et):
+        if abs(local - local.replace(hour=hour, minute=minute, second=0, microsecond=0)) <= (
+            SLOT_TOLERANCE
+        ):
+            return ""
+    return (
+        "; not a wake-up time of the current settings: if INGEST_DAILY_TIME_KST or "
+        "ODDS_CLOSING_TIMES_ET changed, run scripts/launchd/install.sh again"
+    )
 
 
 # --- plist ----------------------------------------------------------------------------------------
@@ -352,11 +416,13 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     run_cmd = commands.add_parser("run", help="what launchd calls")
     run_cmd.add_argument("--repo", type=Path, required=True)
-    run_cmd.add_argument("--uv", required=True)
+    run_cmd.add_argument("--uv", help="ignored; accepted so plists written before 2026-10-23 work")
     run_cmd.add_argument("--log-dir", type=Path, required=True)
     run_cmd.add_argument("--state-dir", type=Path, required=True)
     run_cmd.add_argument(
-        "--now", type=datetime.fromisoformat, help="pretend it is this aware time (testing)"
+        "--now",
+        type=datetime.fromisoformat,
+        help="pretend it is this aware time (testing; needs --dry-run)",
     )
     run_cmd.add_argument(
         "--dry-run", action="store_true", help="pass --dry-run to ingest-daily, keep no markers"
@@ -366,6 +432,7 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--template", type=Path, required=True)
     render.add_argument("--repo", type=Path, required=True)
     render.add_argument("--uv", required=True)
+    render.add_argument("--wrapper", type=Path, required=True, help="REPO/scripts/launchd/...")
     render.add_argument("--log-dir", type=Path, required=True)
     render.add_argument("--state-dir", type=Path, required=True)
     plan = commands.add_parser("plan", help="print the decision for each wake-up")
@@ -376,8 +443,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point."""
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.command == "run":
+        if args.now is not None and not args.dry_run:
+            parser.error("--now needs --dry-run (it would write slot markers for a fake time)")
         now = args.now or datetime.now(UTC)
         if now.tzinfo is None:
             raise SystemExit("--now needs a UTC offset, e.g. 2026-11-02T08:45+09:00")
@@ -387,7 +457,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.log_dir.mkdir(parents=True, exist_ok=True)
             with log_path(args.log_dir, now).open("a", encoding="utf-8") as log:
                 log.write(
-                    f"{stamp()} {TAG} RESULT exit={EXIT_FAILED} SETTINGS {settings_error(exc)}\n"
+                    f"{stamp()} {TAG} RESULT exit={EXIT_FAILED} FAILED "
+                    f"(settings: {settings_error(exc)})\n"
                 )
             return EXIT_FAILED
         return run(
@@ -395,7 +466,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             full_kst=full_kst,
             closing_et=closing_et,
             repo=args.repo,
-            uv=args.uv,
+            presagio=presagio_script(),
             log_dir=args.log_dir,
             state_dir=args.state_dir,
             dry_run=args.dry_run,
@@ -411,7 +482,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.template.read_text(encoding="utf-8"),
                 repo=args.repo,
                 uv=args.uv,
-                wrapper=Path(__file__).resolve(),
+                wrapper=args.wrapper,
                 log_dir=args.log_dir,
                 state_dir=args.state_dir,
                 entries=calendar_entries(full_kst, closing_et),

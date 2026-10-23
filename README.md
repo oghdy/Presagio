@@ -240,11 +240,11 @@ uv run presagio ingest-daily --odds-only
 
 단계 6(서버 스케줄) 전까지 **이 맥의 launchd**가 `presagio ingest-daily`를 하루 4번 돌린다(P-024, D-048). 배당은 그 시각에 받지 않으면 영영 없기 때문이다. 단계 6에서 서버 스케줄로 바꾸면 이 잡은 끈다(아래 "끄는 법").
 
-**전제.** 맥이 켜져 있고(잠자기는 괜찮다, 아래 참고), Docker Desktop이 켜져 DB 컨테이너가 떠 있고, 실행할 레포 루트에 `.env`(`DATABASE_URL`, `ODDS_API_KEY`)가 있어야 한다. 맥 시간대는 서울이어야 한다(설치 스크립트가 확인한다).
+**전제.** 맥이 켜져 있고(잠자기는 괜찮다, 아래 참고), Docker Desktop이 켜져 DB 컨테이너가 떠 있고, 실행할 레포 루트에 `.env`(`DATABASE_URL`, `ODDS_API_KEY`)가 있어야 한다. 맥 시간대는 서울이어야 한다(설치 스크립트가 확인한다). 사용자 단위 LaunchAgent라 **그 사용자가 로그인해 있어야** 돈다(재부팅 뒤 로그인 전에는 안 돈다).
 
-**macOS 개인정보 보호(TCC) 권한.** 레포가 `~/Desktop`·`~/Documents`·`~/Downloads` 아래에 있으면, launchd가 띄운 `uv`가 레포를 처음 열 때 macOS가 "uv이(가) 데스크탑 폴더의 파일에 접근하려고 합니다" 창을 띄우고 **사람이 답할 때까지 실행이 멈춘다**(2026-10-23 설치 시험에서 확인: `uv` 프로세스가 `open()`에서 대기, 로그 0줄). 터미널에서 직접 돌릴 때는 터미널 앱이 이미 권한을 가져서 안 보인다. 설치 직후 한 번 `launchctl kickstart gui/$(id -u)/com.presagio.ingest-daily`로 깨워 창이 뜨면 **허용**을 누른다(시스템 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서 `uv`의 "데스크탑 폴더"가 켜져 있으면 된다). 거부하면 `launchd.err.log`에 권한 오류가 남고 아무것도 돌지 않는다. 멈춘 채로 두면 그동안의 예약도 놓친다(잡이 도는 중에 온 예약은 건너뛴다, `man launchd.plist`). 확인: kickstart 뒤 몇 초 안에 오늘 로그에 `skip` 또는 `start` 줄이 생기고 `launchctl list | grep presagio` 첫 칸이 `-`로 돌아오면 정상이다.
+**macOS 개인정보 보호(TCC) 권한.** 레포가 `~/Desktop`·`~/Documents`·`~/Downloads` 아래에 있으면, launchd가 띄운 `uv`가 레포를 처음 열 때 macOS가 "uv이(가) 데스크탑 폴더의 파일에 접근하려고 합니다" 창을 띄우고 **사람이 답할 때까지 실행이 멈춘다**(2026-10-23 설치 시험에서 확인: `uv` 프로세스가 `open()`에서 대기, 로그 0줄). 터미널에서 직접 돌릴 때는 터미널 앱이 이미 권한을 가져서 안 보인다. 설치 직후 한 번 `launchctl kickstart gui/$(id -u)/com.presagio.ingest-daily`로 깨워 창이 뜨면 **허용**을 누른다(시스템 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서 `uv`의 "데스크탑 폴더"가 켜져 있으면 된다). 거부하면 `launchd.err.log`에 권한 오류가 남고 아무것도 돌지 않는다. 멈춘 채로 두면 그동안의 예약도 놓칠 수 있다(미확인: `man launchd.plist`에서 "잡이 도는 중에 온 예약은 놓친다"는 문장은 `StartInterval` 절에만 있고 `StartCalendarInterval` 절에는 없다. 같은 동작일 것으로 보지만 확인하지 않았다). 확인: kickstart 뒤 몇 초 안에 오늘 로그에 `skip` 또는 `start` 줄이 생기고 `launchctl list | grep presagio` 첫 칸이 `-`로 돌아오면 정상이다.
 
-**언제 도나.** 시각은 `.env`의 `INGEST_DAILY_TIME_KST`, `ODDS_CLOSING_TIMES_ET`를 그대로 읽는다(D-038).
+**언제 도나.** 시각은 `.env`의 `INGEST_DAILY_TIME_KST`, `ODDS_CLOSING_TIMES_ET`를 그대로 읽는다(D-038). **이 값을 바꾸면 `scripts/launchd/install.sh`를 다시 실행한다.** 깨어나는 시각은 설치할 때 계산해 plist에 박고, "지금이 슬롯인가" 판단은 실행할 때 `.env`를 읽기 때문에 둘이 어긋나면 모든 깨어남이 `skip`된다. 그때 `skip` 줄 끝에 "run scripts/launchd/install.sh again" 안내가 붙는다(손으로 kickstart한 시각이 깨어남 목록에 없을 때도 붙는다).
 
 | 실행 | 기준 시각 | 한국 시각: 서머타임(EDT, ~10-31) | 한국 시각: 겨울(EST, 11-01~) |
 | --- | --- | --- | --- |
@@ -271,7 +271,7 @@ uv run python scripts/launchd/presagio_launchd.py plan --from 2026-10-30 --days 
 scripts/launchd/install.sh
 ```
 
-인자를 주지 않으면 스크립트가 들어 있는 레포에서 돈다. 다른 체크아웃에서 돌리려면 `scripts/launchd/install.sh /path/to/Presagio`. 설치 스크립트가 `uv` 절대 경로(`command -v uv`), 레포 경로, 로그 폴더를 채워 `~/Library/LaunchAgents/com.presagio.ingest-daily.plist`를 만들고 `launchctl bootstrap`으로 올린다(사용자 단위 LaunchAgent. Docker Desktop이 사용자 세션에서 돌기 때문). `.env`는 있는지만 확인하고 열지 않는다. 다시 실행하면 기존 잡을 내리고 새로 올린다. 마지막 줄에 예상 결과:
+인자를 주지 않으면 스크립트가 들어 있는 레포에서 돈다. 다른 체크아웃에서 돌리려면 `scripts/launchd/install.sh /path/to/Presagio`. 이때 plist의 래퍼와 템플릿은 **인자로 준 레포의** `scripts/launchd/` 것을 쓴다(없으면 설치를 거부한다. 설치를 실행한 체크아웃이 나중에 지워져도 잡이 깨지지 않게). 설치 스크립트가 `uv` 절대 경로(`command -v uv`), 레포 경로, 로그 폴더를 채워 `~/Library/LaunchAgents/com.presagio.ingest-daily.plist`를 만들고 `launchctl bootstrap`으로 올린다(사용자 단위 LaunchAgent. Docker Desktop이 사용자 세션에서 돌기 때문). 깨어날 시각을 계산하려고 설정 로더(`presagio.config`)가 레포의 `.env`를 읽는다. `.env` 내용을 복사하거나 출력하지는 않는다. 다시 실행하면 기존 잡을 내리고 새로 올린다. 마지막 줄에 예상 결과:
 
 ```
 -	0	com.presagio.ingest-daily
@@ -298,10 +298,12 @@ grep RESULT ~/Library/Logs/Presagio/ingest-*.log
 | --- | --- | --- |
 | `exit=0 OK` | 전부 성공 | 없음 |
 | `exit=1 FAILED` | 실패 또는 `partial`(어제 경기가 덜 끝남, 품질 체크 FAIL, DB 연결 실패 등) | 위 출력의 보고서를 본다. `partial`은 다음 실행이 3일 안에서 다시 받는다(D-039) |
-| `exit=2 BLOCKED` | 403/429 차단으로 즉시 멈춤(D-037) | **사람에게 알린다**(자동 알림은 단계 6). 래퍼는 24시간 동안 모든 실행을 건너뛴다. 원인을 확인한 뒤 일찍 재개하려면 `rm ~/Library/Application\ Support/Presagio/launchd/blocked` |
+| `exit=2 BLOCKED` | 403/429 차단으로 즉시 멈춤(D-037) | **사람에게 알린다**(자동 알림은 단계 6). 래퍼는 차단된 슬롯의 **다음 날 같은 슬롯 전까지** 모든 실행을 건너뛴다(예: 16:00 본 실행이 차단되면 그날 밤 마감 3회는 건너뛰고 다음 날 16:00은 돈다). 원인을 확인한 뒤 일찍 재개하려면 `rm ~/Library/Application\ Support/Presagio/launchd/blocked` |
+| `exit=2 UNEXPECTED` | 종료 코드는 2인데 `ingest-daily`의 차단 줄("Stopped: the source blocked us")이 없음 | 차단으로 보지 않고 정지하지 않는다. 위 출력을 보고 티켓을 연다 |
 | `exit=64 USAGE` | 인자 오류(래퍼 버그) | 티켓을 연다 |
+| `exit=124 TIMEOUT` | 30분 넘게 끝나지 않아 래퍼가 종료시킴(예: DB 락 대기) | 위 출력과 DB 상태를 본다. 남은 `running` 행은 `STALE_RUN_HOURS` 뒤 다음 실행이 정리한다 |
 
-`launchd.out.log`/`launchd.err.log`(같은 폴더)에는 래퍼 자체가 못 뜬 경우(예: `uv`를 못 찾음)만 남는다. 시각이 아닌 깨어남은 `skip: no slot now (20:45 ET, 09:45 KST)`처럼 한 줄이다.
+래퍼는 `ingest-daily`를 `uv run`이 아니라 레포 venv의 `presagio` 스크립트로 직접 부른다. 그래서 `RESULT`의 종료 코드는 `ingest-daily`의 것뿐이다(uv는 자기 오류에도 2를 내기 때문). `launchd.out.log`/`launchd.err.log`(같은 폴더)에는 래퍼 자체가 못 뜬 경우(예: `uv`를 못 찾음, 래퍼 파일이 없음)만 남고, 이때는 날짜 로그에 아무것도 없고 `launchctl list | grep presagio`의 두 번째 칸이 0이 아니다. 시각이 아닌 깨어남은 `skip: no slot now (20:45 ET, 09:45 KST)`처럼 한 줄이다.
 
 **맥이 잠들어 있거나 꺼져 있던 날.** Apple 문서(`man launchd.plist`의 `StartCalendarInterval`)에 따르면 cron과 달리 잠든 동안 지난 예약은 **깨어난 뒤 한 번** 실행되고, 여러 개가 지났으면 하나로 합쳐진다. 래퍼는 그 늦은 실행을 이렇게 다룬다: 마감 배당은 ±10분을 넘겼으면 건너뛴다(늦은 배당은 "마감"이 아니다). 본 실행은 같은 한국 날짜 안이면 늦게라도 돌고, 자정을 넘기면 건너뛴다(다음 날 본 실행이 어제 결과를 다시 받는다). 맥이 **꺼져** 있던 동안의 예약에 대해서는 문서에 언급이 없고 실제로 꺼 보고 확인하지 않았다(미확인). 어느 경우든 래퍼가 시각을 다시 판단하므로 하루 4번을 넘지 않는다. Docker Desktop이 꺼져 있으면 DB 연결 실패로 `exit=1`이고 그 시각의 데이터는 없다. **빠진 배당은 메우지 않는다**(정직한 결손, D-048).
 
@@ -313,7 +315,8 @@ SELECT d::date AS day,
        count(*) FILTER (WHERE r.scope_key = 'date_kst=' || d::date) AS full_runs,
        count(*) FILTER (WHERE r.scope_key = 'date_kst=' || d::date || ';odds_only') AS odds_only_runs,
        string_agg(r.status, ',' ORDER BY r.run_id) AS statuses
-FROM generate_series(current_date - 13, current_date, interval '1 day') AS d
+FROM generate_series((now() AT TIME ZONE 'Asia/Seoul')::date - 13,
+                     (now() AT TIME ZONE 'Asia/Seoul')::date, interval '1 day') AS d
 LEFT JOIN ingestion_runs r
        ON r.job_type = 'incremental' AND r.parent_run_id IS NULL
       AND r.scope_key IN ('date_kst=' || d::date, 'date_kst=' || d::date || ';odds_only')
@@ -322,11 +325,11 @@ GROUP BY d ORDER BY d"
 
 `scope_key`는 본 실행이 `date_kst=<한국 날짜>`, 마감 배당이 `date_kst=<동부 날짜>;odds_only`다(래퍼가 `--date`로 동부 날짜를 넘기기 때문. 이름의 `date_kst`는 CLI의 기준 날짜 D라는 뜻이다).
 
-**래퍼만 시험해 보기(호출 0번).** `--dry-run`은 `ingest-daily --dry-run`을 부르고 표시 파일을 남기지 않는다. `--now`로 시각을 흉내 낸다.
+**래퍼만 시험해 보기(호출 0번).** `--dry-run`은 `ingest-daily --dry-run`을 부르고 표시 파일을 남기지 않는다. `--now`로 시각을 흉내 낸다(`--now`는 `--dry-run` 없이 쓰면 거부된다).
 
 ```bash
 uv run python scripts/launchd/presagio_launchd.py run --dry-run --now 2026-11-02T08:45+09:00 \
-  --repo "$PWD" --uv "$(command -v uv)" --log-dir /tmp/presagio-dry --state-dir /tmp/presagio-dry
+  --repo "$PWD" --log-dir /tmp/presagio-dry --state-dir /tmp/presagio-dry
 ```
 
 ### 9. 품질 체크 (데이터가 상식에 맞는지 보기)

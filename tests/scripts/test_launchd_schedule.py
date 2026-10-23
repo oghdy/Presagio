@@ -159,15 +159,13 @@ def test_command_lines() -> None:
     """Explicit --date; --odds-only for closing slots; --dry-run passes through."""
     full = decide(kst("2026-10-23 16:00"))
     odds = decide(kst("2026-11-02 08:45"))
-    assert pl.command_for(full, "/x/uv") == [
-        "/x/uv",
-        "run",
-        "presagio",
+    assert pl.command_for(full, "/venv/bin/presagio") == [
+        "/venv/bin/presagio",
         "ingest-daily",
         "--date",
         "2026-10-23",
     ]
-    assert pl.command_for(odds, "/x/uv", dry_run=True)[4:] == [
+    assert pl.command_for(odds, "/venv/bin/presagio", dry_run=True)[2:] == [
         "--date",
         "2026-11-01",
         "--odds-only",
@@ -175,18 +173,26 @@ def test_command_lines() -> None:
     ]
 
 
-class FakeRunner:
-    """Stands in for subprocess.run: records the call, writes a line, returns a code."""
+BLOCK_OUTPUT = "\nStopped: the source blocked us (403/429). Wait before running again (D-024).\n"
 
-    def __init__(self, code: int) -> None:
+
+class FakeRunner:
+    """Stands in for subprocess.run: records the call, writes output, returns a code."""
+
+    def __init__(self, code: int, output: str = "", raises: Exception | None = None) -> None:
         self.code = code
+        self.output = output or (BLOCK_OUTPUT if code == 2 else "")
+        self.raises = raises
         self.calls: list[list[str]] = []
 
-    def __call__(self, cmd, *, cwd, stdout, stderr, env):
+    def __call__(self, cmd, *, cwd, stdout, stderr, env, timeout):
         """Record and pretend to be ingest-daily."""
         assert stderr == subprocess.STDOUT and env["PYTHONUNBUFFERED"] == "1"
+        assert timeout == 30 * 60
         self.calls.append(cmd)
-        stdout.write(f"fake ingest-daily output in {cwd}\n")
+        if self.raises is not None:
+            raise self.raises
+        stdout.write(f"fake ingest-daily output in {cwd}\n{self.output}")
         return SimpleNamespace(returncode=self.code)
 
 
@@ -197,7 +203,7 @@ def run_at(tmp_path: Path, now: datetime, runner: FakeRunner, **kwargs) -> int:
         full_kst=FULL_KST,
         closing_et=CLOSING_ET,
         repo=tmp_path / "repo",
-        uv="/x/uv",
+        presagio="/venv/bin/presagio",
         log_dir=tmp_path / "logs",
         state_dir=tmp_path / "state",
         runner=runner,
@@ -241,17 +247,98 @@ def test_skip_is_logged_and_calls_nothing(tmp_path: Path) -> None:
     assert "skip: no slot now (20:45 ET, 09:45 KST)" in read_log(tmp_path, "2026-10-24")
 
 
-def test_block_pauses_everything_for_24_hours(tmp_path: Path) -> None:
-    """Exit 2 writes the pause file; later slots skip until 24 h passed."""
-    blocked = FakeRunner(2)
-    run_at(tmp_path, kst("2026-10-23 16:00"), blocked)
+def slots_after_block(tmp_path: Path, blocked_at: str, wakeups: list[str]) -> list[str]:
+    """Block the slot at blocked_at (+1.5 s start-up), then report which later wake-ups ran."""
+    run_at(tmp_path, kst(blocked_at) + timedelta(seconds=1.5), FakeRunner(2))
     assert (tmp_path / "state" / "blocked").is_file()
-    later = FakeRunner(0)
-    run_at(tmp_path, kst("2026-10-24 07:45"), later)
-    assert later.calls == []
+    ran = []
+    for wake in wakeups:
+        later = FakeRunner(0)
+        run_at(tmp_path, kst(wake), later)
+        if later.calls:
+            ran.append(wake)
+    return ran
+
+
+def test_block_at_full_run_skips_until_next_full_run(tmp_path: Path) -> None:
+    """Blocked at 16:00: the three closing captures skip, the next day's 16:00 runs.
+
+    The next day's run starts 0.6 s earlier than the blocked one did: slot times, not wall
+    clocks, decide, so start-up jitter cannot skip it.
+    """
+    wakeups = ["2026-10-24 07:45", "2026-10-24 08:45", "2026-10-24 10:45"]
+    later = ["2026-10-24 16:00:00.9", "2026-10-25 07:45"]
+    assert slots_after_block(tmp_path, "2026-10-23 16:00", wakeups + later) == later
     assert "paused after a block" in read_log(tmp_path, "2026-10-24")
-    run_at(tmp_path, kst("2026-10-24 16:00"), later)  # exactly 24 h later: resumes
-    assert len(later.calls) == 1
+
+
+def test_block_at_closing_capture_skips_until_same_slot_tomorrow(tmp_path: Path) -> None:
+    """Blocked at the 18:45 ET capture: 19:45, 21:45 and 16:00 KST skip; 18:45 ET next day runs."""
+    wakeups = ["2026-10-24 08:45", "2026-10-24 10:45", "2026-10-24 16:00"]
+    later = ["2026-10-25 07:45:00.2", "2026-10-25 08:45"]
+    assert slots_after_block(tmp_path, "2026-10-24 07:45", wakeups + later) == later
+
+
+def test_block_pause_length_is_fixed() -> None:
+    """24 h minus the slot tolerance: the next same slot is always past it."""
+    assert timedelta(hours=23) < pl.BLOCK_PAUSE < timedelta(hours=24)
+    assert timedelta(hours=24) - pl.SLOT_TOLERANCE == pl.BLOCK_PAUSE
+
+
+def test_unreadable_block_file_counts_from_its_mtime(tmp_path: Path) -> None:
+    """An empty or broken pause file pauses from its mtime instead of crashing every run."""
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "blocked").write_text("")
+    until = pl.blocked_until(state)
+    assert until is not None and until > datetime.now(UTC) + timedelta(hours=23)
+
+
+def test_exit_2_without_block_line_is_not_a_block(tmp_path: Path) -> None:
+    """Exit 2 with no ingest-daily block line (not from a 403/429) logs UNEXPECTED, no pause."""
+    runner = FakeRunner(2, output="error: Failed to spawn: `presagio`\n")
+    assert run_at(tmp_path, kst("2026-10-23 16:00"), runner) == 2
+    log = read_log(tmp_path, "2026-10-23")
+    assert "RESULT exit=2 UNEXPECTED" in log and "BLOCKED" not in log
+    assert not (tmp_path / "state" / "blocked").exists()
+
+
+def test_block_line_from_an_earlier_run_does_not_count(tmp_path: Path) -> None:
+    """Only this run's output is searched for the block line."""
+    run_at(tmp_path, kst("2026-10-23 16:00"), FakeRunner(1, output=BLOCK_OUTPUT))
+    (tmp_path / "state" / "slots" / "full-2026-10-23-1600").unlink()
+    run_at(tmp_path, kst("2026-10-23 16:01"), FakeRunner(2, output="other error\n"))
+    assert not (tmp_path / "state" / "blocked").exists()
+
+
+def test_dry_run_exit_2_writes_no_pause(tmp_path: Path) -> None:
+    """A dry run never starts the pause."""
+    run_at(tmp_path, kst("2026-10-23 16:00"), FakeRunner(2), dry_run=True)
+    assert "RESULT exit=2 BLOCKED" in read_log(tmp_path, "2026-10-23")
+    assert not (tmp_path / "state" / "blocked").exists()
+
+
+def test_timeout_is_logged(tmp_path: Path) -> None:
+    """A run killed by the 30 min timeout leaves a TIMEOUT result and exit 124."""
+    runner = FakeRunner(0, raises=subprocess.TimeoutExpired(["presagio"], 1800))
+    assert run_at(tmp_path, kst("2026-10-23 16:00"), runner) == 124
+    assert "RESULT exit=124 TIMEOUT (killed after 30 min)" in read_log(tmp_path, "2026-10-23")
+
+
+def test_missing_script_is_logged(tmp_path: Path) -> None:
+    """The child cannot start (venv gone): one 'cannot start' line and RESULT exit=1."""
+    runner = FakeRunner(0, raises=FileNotFoundError(2, "No such file", "/venv/bin/presagio"))
+    assert run_at(tmp_path, kst("2026-10-23 16:00"), runner) == 1
+    log = read_log(tmp_path, "2026-10-23")
+    assert "cannot start /venv/bin/presagio" in log and "RESULT exit=1 FAILED" in log
+
+
+def test_off_calendar_skip_hints_at_reinstall(tmp_path: Path) -> None:
+    """A skip away from every computed wake-up says to rerun install.sh; a normal skip does not."""
+    run_at(tmp_path, kst("2026-10-24 09:45"), FakeRunner(0))
+    run_at(tmp_path, kst("2026-10-24 13:00"), FakeRunner(0))
+    lines = read_log(tmp_path, "2026-10-24").splitlines()
+    assert "install.sh" not in lines[0] and "run scripts/launchd/install.sh again" in lines[1]
 
 
 def test_dry_run_keeps_no_marker(tmp_path: Path) -> None:
@@ -289,6 +376,7 @@ def test_rendered_plist_is_valid(tmp_path: Path) -> None:
     )
     assert "@" not in text.replace("Presagio", "")
     data = plistlib.loads(text.encode())
+    assert "--uv" not in data["ProgramArguments"]
     assert data["Label"] == "com.presagio.ingest-daily"
     assert data["WorkingDirectory"] == str(repo)
     args = data["ProgramArguments"]
@@ -317,3 +405,45 @@ def test_settings_error_hides_values() -> None:
     line = pl.settings_error(info.value)
     assert line == "ValidationError in odds_closing_times_et"
     assert "secret" not in line
+
+
+def run_main(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *extra: str) -> int:
+    """pl.main(['run', ...]) from an empty folder (no .env)."""
+    from presagio.config import get_settings
+
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    try:
+        return pl.main(
+            [
+                "run",
+                "--repo",
+                str(tmp_path),
+                "--log-dir",
+                str(tmp_path / "logs"),
+                "--state-dir",
+                str(tmp_path / "state"),
+                *extra,
+            ]
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_main_settings_error_logs_no_values(tmp_path: Path, monkeypatch) -> None:
+    """A bad setting gives one RESULT exit=1 FAILED line with the setting name, no values."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:SECRETPW123@127.0.0.1:1/db")
+    monkeypatch.setenv("ODDS_CLOSING_TIMES_ET", "25:00")
+    code = run_main(tmp_path, monkeypatch, "--uv", "/old/plist/uv")  # old plists pass --uv
+    assert code == 1
+    (log,) = (tmp_path / "logs").glob("ingest-*.log")
+    text = log.read_text()
+    assert "RESULT exit=1 FAILED (settings: ValidationError in odds_closing_times_et)" in text
+    assert "SECRETPW123" not in text and "25:00" not in text
+
+
+def test_main_now_needs_dry_run(tmp_path: Path, monkeypatch) -> None:
+    """--now without --dry-run is refused before anything runs."""
+    with pytest.raises(SystemExit):
+        run_main(tmp_path, monkeypatch, "--now", "2026-10-23T16:00+09:00")
+    assert not (tmp_path / "logs").exists()
