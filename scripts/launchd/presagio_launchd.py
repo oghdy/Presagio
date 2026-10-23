@@ -48,9 +48,11 @@ ODDS = "odds"
 SLOT_TOLERANCE = timedelta(minutes=10)
 # After exit code 2 (blocked, D-037) every slot scheduled less than this after the blocked slot is
 # skipped: the next day's same slot runs again, the (up to three) slots in between do not. Slot
-# times are compared, not wall clocks, so seconds of start-up jitter never decide it. Delete the
-# file to resume earlier.
-BLOCK_PAUSE = timedelta(hours=24) - SLOT_TOLERANCE
+# times are compared, not wall clocks, so seconds of start-up jitter never decide it. 23 h, not
+# 24 h: an ET slot on the day after the spring change comes 23 h after the same slot the day
+# before (and 25 h in autumn, when the pause ends one slot early instead). Delete the file to
+# resume earlier.
+BLOCK_PAUSE = timedelta(hours=23) - SLOT_TOLERANCE
 BLOCKED_FILE = "blocked"
 SLOTS_DIR = "slots"
 # Slot markers older than this are deleted on each run.

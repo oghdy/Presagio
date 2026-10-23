@@ -298,7 +298,7 @@ grep RESULT ~/Library/Logs/Presagio/ingest-*.log
 | --- | --- | --- |
 | `exit=0 OK` | 전부 성공 | 없음 |
 | `exit=1 FAILED` | 실패 또는 `partial`(어제 경기가 덜 끝남, 품질 체크 FAIL, DB 연결 실패 등) | 위 출력의 보고서를 본다. `partial`은 다음 실행이 3일 안에서 다시 받는다(D-039) |
-| `exit=2 BLOCKED` | 403/429 차단으로 즉시 멈춤(D-037) | **사람에게 알린다**(자동 알림은 단계 6). 래퍼는 차단된 슬롯의 **다음 날 같은 슬롯 전까지** 모든 실행을 건너뛴다(예: 16:00 본 실행이 차단되면 그날 밤 마감 3회는 건너뛰고 다음 날 16:00은 돈다). 원인을 확인한 뒤 일찍 재개하려면 `rm ~/Library/Application\ Support/Presagio/launchd/blocked` |
+| `exit=2 BLOCKED` | 403/429 차단으로 즉시 멈춤(D-037) | **사람에게 알린다**(자동 알림은 단계 6). 래퍼는 차단된 슬롯의 **다음 날 같은 슬롯 전까지** 모든 실행을 건너뛴다(예: 16:00 본 실행이 차단되면 그날 밤 마감 3회는 건너뛰고 다음 날 16:00은 돈다. 정지는 슬롯 예정 시각 기준 22시간 50분이라 봄 서머타임 시작으로 하루가 23시간인 날에도 다음 날 같은 슬롯이 돌고, 가을 종료 날에는 한 슬롯 일찍 재개될 수 있다). 원인을 확인한 뒤 일찍 재개하려면 `rm ~/Library/Application\ Support/Presagio/launchd/blocked` |
 | `exit=2 UNEXPECTED` | 종료 코드는 2인데 `ingest-daily`의 차단 줄("Stopped: the source blocked us")이 없음 | 차단으로 보지 않고 정지하지 않는다. 위 출력을 보고 티켓을 연다 |
 | `exit=64 USAGE` | 인자 오류(래퍼 버그) | 티켓을 연다 |
 | `exit=124 TIMEOUT` | 30분 넘게 끝나지 않아 래퍼가 종료시킴(예: DB 락 대기) | 위 출력과 DB 상태를 본다. 남은 `running` 행은 `STALE_RUN_HOURS` 뒤 다음 실행이 정리한다 |

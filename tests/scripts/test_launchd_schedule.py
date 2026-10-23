@@ -280,9 +280,20 @@ def test_block_at_closing_capture_skips_until_same_slot_tomorrow(tmp_path: Path)
 
 
 def test_block_pause_length_is_fixed() -> None:
-    """24 h minus the slot tolerance: the next same slot is always past it."""
-    assert timedelta(hours=23) < pl.BLOCK_PAUSE < timedelta(hours=24)
-    assert timedelta(hours=24) - pl.SLOT_TOLERANCE == pl.BLOCK_PAUSE
+    """23 h minus the slot tolerance: the next same slot is past it even on a 23 h day."""
+    assert timedelta(hours=23) - pl.SLOT_TOLERANCE == pl.BLOCK_PAUSE
+
+
+def test_block_before_spring_change_resumes_next_day_same_slot(tmp_path: Path) -> None:
+    """Blocked at 18:45 ET on 2027-03-13 (EST); 18:45 ET on 03-14 (EDT) is 23 h later and runs."""
+    wakeups = ["2027-03-14 09:45", "2027-03-14 11:45", "2027-03-14 16:00"]
+    later = ["2027-03-15 07:45", "2027-03-15 08:45"]
+    assert slots_after_block(tmp_path, "2027-03-14 08:45", wakeups + later) == later
+
+
+def test_child_is_the_venv_presagio_script() -> None:
+    """Never `uv run`: uv's own errors also exit 2 and would read as a block."""
+    assert pl.presagio_script() == str(Path(sys.executable).parent / "presagio")
 
 
 def test_unreadable_block_file_counts_from_its_mtime(tmp_path: Path) -> None:
@@ -291,7 +302,7 @@ def test_unreadable_block_file_counts_from_its_mtime(tmp_path: Path) -> None:
     state.mkdir()
     (state / "blocked").write_text("")
     until = pl.blocked_until(state)
-    assert until is not None and until > datetime.now(UTC) + timedelta(hours=23)
+    assert until is not None and until > datetime.now(UTC) + timedelta(hours=22)
 
 
 def test_exit_2_without_block_line_is_not_a_block(tmp_path: Path) -> None:
