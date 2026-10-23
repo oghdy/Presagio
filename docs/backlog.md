@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030 DONE(설계안 D-049, launchd 가동). 진행 중: P-031(data-engineer)·P-032(ml-engineer) 병렬. 다음: P-026 → P-033.
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030 DONE(설계안 D-049, launchd 가동). 진행 중: P-031(data-engineer)·P-032(ml-engineer) 병렬. 다음: P-026 → P-033. **16:4x부터 main 브랜치 보호 적용(D-047): 모든 변경은 PR.**
 
 ### 보드 한눈에 보기
 
@@ -478,7 +478,7 @@
   - 2026-10-23 PM 13:3x: **3차 재리뷰 "수락 가능 + 후속 메모"**: N1·N2 해결(CHECK는 live 행에만, 시장 비교 집합 통일), N3~N9 전부 반영, 기준 1~9 전부 O, 12-1 쿼리 28개 재현, 새 모순·숫자 오류·누수 경로 없음. 누수 관점: 1차 의심 경로 닫힘(6-2 규칙, live-only CHECK, live 우선, T14), "누수 없음" 선언 없음, 최종 판정은 P-036. [낮음] 후속 2: L1 T9의 `.sample(frac=1)` 금지가 평가 모듈의 경기 단위 부트스트랩(`replace=True`)과 충돌 가능 → P-032 때 "replace 없는 셔플만 금지"로, L2 M-9 추천안 칸에 D-027 표기. 참고: 결손 날 보충 행의 origin은 사실상 `backtest`(한 줄 명시 권장). **PM이 0·1·3-2·3-3·6-3·6-4·7·8·10·11·12-3장을 직접 읽고 기준 1~9 대조 → 수락.** 수락 메시지 `P-030-acceptance.md`. 사람 승인 질문 **Q-020(M-1~M-11)** 올림. 승인되면 PR #22 머지 + D-049 기록 + 후속 티켓(DR-1 2022-23 수집, DR-2 스탯 정정 품질 체크, DR-8은 M-9 결과대로) + P-031·P-032 브리핑. 재리뷰 방법: 같은 reviewer 서브에이전트(이 PM 세션 안) 또는 새 서브에이전트가 `~/.claude/worktrees/presagio-review-p-030`에서 `git fetch origin docs/P-030-modeling-design && git checkout --detach origin/docs/P-030-modeling-design` 후 1차 보고서 `P-030-review.md`의 발견 1~20 처리 여부 + 기준 5·9 재대조.
 
 ### P-031 🧑 모델링 레이어 스키마 v1 → 마이그레이션 0002
-- **상태:** IN PROGRESS (2026-10-23 사람 확인 → data-engineer 세션 `p-031-schema`, Opus 5.5 높음, 브랜치 `feat/P-031-modeling-schema`. 브리핑 `P-031-briefing.md`)
+- **상태:** IN PROGRESS (2026-10-23 16:4x 사람 확인 → data-engineer 세션 `p-031-schema`(local_7fb12dd8…), Opus 5.5 높음, 브랜치 `feat/P-031-modeling-schema`. 브리핑 `P-031-briefing.md`)
 - **담당 역할:** data-engineer (Opus 5.5 높음, D-043 구현형)
 - **단계:** 2
 - **의존:** P-030 DONE (D-049). P-032와 병렬(파일 겹침 없음: `db/`·`alembic/`·`quality/` vs `evaluation/`).
@@ -498,7 +498,7 @@
   - 2026-10-23 PM: D-049로 생성 확정. 브랜치 `feat/P-031-modeling-schema`. P-032와 병렬.
 
 ### P-032 walk-forward 평가 틀 + 지표 + 시장 확률·CLV + 보류 시즌 가드 + 누수 테스트 틀
-- **상태:** IN PROGRESS (2026-10-23 사람 확인 → ml-engineer 세션 `p-032-walkforward`, Opus 5.5 높음, 브랜치 `feat/P-032-walkforward-eval`. 브리핑 `P-032-briefing.md`)
+- **상태:** IN PROGRESS (2026-10-23 16:4x 사람 확인 → ml-engineer 세션 `p-032-walkforward`(local_124cf954…), Opus 5.5 높음, 브랜치 `feat/P-032-walkforward-eval`. 브리핑 `P-032-briefing.md`)
 - **담당 역할:** ml-engineer (Opus 5.5 높음, D-043 구현형. 설계는 D-049로 끝남)
 - **단계:** 2
 - **의존:** P-030 DONE (D-049). P-031과 병렬. `predictions`·`evaluations` 저장은 P-033(P-031 뒤)에서 붙인다.
