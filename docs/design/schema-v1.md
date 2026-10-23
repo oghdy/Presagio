@@ -302,7 +302,7 @@ erDiagram
 | `away_team_id` | `integer` | NULL, FK → `teams` | `awayTeam.teamId`. 같은 규칙 |
 | `home_score` | `integer` | NULL | `homeTeam.score`. **`status_code = 3`일 때만 채운다.** 예정 경기는 소스가 `0`을 주지만 NULL로 저장(0점과 "아직 없음"을 구분) |
 | `away_score` | `integer` | NULL | 같은 규칙 |
-| `is_neutral` | `boolean` | NOT NULL | `isNeutral`. 중립 경기장(NBA컵 결승, 해외 경기). v1.3: 일정은 `isNeutral` **또는** 2023-24 보완 목록(`UNFLAGGED_NEUTRAL_GAME_IDS`, 5경기)이면 true. 2023-24 응답은 전 경기 `isNeutral=false`라서다(D-046, P-025). 2024-25부터는 플래그만 쓴다 |
+| `is_neutral` | `boolean` | NOT NULL | `isNeutral`. 중립 경기장(NBA컵 결승, 해외 경기). v1.3: 일정과 스코어보드 모두 `isNeutral` **또는** 2023-24 보완 목록(`UNFLAGGED_NEUTRAL_GAME_IDS`, 5경기)이면 true. 2023-24 응답은 전 경기 `isNeutral=false`라서다(D-046, P-025). 2024-25부터는 플래그만 쓴다 |
 | `if_necessary` | `boolean` | NOT NULL | `ifNecessary`. 일정에서는 문자열 `"false"`, 스코어보드에서는 불리언으로 와서 어댑터가 불리언으로 통일 |
 | `source` | `text` | NOT NULL | 현재 값을 준 엔드포인트(`scheduleleaguev2`, `scoreboardv3`, `live_scoreboard`, `leaguegamelog`) |
 | `fetched_at` | `timestamptz` | NOT NULL | 1-3 참고 |
@@ -326,7 +326,7 @@ erDiagram
 | `postponed_status` | 넣기·갱신 | **소스에 없음 → 갱신 안 함(기존 값 유지).** 스코어보드가 처음 넣은 경기는 NULL로 시작해 다음 일정 재수집 때 채워진다 | 갱신 안 함 |
 | `home_team_id`, `away_team_id` | 넣기·갱신 (0이면 NULL) | 넣기·갱신 (0이면 NULL) | 갱신 안 함 (팀이 일정과 다르면 품질 이슈, 그 경기는 갱신 안 함) |
 | `home_score`, `away_score` | 넣기·갱신 (종료일 때만) | 넣기·갱신 (종료일 때만) | 갱신 (`PTS`를 **팀 ID 기준**으로. 이미 종료인데 점수가 다르면 품질 이슈, 갱신 안 함) |
-| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언. `is_neutral` = `isNeutral` OR `game_id`가 2023-24 보완 목록, v1.3) | 넣기·갱신 (불리언. 보완 목록 없음, `arenaCity`도 응답에 없음) | 갱신 안 함 |
+| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언. `is_neutral` = `isNeutral` OR `game_id`가 2023-24 보완 목록, v1.3) | 넣기·갱신 (불리언. `is_neutral` = `isNeutral` OR `game_id`가 2023-24 보완 목록, 일정과 같은 규칙, v1.3) | 갱신 안 함 |
 | `source`, `fetched_at`, `raw_response_id` | 넣기·갱신 | 넣기·갱신 | 갱신 |
 
 - 두 소스 모두 `WHERE games.fetched_at <= EXCLUDED.fetched_at` 가드를 쓴다. 그래서 "스코어보드가 더 최근이면 상태·점수를 스코어보드 값으로", "주기적 일정 재수집이 더 최근이면 일정 값으로" 맞춰진다.
@@ -582,7 +582,7 @@ erDiagram
 ## 13. 변경 기록
 
 ### v1.3 (2026-10-23, P-025)
-6-1 `is_neutral` 설명과 소스별 갱신 컬럼 표의 `scheduleleaguev2` 칸에 2023-24 보완 규칙 추가. 2023-24 일정 응답은 1,396경기 전부 `isNeutral=false`라 중립 경기 5개(멕시코시티 `0022300172`, 파리 `0022300527`, 라스베이거스 NBA컵 준결승 `0022301229`·`0022301230`, 결승 `0062300001`)를 raw `arenaCity`·`gameLabel`로 확인해 **game_id 고정 목록**으로 true로 만든다(`sources/nba_api/schedule.py`의 `UNFLAGGED_NEUTRAL_GAME_IDS`). `isNeutral=true`는 그대로 true. 개최지 도시 목록 규칙은 쓰지 않았다: 중립 경기가 NBA 연고 도시에서도 열리고(2026-27 컵 결승 Indianapolis), 라스베이거스 프리시즌 경기는 소스가 중립이 아니라고 하며, 스코어보드 응답에는 `arenaCity`가 없다. 2024-25부터는 플래그가 모든 중립 경기(해외 경기, 컵 준결승·결승)를 표시하므로 새 개최지는 플래그가 잡는다. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
+6-1 `is_neutral` 설명과 소스별 갱신 컬럼 표의 `scheduleleaguev2` 칸에 2023-24 보완 규칙 추가. 2023-24 일정 응답은 1,396경기 전부 `isNeutral=false`라 중립 경기 5개(멕시코시티 `0022300172`, 파리 `0022300527`, 라스베이거스 NBA컵 준결승 `0022301229`·`0022301230`, 결승 `0062300001`)를 raw `arenaCity`·`gameLabel`로 확인해 **game_id 고정 목록**으로 true로 만든다(`sources/nba_api/schedule.py`의 `UNFLAGGED_NEUTRAL_GAME_IDS`). `isNeutral=true`는 그대로 true. 스코어보드(`scoreboardv3`)도 `is_neutral`을 넣기·갱신하므로 같은 목록을 적용한다(응답에 `gameId`가 있다). 그러지 않으면 과거 2023-24 날짜로 매일 수집을 돌렸을 때 true가 false로 되돌아간다. 개최지 도시 목록 규칙은 쓰지 않았다: 중립 경기가 NBA 연고 도시에서도 열리고(2026-27 컵 결승 Indianapolis), 라스베이거스 프리시즌 경기는 소스가 중립이 아니라고 하며, 스코어보드 응답에는 `arenaCity`가 없어 도시 규칙을 두 경로에 똑같이 적용할 수 없다. 2024-25부터는 플래그가 모든 중립 경기(해외 경기, 컵 준결승·결승)를 표시하므로 새 개최지는 플래그가 잡는다. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
 
 ### v1.2 (2026-10-22, P-014 PR #12 리뷰 반영)
 6-1 "소스별 갱신 컬럼 표"에 `leaguegamelog` 열 추가(상태·점수·`source`·`fetched_at`·`raw_response_id`만 갱신, INSERT 없음), `games.source` 값 목록에 `leaguegamelog` 추가. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.

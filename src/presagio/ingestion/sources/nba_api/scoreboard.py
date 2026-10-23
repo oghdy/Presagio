@@ -36,6 +36,7 @@ from presagio.ingestion.sources.nba_api.schedule import (
     LEAGUE_ID,
     STATUS_FINAL,
     TBD_STATUS_TEXT,
+    is_neutral_game,
     parse_bool,
     parse_utc,
     provenance_of,
@@ -98,7 +99,8 @@ def parse_scoreboard_game(game: Any) -> GameRecord:
         # Scheduled and live games: 0 or a running score is not a result (6-1).
         home_score=score(require(home, "score", where), f"{where} homeTeam") if final else None,
         away_score=score(require(away, "score", where), f"{where} awayTeam") if final else None,
-        is_neutral=parse_bool(require(game, "isNeutral", where), where),
+        # Same 2023-24 fill as the schedule (P-025), so a past date cannot undo it.
+        is_neutral=is_neutral_game(game_id, parse_bool(require(game, "isNeutral", where), where)),
         if_necessary=parse_bool(require(game, "ifNecessary", where), where),
     )
 
