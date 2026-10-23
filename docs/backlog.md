@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-025·P-029·P-030 DONE(설계안 D-049), P-024 기준 5 대기. 다음: P-031(data-engineer)·P-032(ml-engineer) 병렬, 그 뒤 P-026 → P-033.
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030 DONE(설계안 D-049, launchd 가동). 진행 중: P-031(data-engineer)·P-032(ml-engineer) 병렬. 다음: P-026 → P-033.
 
 ### 보드 한눈에 보기
 
@@ -427,15 +427,15 @@
 
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
-| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | REVIEW (PR #23, PM 수락, 사람 머지 대기) | P-017 |
+| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | DONE | P-017 |
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
 | P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | TODO | P-031 뒤(같은 역할 순서) |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
-| P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE |
-| P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | TODO (브리핑 작성, 사람 확인 대기) | P-030 DONE |
-| P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | TODO (브리핑 작성, 사람 확인 대기) | P-030 DONE |
+| P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
+| P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | IN PROGRESS | P-030 DONE |
+| P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | IN PROGRESS | P-030 DONE |
 | P-033 | 기준선 3종: 시장 암시 확률(마진 제거), 항상 홈팀, 시즌 승률 + 결과 저장 | ml-engineer | TODO | P-031, P-032 |
 | P-034 | Elo 레이팅(홈 어드밴티지, 시즌 간 평균 회귀, 중립 경기 처리) + 총점 기준선(최근 N경기 평균) | ml-engineer | TODO | P-033 |
 | P-035 | as_of 피처 모듈 v1 (최근 5/10/20 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정, 시즌 누적) + 누수 테스트 | ml-engineer | TODO | P-031 |
@@ -478,7 +478,7 @@
   - 2026-10-23 PM 13:3x: **3차 재리뷰 "수락 가능 + 후속 메모"**: N1·N2 해결(CHECK는 live 행에만, 시장 비교 집합 통일), N3~N9 전부 반영, 기준 1~9 전부 O, 12-1 쿼리 28개 재현, 새 모순·숫자 오류·누수 경로 없음. 누수 관점: 1차 의심 경로 닫힘(6-2 규칙, live-only CHECK, live 우선, T14), "누수 없음" 선언 없음, 최종 판정은 P-036. [낮음] 후속 2: L1 T9의 `.sample(frac=1)` 금지가 평가 모듈의 경기 단위 부트스트랩(`replace=True`)과 충돌 가능 → P-032 때 "replace 없는 셔플만 금지"로, L2 M-9 추천안 칸에 D-027 표기. 참고: 결손 날 보충 행의 origin은 사실상 `backtest`(한 줄 명시 권장). **PM이 0·1·3-2·3-3·6-3·6-4·7·8·10·11·12-3장을 직접 읽고 기준 1~9 대조 → 수락.** 수락 메시지 `P-030-acceptance.md`. 사람 승인 질문 **Q-020(M-1~M-11)** 올림. 승인되면 PR #22 머지 + D-049 기록 + 후속 티켓(DR-1 2022-23 수집, DR-2 스탯 정정 품질 체크, DR-8은 M-9 결과대로) + P-031·P-032 브리핑. 재리뷰 방법: 같은 reviewer 서브에이전트(이 PM 세션 안) 또는 새 서브에이전트가 `~/.claude/worktrees/presagio-review-p-030`에서 `git fetch origin docs/P-030-modeling-design && git checkout --detach origin/docs/P-030-modeling-design` 후 1차 보고서 `P-030-review.md`의 발견 1~20 처리 여부 + 기준 5·9 재대조.
 
 ### P-031 🧑 모델링 레이어 스키마 v1 → 마이그레이션 0002
-- **상태:** TODO (2026-10-23 브리핑 `P-031-briefing.md` 작성, 사람 확인 후 data-engineer 세션)
+- **상태:** IN PROGRESS (2026-10-23 사람 확인 → data-engineer 세션 `p-031-schema`, Opus 5.5 높음, 브랜치 `feat/P-031-modeling-schema`. 브리핑 `P-031-briefing.md`)
 - **담당 역할:** data-engineer (Opus 5.5 높음, D-043 구현형)
 - **단계:** 2
 - **의존:** P-030 DONE (D-049). P-032와 병렬(파일 겹침 없음: `db/`·`alembic/`·`quality/` vs `evaluation/`).
@@ -498,7 +498,7 @@
   - 2026-10-23 PM: D-049로 생성 확정. 브랜치 `feat/P-031-modeling-schema`. P-032와 병렬.
 
 ### P-032 walk-forward 평가 틀 + 지표 + 시장 확률·CLV + 보류 시즌 가드 + 누수 테스트 틀
-- **상태:** TODO (2026-10-23 브리핑 `P-032-briefing.md` 작성, 사람 확인 후 ml-engineer 세션)
+- **상태:** IN PROGRESS (2026-10-23 사람 확인 → ml-engineer 세션 `p-032-walkforward`, Opus 5.5 높음, 브랜치 `feat/P-032-walkforward-eval`. 브리핑 `P-032-briefing.md`)
 - **담당 역할:** ml-engineer (Opus 5.5 높음, D-043 구현형. 설계는 D-049로 끝남)
 - **단계:** 2
 - **의존:** P-030 DONE (D-049). P-031과 병렬. `predictions`·`evaluations` 저장은 P-033(P-031 뒤)에서 붙인다.
@@ -553,7 +553,7 @@
 - **메모:** 2026-10-23 PM: D-049 M-9로 생성.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
-- **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `3a4dddd`. 재리뷰 "수락 가능(기준 5 대기)" → **16:00 KST 첫 실제 실행 성공(run 102, PM 확인 16:04)** → 최종 커밋 `527b717` → 리뷰 3회차 **"수락 가능"**(기준 1~5 전부 O) → **PM 수락**, 사람 머지 대기. 머지 후 PM이 공유 체크아웃에서 재설치)
+- **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `3a4dddd`. 재리뷰 "수락 가능(기준 5 대기)" → **16:00 KST 첫 실제 실행 성공(run 102, PM 확인 16:04)** → 리뷰 3회차 "수락 가능" → PM 수락 → **사람 지시로 PM이 squash 머지 `5035231`, 공유 체크아웃에서 `install.sh` 재설치 완료(plist 래퍼 경로 = 공유 체크아웃, `--uv` 없음). DONE**)
 - **담당 역할:** platform-engineer (단계 6 역할의 선행 예외 활성. D-002 예외, P-003·P-023과 같은 방식)
 - **단계:** 2 (단계 6 선행)
 - **의존:** P-017 (DONE), Q-017 승인
