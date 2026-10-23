@@ -332,6 +332,71 @@ uv run python scripts/launchd/presagio_launchd.py run --dry-run --now 2026-11-02
   --repo "$PWD" --log-dir /tmp/presagio-dry --state-dir /tmp/presagio-dry
 ```
 
+#### 운영: Claude Code 클라우드 세션 (P-040, D-052)
+
+2026-11-05 16:59 KST에 만료되는 Claude Code 클라우드 크레딧으로, mock 테스트로 완결되는 구현·리뷰·문서 티켓을 **클라우드 세션**에서 돌린다(어떤 티켓을 보내는지는 D-052와 [docs/team/workflow.md](docs/team/workflow.md) "클라우드 세션"). 클라우드 세션은 Anthropic이 띄우는 일회용 Ubuntu 24.04 VM(4 vCPU·16GB·디스크 30GB)에서 GitHub의 **푸시된 브랜치**를 클론해 일한다. PostgreSQL 16과 docker가 설치돼 있지만 둘 다 꺼진 채 시작하고, 세션 사이에는 파일만 남고 프로세스는 남지 않는다. 레포 쪽 준비물은 세 개다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `scripts/cloud-setup.sh` | 환경의 "셋업 스크립트" 칸에서 부른다. uv 확인(없으면 PyPI에서 설치) → `uv sync --locked` → PostgreSQL 시작 → `presagio` 롤(`CREATEDB` 포함)과 `presagio` DB 생성 → `uv run alembic upgrade head`. 두 번 돌려도 같은 상태(멱등). 실패하면 `cloud-setup.sh: FAILED at <단계>: <원인>` 한 줄과 0이 아닌 종료 코드 |
+| `scripts/cloud/session-start.sh` | `.claude/settings.json`의 SessionStart 훅(`startup`·`resume`). `CLAUDE_CODE_REMOTE=true`인 클라우드 세션에서만 PostgreSQL을 켜고 `DATABASE_URL` 연결을 1회 검사해 결과 한 줄을 Claude의 컨텍스트에 넣는다. **로컬 세션에서는 출력 없이 종료 0**, 아무 명령도 실행하지 않는다 |
+| `scripts/cloud/db.conf` | 클라우드 VM 안의 DB 접속값(롤·비밀번호·DB·호스트·포트). 두 스크립트가 읽고, 아래 표의 값과 같음을 테스트(`tests/scripts/test_cloud_setup.py`)가 고정한다 |
+
+**환경 만들기(사람이 한 번).** [claude.ai/code](https://claude.ai/code)의 환경 선택기에서 새 환경을 만들고 아래 값을 그대로 붙인다.
+
+| 칸 | 붙일 값 |
+| --- | --- |
+| 이름 | `presagio-dev` |
+| 네트워크 접근 | **Trusted**(기본값). PyPI·GitHub·Docker Hub·code.claude.com은 열리고 **stats.nba.com과 api.the-odds-api.com은 막힌다**(2026-10-23 첫 클라우드 세션에서 `curl`로 확인: 프록시가 CONNECT에 403). 그래서 클라우드에서는 실제 수집·배당 호출이 불가능하고 mock 테스트만 돈다. Custom으로 열지 않는다(D-052) |
+| 환경변수 | 아래 두 줄 |
+| 셋업 스크립트 | 아래 한 줄 |
+
+환경변수 칸. **둘 다 비밀이 아니다.** 비밀번호는 그 VM 안의 빈 DB만 여는 값이라 CI의 `ci-only-not-a-secret`(D-029)과 같은 성격이고, `scripts/cloud/db.conf`에 그대로 적혀 있다. 호스트는 `.env.example`과 같은 이유로 `localhost`가 아니라 `127.0.0.1`(VM의 PostgreSQL은 IPv4에만 열린다).
+
+```
+DATABASE_URL=postgresql+psycopg://presagio:cloud-only-not-a-secret@127.0.0.1:5432/presagio
+PRESAGIO_REQUIRE_DB=1
+```
+
+셋업 스크립트 칸:
+
+```bash
+bash scripts/cloud-setup.sh
+```
+
+**셋업 스크립트와 캐시.** 환경에서 **첫 세션을 띄울 때** 플랫폼이 스크립트를 루트로 한 번 돌리고, 약 5분 안에 끝나면 그 파일시스템을 스냅숏으로 **약 7일** 캐시한다(공식 문서 [cloud-environments](https://code.claude.com/docs/en/cloud-environments.md) "Environment caching"). 그 뒤의 세션은 스냅숏에서 시작해 셋업을 건너뛴다. 스냅숏은 파일만 담고 프로세스는 담지 않으므로 PostgreSQL은 세션마다 훅이 다시 켠다. 스크립트나 네트워크 설정을 바꾸거나 7일이 지나면 플랫폼이 알아서 다시 돌린다. 세션 안에서 손으로 다시 돌려도 안전하다. 2026-10-23 첫 클라우드 세션 실측: 캐시가 전혀 없는 상태(uv 캐시·관리 파이썬·`.venv`·롤·DB 모두 없음)에서 21초(uv가 CPython 3.12.13을 GitHub에서 받고 PyPI에서 45개 패키지를 받는 시간이 13초), 바로 다시 돌리면 3초. 5분 한도에 크게 못 미친다. 스냅숏이 레포 안의 `.venv/`를 보존하는지는 이 세션에서 확인하지 못했다(이 환경에는 셋업 스크립트가 없었다). 보존되지 않아도 uv 캐시(`~/.cache/uv`)와 관리 파이썬이 남으므로 첫 `uv run`이 몇 초 더 걸릴 뿐이다.
+
+**세션 시작법.** 셋 중 하나. 어느 쪽이든 브리핑이 가리키는 티켓·문서는 main에 머지돼 있어야 한다(클라우드는 푸시된 것만 본다).
+
+- 터미널: `claude --cloud "브리핑 전문"`. 현재 레포의 푸시된 브랜치에서 시작한다. 로컬에만 있는 커밋·변경은 올라가지 않는다.
+- 브라우저: [claude.ai/code](https://claude.ai/code) → 레포 `oghdy/Presagio`와 환경 `presagio-dev` 선택 → 브리핑 붙여넣기.
+- 데스크탑 앱: 세션을 시작할 때 Local 대신 **Cloud**를 고르고 환경 선택기에서 `presagio-dev`.
+
+PM이 띄울 때는 `start_session target: "cloud"`([docs/team/workflow.md](docs/team/workflow.md)).
+
+**세션이 시작되면.** 훅이 돌고, 첫 응답 전에 Claude가 다음과 같은 한 줄을 본다(사람에게는 보이지 않는다. 실패했을 때만 stderr에도 같은 줄이 나온다).
+
+```
+[presagio cloud] DB ready (started PostgreSQL). OK postgresql+psycopg://presagio:***@127.0.0.1:5432/presagio: PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) .... PRESAGIO_REQUIRE_DB=1 (DB tests fail instead of skip).
+```
+
+`DB check failed`로 시작하면 세션은 그대로 시작되고, 작업자가 `bash scripts/cloud-setup.sh`를 돌린 뒤 다시 확인한다. 환경변수에 `DATABASE_URL`을 빠뜨렸으면 훅이 그 세션에 한해 위 기본값을 넣고 그렇게 말한다. `PRESAGIO_REQUIRE_DB=1`이 없으면 "DB가 고장나도 DB 테스트가 조용히 skip된다"고 경고한다.
+
+**규칙(D-052).**
+
+- **완료 알림이 없다.** 클라우드 세션은 끝나도 앱에 알림을 보내지 않는다(공식 문서에도 알림 기능이 없다). PM은 `gh pr list`로 PR이 열렸는지 확인한다(필요하면 30분 간격 일회성 예약). 그래서 클라우드 세션의 보고서는 **PR 본문**이다.
+- **클라우드 DB는 비어 있다.** 셋업은 표만 만든다(`alembic upgrade head`). 실제 3시즌 데이터가 필요한 티켓(수집, 실데이터 검증, 실험 1차)과 launchd·개발 DB 마이그레이션 적용·외부 API 실제 호출은 로컬에서 한다.
+- **`ODDS_API_KEY`는 환경변수에 절대 넣지 않는다.** 환경변수는 그 환경을 쓰는 모두가 읽고 레포는 공개다. 필요해지면 환경의 **network secret**으로만(프록시가 요청에 붙이고 VM 안에서는 보이지 않는다). 지금은 필요 없다(api.the-odds-api.com이 Trusted 밖이라 호출 자체가 안 된다).
+- **캐시 수명 약 7일.** 만료되거나 셋업 스크립트·네트워크 설정을 바꾸면 다음 새 세션에서 셋업이 다시 돈다. 세션 VM은 몇 분 쉬면 파일을 보존한 채 멈추고 다음 메시지에 재개되며, 오래 쉬면 회수된다(대화만 복원되고 새 VM은 스냅숏부터 시작, 돌던 명령은 사라진다).
+
+**확인 명령(클라우드 세션 안에서).**
+
+```bash
+PRESAGIO_REQUIRE_DB=1 uv run pytest -q   # 전부 통과, skipped 0
+uv run alembic current                    # `0001 (head)`처럼 head가 보인다
+env -u CLAUDE_CODE_REMOTE bash scripts/cloud/session-start.sh; echo "exit=$?"   # 출력 없이 exit=0 (로컬 무동작)
+```
+
 ### 9. 품질 체크 (데이터가 상식에 맞는지 보기)
 
 `presagio quality-check`는 DB에 들어 있는 데이터가 말이 되는지 검사하고 체크마다 한 줄씩 표로 보여 준다. **읽기만 한다**(DB를 고치지 않고, 외부 호출도 0번). 체크는 읽기 전용 트랜잭션 안에서 돌아서, 실수로 쓰려고 해도 DB가 거부한다.
