@@ -394,6 +394,7 @@
 - **왜:** 공개 레포에서 "CI 빨간불이면 머지 금지"와 "main 직접 커밋 금지"를 사람 규칙이 아니라 기계가 강제한다. D-017의 목적이 이것이었는데 하루 동안 켜지지 않았고(검증 노트 F-2), 그 사이 PM이 docs 커밋을 main에 직접 넣었다. 사고는 없었지만 운에 맡긴 것이다.
 - **다른 선택지:** 사람 규칙만 유지(실수 방지 장치 없음), 관리자 우회 허용(PM push를 못 막음).
 - **적용 전까지:** 이 커밋을 포함해 PM docs는 `docs(...)` 제목으로 main 직접 커밋을 유지한다. 켜진 것을 확인하는 즉시 PR로 전환한다.
+- **적용 확인(2026-10-23 16:4x KST):** 사람이 GitHub 규칙(ruleset)으로 켰다. PM의 main 직접 push가 "Changes must be made through a pull request / 2 of 2 required status checks are expected"로 거부됨을 확인. 이 시점부터 PM 문서는 `docs/pm-YYYYMMDD-<주제>` 브랜치 + PR(전용 worktree `~/.claude/worktrees/presagio-pm-docs`), 문서 전용이면 D-050대로 PM이 CI 초록 뒤 squash 머지.
 
 ## D-048 단계 6 전까지 이 맥의 launchd로 매일 수집을 돌린다 (임시, P-024)
 - **날짜:** 2026-10-23 (사람 승인, Q-017 (a))
