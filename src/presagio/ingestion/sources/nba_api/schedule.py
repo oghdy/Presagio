@@ -37,11 +37,13 @@ STATUS_FINAL = 3
 TBD_STATUS_TEXT = "TBD"
 # The 2023-24 schedule sends isNeutral=false for all 1,396 games, so its neutral-site games are
 # listed here (P-025, D-046), found in raw arenaCity/gameLabel: Mexico City, the cup semifinals
-# and final in Las Vegas, Paris. From 2024-25 the flag marks every neutral game (Indianapolis
-# hosts the 2026-27 cup final, so a host-city list could not), and the past season is closed.
+# and final in Las Vegas, Paris. 2022-23 also sends false for all 1,394 games (P-026): Mexico
+# City and Paris. From 2024-25 the flag marks every neutral game (Indianapolis hosts the
+# 2026-27 cup final, so a host-city list could not), and the past seasons are closed.
 # The schedule and the scoreboard both apply it.
 UNFLAGGED_NEUTRAL_GAME_IDS = frozenset(
     {"0022300172", "0022301229", "0022301230", "0062300001", "0022300527"}
+    | {"0022200439", "0022200678"}
 )
 
 

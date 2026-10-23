@@ -133,13 +133,36 @@ def test_2023_24_neutral_sites_are_true_although_the_source_says_false() -> None
     assert neutral["0062300001"] is True
     assert neutral["0022300061"] is False
     assert neutral["0022300965"] is False
-    assert {game_id for game_id, flag in neutral.items() if flag} == UNFLAGGED_NEUTRAL_GAME_IDS
+    assert {game_id for game_id, flag in neutral.items() if flag} == {
+        game_id for game_id in UNFLAGGED_NEUTRAL_GAME_IDS if season_of(game_id) == "2023-24"
+    }
 
 
-def test_unflagged_neutral_list_is_closed_to_2023_24_stored_games() -> None:
-    """The list only fills the 2023-24 gap: a true flag is kept, false elsewhere stays false."""
-    assert len(UNFLAGGED_NEUTRAL_GAME_IDS) == 5
-    assert {season_of(game_id) for game_id in UNFLAGGED_NEUTRAL_GAME_IDS} == {"2023-24"}
+def test_2022_23_neutral_sites_are_true_although_the_source_says_false() -> None:
+    """P-026: 2022-23 also sends isNeutral=false everywhere; Mexico City and Paris become true."""
+    data = fixture_json("scheduleleaguev2__2022-23_neutral")
+    sent = {g["gameId"]: (g["isNeutral"], g["arenaCity"]) for g in schedule_games(data)}
+    assert sent == {
+        "0022200001": (False, "Boston"),
+        "0022200439": (False, "Mexico City, Mexico"),  # SAS-MIA
+        "0022200635": (False, "San Antonio"),  # SAS home game at the Alamodome: not neutral
+        "0022200678": (False, "Paris"),  # DET-CHI
+        "0022201199": (False, "Austin"),  # SAS home game in Austin: not neutral
+    }
+    neutral = {g.game_id: g.is_neutral for g in parse_schedule(data, "2022-23", PROV).games}
+    assert neutral == {
+        "0022200001": False,
+        "0022200439": True,
+        "0022200635": False,
+        "0022200678": True,
+        "0022201199": False,
+    }
+
+
+def test_unflagged_neutral_list_is_closed_to_2022_23_and_2023_24_stored_games() -> None:
+    """The list only fills the 2022-23/2023-24 gap: a true flag is kept, false elsewhere stays."""
+    assert len(UNFLAGGED_NEUTRAL_GAME_IDS) == 7
+    assert {season_of(game_id) for game_id in UNFLAGGED_NEUTRAL_GAME_IDS} == {"2022-23", "2023-24"}
     assert {game_type_of(game_id) for game_id in UNFLAGGED_NEUTRAL_GAME_IDS} == {
         "regular",
         "cup_final",

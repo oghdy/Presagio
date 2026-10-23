@@ -23,6 +23,12 @@ TABLE_NAMES = frozenset(Base.metadata.tables)
 # Known, harmless Alembic warning: PostgreSQL stores the generated column expression with
 # explicit ::text casts, so Alembic's crude text comparison never matches the model's text.
 COMPUTED_WARNING = "Computed default on games.game_type cannot be modified"
+HEAD = "0002"
+# CHECK constraints in appendix A (revision 0001) and in chapter 9-7 (revision 0002).
+V1_CHECKS = 60
+MODELING_CHECKS = 48
+MODELING_TABLES = frozenset({"features", "model_versions", "predictions", "evaluations"})
+MODELING_VIEWS = frozenset({"predictions_recommendation_basis"})
 
 
 def _public_relations(conn: Connection) -> dict[str, str]:
@@ -64,7 +70,7 @@ def test_upgrade_downgrade_upgrade(
             views = {name for name, kind in relations.items() if kind == "v"}
             assert tables == TABLE_NAMES | {"alembic_version"}
             assert views == VIEW_NAMES
-            assert version == "0001"
+            assert version == HEAD
 
             with engine.begin() as conn:
                 command.downgrade(alembic_config(conn), "base")
@@ -73,6 +79,36 @@ def test_upgrade_downgrade_upgrade(
                 # sequences or indexes left behind.
                 assert set(_public_relations(conn)) == {"alembic_version", "alembic_version_pkc"}
                 assert conn.execute(text("SELECT count(*) FROM alembic_version")).scalar() == 0
+    finally:
+        engine.dispose()
+
+
+def test_downgrade_one_step_removes_only_the_modeling_layer(
+    make_test_database: Callable[[], URL], alembic_config: AlembicConfig
+) -> None:
+    """head -> downgrade -1 -> head: 0002 drops exactly its four tables and view, then returns."""
+    url = make_test_database()
+    engine = make_engine(url)
+    try:
+        with engine.begin() as conn:
+            command.upgrade(alembic_config(conn), "head")
+        with engine.connect() as conn:
+            at_head = _public_relations(conn)
+        with engine.begin() as conn:
+            command.downgrade(alembic_config(conn), "-1")
+        with engine.connect() as conn:
+            at_0001 = _public_relations(conn)
+            assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0001"
+        dropped = set(at_head) - set(at_0001)
+        modeling = MODELING_TABLES | MODELING_VIEWS
+        assert modeling <= dropped
+        # Everything else 0002 dropped belongs to those tables (their indexes and sequences).
+        assert not set(at_0001) - set(at_head)
+        assert {at_head[name] for name in dropped - modeling} <= {"i", "S"}
+        with engine.begin() as conn:
+            command.upgrade(alembic_config(conn), "head")
+        with engine.connect() as conn:
+            assert _public_relations(conn) == at_head
     finally:
         engine.dispose()
 
@@ -113,12 +149,22 @@ def test_alembic_cli_reads_database_url(make_test_database: Callable[[], URL]) -
     engine.dispose()
 
 
+def _sql_block(section: str) -> str:
+    """Return the only SQL block in one section of docs/design/schema-v1.md."""
+    blocks = re.findall(r"```sql\n(.*?)```", section, re.DOTALL)
+    assert len(blocks) == 1, f"expected one SQL block, found {len(blocks)}"
+    return blocks[0]
+
+
 def _design_ddl() -> str:
-    """Return the SQL block of appendix A in docs/design/schema-v1.md (the approved DDL)."""
-    appendix = DESIGN_DOC.read_text(encoding="utf-8").split("## 부록 A", 1)[1]
-    match = re.search(r"```sql\n(.*?)```", appendix, re.DOTALL)
-    assert match, "appendix A SQL block not found"
-    return match.group(1)
+    """Return the SQL block of appendix A (the approved schema v1 DDL, revision 0001)."""
+    return _sql_block(DESIGN_DOC.read_text(encoding="utf-8").split("## 부록 A", 1)[1])
+
+
+def _modeling_ddl() -> str:
+    """Return the SQL block of chapter 9 (the modeling layer DDL, revision 0002)."""
+    chapter = DESIGN_DOC.read_text(encoding="utf-8").split("\n## 9. ", 1)[1]
+    return _sql_block(chapter.split("\n## 10. ", 1)[0])
 
 
 def _catalog(conn: Connection) -> dict[str, Any]:
@@ -194,25 +240,52 @@ def _difference(key: str, got: Any, want: Any) -> str:
     return f"{key} differ\n  only in migration: {extra}\n  only in the other: {missing}"
 
 
-def test_migration_matches_design_ddl(
-    make_test_database: Callable[[], URL], alembic_config: AlembicConfig
+def _assert_migration_matches(
+    make_test_database: Callable[[], URL],
+    alembic_config: AlembicConfig,
+    revision: str,
+    ddl: list[str],
+    checks: int,
 ) -> None:
-    """Revision 0001 builds the same columns, constraints, indexes and views as appendix A."""
+    """Migrate one temp DB to revision, run the design DDL blocks on another, compare catalogs."""
     migrated_url, design_url = make_test_database(), make_test_database()
-    _upgrade(alembic_config, migrated_url, "0001")
+    _upgrade(alembic_config, migrated_url, revision)
     design_engine = make_engine(design_url)
     with design_engine.begin() as conn:
-        conn.exec_driver_sql(_design_ddl())
+        for block in ddl:
+            conn.exec_driver_sql(block)
     migrated_engine = make_engine(migrated_url)
     try:
         with migrated_engine.connect() as migrated, design_engine.connect() as design:
             got, want = _catalog(migrated), _catalog(design)
         for key in want:
             assert got[key] == want[key], _difference(key, got[key], want[key])
-        assert sum(1 for r in want["constraints"].elements() if r[1] == "c") == 60
+        assert sum(1 for r in want["constraints"].elements() if r[1] == "c") == checks
     finally:
         migrated_engine.dispose()
         design_engine.dispose()
+
+
+def test_migration_matches_design_ddl(
+    make_test_database: Callable[[], URL], alembic_config: AlembicConfig
+) -> None:
+    """Revision 0001 builds the same columns, constraints, indexes and views as appendix A."""
+    _assert_migration_matches(
+        make_test_database, alembic_config, "0001", [_design_ddl()], V1_CHECKS
+    )
+
+
+def test_head_matches_design_ddl(
+    make_test_database: Callable[[], URL], alembic_config: AlembicConfig
+) -> None:
+    """Head (0002) is appendix A plus the chapter 9-7 modeling DDL, catalog for catalog."""
+    _assert_migration_matches(
+        make_test_database,
+        alembic_config,
+        HEAD,
+        [_design_ddl(), _modeling_ddl()],
+        V1_CHECKS + MODELING_CHECKS,
+    )
 
 
 def _named_constraints(conn: Connection) -> set[tuple[str, str, str, str]]:
@@ -242,7 +315,7 @@ def test_model_constraints_match_migration(
         with migrated_engine.connect() as migrated, models_engine.connect() as models:
             got, want = _named_constraints(migrated), _named_constraints(models)
         assert got == want, _difference("constraints", got, want)
-        assert sum(1 for row in want if row[2] == "c") == 60
+        assert sum(1 for row in want if row[2] == "c") == V1_CHECKS + MODELING_CHECKS
     finally:
         migrated_engine.dispose()
         models_engine.dispose()
