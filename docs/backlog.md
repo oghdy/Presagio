@@ -436,7 +436,7 @@
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | REVIEW (PR #31 머지 `24abf4b`, 기준 4는 첫 클라우드 세션. 환경 생성 Q-023) | P-024 DONE |
 | P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | TODO | P-040 DONE |
-| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | TODO | P-031 DONE, Q-022 |
+| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | TODO (상세 확정, Q-022 → D-054. 브리핑 대기) | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
 | P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | REVIEW (PR #41, 리뷰+누수 감사 중) | P-031·P-032 DONE ✓ |
@@ -601,14 +601,22 @@
 - **메모:** 2026-10-23 PM: D-049 M-9로 생성.
 
 ### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
-- **상태:** TODO (상세 완료 기준은 Q-022 답 뒤 확정)
+- **상태:** TODO (2026-10-24 Q-022 답(D-054)으로 완료 기준 확정. P-033 머지 뒤 브리핑 → 클라우드 세션. P-042와 파일 안 겹침 → 병렬 가능)
 - **담당 역할:** data-engineer (Opus 5.5 높음). D-052상 클라우드 후보(mock 테스트로 완결).
 - **단계:** 2
 - **의존:** P-031 DONE(머지), Q-022.
 - **목표:** P-031 리뷰(`P-031-review.md`)의 [낮음] 중 코드·문서로 고칠 것을 한 PR로. 스키마(DDL) 변경 없음.
 - **범위(초안):** `src/presagio/quality/checks.py`(+tests): (a) `predictions.feature_id`가 같은 `game_id`이고 피처 `as_of ≤ 예측 as_of`인지 검사하는 체크(fail), (b) `feature_drift` compared=0이면 SKIP, (c) 모델링 표가 없을 때 `alembic_version` < 0002면 SKIP·그 외 error, (d) 예측 행 `market_status`가 4값 밖이면 fail(Q-022 (2)(a)); `tests/db/test_migrations.py`에 `pg_indexes.indexdef` 비교 추가(M5); `docs/design/schema-v1.md` 9장 머리말 메모·3장 Q7·7-2의 `predicted_at`→`as_of`·13장 1-1 오기·`artifact_path` 규칙("디렉터리 + `train_cutoff` 기준 파일명") 한 줄·9-4 두 표의 `market_status` 뜻 차이 명시; `README.md` 품질 체크 14→17 표.
+- **완료 기준 (전부 만족해야 DONE):**
+  1. `src/presagio/quality/checks.py`에 (a)·(b)·(c)·(d) 네 가지가 들어가고 각각 임시 DB 테스트가 있다: (a) `predictions.feature_id`가 가리키는 피처가 같은 `game_id`이고 피처 `as_of` ≤ 예측 `as_of`가 아니면 **fail**(feature_id NULL은 대상 밖), (b) `feature_drift`는 compared=0이면 **skip**, (c) 모델링 표가 없을 때 `alembic_version` < 0002면 **skip**, 그 외(표가 있어야 하는데 없음)는 **error**, (d) `predictions.market_status`가 예측 시점 4값(available / no_snapshot_at_as_of / no_odds_season / unmatched_event) 밖이면 **fail**(D-054 2항. `evaluations`는 6값 그대로). 전체 `quality-check` 출력에서 D-040 14개의 pass/fail 수가 변하지 않는다(개수 기준 금지, D-053 4항).
+  2. `tests/db/test_migrations.py`에 모델링 표 부분 유니크 인덱스의 `pg_indexes.indexdef`를 설계안 9장 정의와 비교하는 테스트(M5)가 있고 통과한다.
+  3. 문서 정정이 전부 들어간다(코드 아님): `docs/design/schema-v1.md` 9장 머리말 메모·3장 Q7·7-2 `predicted_at`→`as_of`·13장 1-1 오기·`artifact_path` 규칙("디렉터리 + `train_cutoff` 기준 파일명") 한 줄·9-4 두 표의 `market_status` 뜻 차이(예측 4값/평가 6값, D-054)·추천 기준 행 origin 규칙("origin별 하나, 단계 4 마이그레이션에서", D-054 1항)·6-1·13장 "2022-23 2 + 2023-24 5 = 7경기"; `docs/research/backfill-report-2022-23.md` 198·268행 근거 교체 + 199행 오타; `README.md` 품질 체크 표 14 → 17(이 티켓으로 늘어나는 수까지).
+  4. 스키마·마이그레이션 변경 0: `git diff main...HEAD -- alembic src/presagio/db`가 비어 있다. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, skipped 0, 외부 호출 0.
+  5. 실데이터 확인: `uv run presagio quality-check`가 개발 DB에서 fail 0·error 0(클라우드 세션이면 "머지 후 PM"으로 표시하고 임시 DB 결과만).
+- **확인 방법:** 기준 4의 diff, 기준 5의 명령, 새 체크의 임시 DB 테스트(fail·skip·error 각 1회 재현).
 - **추가 범위(P-026 리뷰, 2026-10-23, D-053):** 소형 문서 정정 3건 — (e) `docs/design/schema-v1.md` 6-1·13장 "2023-24 보완 목록 5경기" → "2022-23 2 + 2023-24 5 = 7경기"(305·329·1086행 근처), (f) `docs/research/backfill-report-2022-23.md` 198·268행: 포스트시즌 90경기 점수 근거를 `gamelog_vs_schedule_score`(대상 밖)에서 `points_match_score`·raw 게임로그 대조로 바꾸고 "이 90경기는 `gamelog_vs_schedule_score` 대상 밖" 한 줄, (g) 같은 파일 199행 오타("1행 는 것은" → "1행 늘어난 것은"). 코드 변경 없음.
 - **메모:**
+  - 2026-10-24 PM 01:2x: 사람 "Q-022는 추천대로" → D-054. 완료 기준 1~5 확정. P-033 PR #41의 저장 경로가 이미 예측 행 4값 규칙을 지키므로 (d) 체크는 그 뒤에 자연스럽게 pass.
   - 2026-10-23 PM: P-031 리뷰로 생성. PR #25 머지를 막지 않음.
   - 2026-10-23 PM: P-026 리뷰 [낮음] 3건을 문서 정정으로 추가(위 추가 범위).
 
