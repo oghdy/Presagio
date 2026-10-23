@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 사람 승인(D-045). 2026-10-23 Q-015~Q-017 승인(D-046~D-048), P-030 브리핑 확정. P-024·P-025·P-029·P-030 동시 진행 중(파일 겹침 없음).
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-025·P-029·P-030 DONE(설계안 D-049), P-024 기준 5 대기. 다음: P-031(data-engineer)·P-032(ml-engineer) 병렬, 그 뒤 P-026 → P-033.
 
 ### 보드 한눈에 보기
 
@@ -430,9 +430,12 @@
 | P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | REVIEW (PR #23, 기준 5 대기) | P-017 |
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | DONE | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
-| P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | REVIEW (PR #22, PM 수락, 🧑 M-1~M-11 승인 대기 Q-020) | P-021 |
-| P-031 | 🧑 모델링 레이어 스키마 v1 (features, model_versions, predictions as_of 스냅숏, 참조 배당) → 마이그레이션 0002 (`is_neutral` 컬럼 추가 없음, D-046) | data-engineer | TODO | P-030 승인 |
-| P-032 | walk-forward 평가 틀 + 지표(log loss, Brier, 보정 구간, MAE/RMSE) + 시장 확률·CLV 계산 | ml-engineer | TODO | P-030 승인 |
+| P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
+| P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | TODO | P-031 뒤(같은 역할 순서) |
+| P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
+| P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE |
+| P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | TODO (브리핑 작성, 사람 확인 대기) | P-030 DONE |
+| P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | TODO (브리핑 작성, 사람 확인 대기) | P-030 DONE |
 | P-033 | 기준선 3종: 시장 암시 확률(마진 제거), 항상 홈팀, 시즌 승률 + 결과 저장 | ml-engineer | TODO | P-031, P-032 |
 | P-034 | Elo 레이팅(홈 어드밴티지, 시즌 간 평균 회귀, 중립 경기 처리) + 총점 기준선(최근 N경기 평균) | ml-engineer | TODO | P-033 |
 | P-035 | as_of 피처 모듈 v1 (최근 5/10/20 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정, 시즌 누적) + 누수 테스트 | ml-engineer | TODO | P-031 |
@@ -440,12 +443,12 @@
 | P-037 | 실험 1차: 가설 등록 → 기준선 vs Elo vs 시장, 시즌별 walk-forward 지표 표 → `docs/experiments.md` | ml-engineer | TODO | P-034, P-035, P-036 |
 | P-038 | 단계 2 학습 노트 + 단계 3 계획 초안 | pm | TODO | P-037 |
 
-병렬: **P-024, P-025, P-029, P-030**은 서로 파일이 겹치지 않는다(`scripts/`+README / `ingestion/`+tests / `docs/team/`+CLAUDE.md / `docs/design/modeling-v1.md`). 사람 승인이 나오는 대로 동시에 띄울 수 있다. P-031 제목은 Q-015 승인(D-046)대로 고쳤다: `is_neutral` 컬럼 추가 없음, 마이그레이션 0002는 모델링 레이어 표만.
+병렬: **P-024, P-025, P-029, P-030**은 서로 파일이 겹치지 않는다(`scripts/`+README / `ingestion/`+tests / `docs/team/`+CLAUDE.md / `docs/design/modeling-v1.md`). 사람 승인이 나오는 대로 동시에 띄울 수 있다. P-031 제목은 Q-015 승인(D-046)대로 고쳤다: `is_neutral` 컬럼 추가 없음, 마이그레이션 0002는 모델링 레이어 표만. 2026-10-23 D-049로 P-026·P-027·P-028 추가, P-031·P-032 상세 확정.
 
 ### 티켓 상세 (2026-10-23 새 PM이 확정. 완료 기준은 사람만 바꾼다, D-008)
 
 ### P-030 🧑 모델링 설계안 v1 + 실험 계획
-- **상태:** REVIEW (2026-10-23 PR #22 https://github.com/oghdy/Presagio/pull/22, v1.2 `afe7b63`, 924줄. 리뷰 3회차 "수락 가능 + 후속 메모", **PM 수락**. 🧑 **사람 승인 대기: M-1~M-11(Q-020)** → 승인 시 PR 머지 + D-049)
+- **상태:** DONE (2026-10-23, 사람 승인 Q-020 "추천대로" → D-049. PR #22 squash merge `482a449`)
 - **담당 역할:** ml-engineer (설계안 작성. Fable 5.1, 노력 xhigh, D-043) → PM → 사람 승인
 - **단계:** 2
 - **의존:** P-021 (DONE)
@@ -473,6 +476,81 @@
   - 2026-10-23 PM 13:1x: **2차 재리뷰 "수정 후 재리뷰"**(`P-030-review-2.md`, 반려 2회차). 1차 발견 20건 중 18 해결·2 부분(12 LightGBM CV grep, 15 시장 비교 집합). 12-1 쿼리 26개 전부 재현, Q-U 커버리지 스크립트 재현(D-038 그대로 87.6%, 주말 +2회 97.0%, +3회 98.5%). 기준 6만 X: **N1** 새로 넣은 `features` CHECK `computed_at − as_of ≤ 2h`가 origin을 안 가려 백테스트 피처 저장 불가(6-2·8-1·T14와 모순, 한 줄 수정 `origin <> 'live' OR ...`). **N2** 시장 비교 집합이 4-6(available ∪ pred_only)과 6-1·H-03(available)에서 다름. [낮음] N3~N9(M-9와 D-027·P-024 충돌 표기, T9 grep에 lightgbm.cv 등, H-05(b) 숫자 기준, 옮겨 적기 오류 5건, T14 라벨 제외, market_status 목록 누락, "(제안)" 표시 누락). 누수 관점: 1차 의심 경로는 규칙·경로 행·T14로 닫혔으나 저장 경로가 N1에 막힘, "누수 없음" 선언 없음. 작성자에게 수정 요청. **PM 결정(M-9 vs P-024):** P-024는 현행 기준(하루 정확히 4회)으로 끝내고, M-9(주말 추가 캡처)가 승인되면 D-027 개정 + 후속 티켓(DR-8)으로 처리한다.
   - 2026-10-23 PM 13:08: 작성자 v1.2 커밋 `afe7b63`(924줄, CI 초록. 작성자 보고: N1 CHECK를 live 행에만, N2 시장 비교 집합 통일, N3~N9·참고·P-025 머지 반영). 같은 reviewer 서브에이전트에게 **3차 재리뷰**(마지막 회차) 요청 → `P-030-review-3.md`.
   - 2026-10-23 PM 13:3x: **3차 재리뷰 "수락 가능 + 후속 메모"**: N1·N2 해결(CHECK는 live 행에만, 시장 비교 집합 통일), N3~N9 전부 반영, 기준 1~9 전부 O, 12-1 쿼리 28개 재현, 새 모순·숫자 오류·누수 경로 없음. 누수 관점: 1차 의심 경로 닫힘(6-2 규칙, live-only CHECK, live 우선, T14), "누수 없음" 선언 없음, 최종 판정은 P-036. [낮음] 후속 2: L1 T9의 `.sample(frac=1)` 금지가 평가 모듈의 경기 단위 부트스트랩(`replace=True`)과 충돌 가능 → P-032 때 "replace 없는 셔플만 금지"로, L2 M-9 추천안 칸에 D-027 표기. 참고: 결손 날 보충 행의 origin은 사실상 `backtest`(한 줄 명시 권장). **PM이 0·1·3-2·3-3·6-3·6-4·7·8·10·11·12-3장을 직접 읽고 기준 1~9 대조 → 수락.** 수락 메시지 `P-030-acceptance.md`. 사람 승인 질문 **Q-020(M-1~M-11)** 올림. 승인되면 PR #22 머지 + D-049 기록 + 후속 티켓(DR-1 2022-23 수집, DR-2 스탯 정정 품질 체크, DR-8은 M-9 결과대로) + P-031·P-032 브리핑. 재리뷰 방법: 같은 reviewer 서브에이전트(이 PM 세션 안) 또는 새 서브에이전트가 `~/.claude/worktrees/presagio-review-p-030`에서 `git fetch origin docs/P-030-modeling-design && git checkout --detach origin/docs/P-030-modeling-design` 후 1차 보고서 `P-030-review.md`의 발견 1~20 처리 여부 + 기준 5·9 재대조.
+
+### P-031 🧑 모델링 레이어 스키마 v1 → 마이그레이션 0002
+- **상태:** TODO (2026-10-23 브리핑 `P-031-briefing.md` 작성, 사람 확인 후 data-engineer 세션)
+- **담당 역할:** data-engineer (Opus 5.5 높음, D-043 구현형)
+- **단계:** 2
+- **의존:** P-030 DONE (D-049). P-032와 병렬(파일 겹침 없음: `db/`·`alembic/`·`quality/` vs `evaluation/`).
+- **목표:** 승인된 설계안 `docs/design/modeling-v1.md` 8장(모델링 레이어 요구 사항)을 표 4개(`features`, `model_versions`, `predictions`, `evaluations`)의 DDL로 구체화해 `docs/design/schema-v1.md` 9장을 확정하고, 마이그레이션 0002·SQLAlchemy 모델·DDL 일치 테스트·품질 체크 3개·뷰 1개를 만든다. 🧑 게이트: 요구 사항은 D-049로 이미 승인됐으므로 **DDL 승인은 사람이 PR의 9장을 읽고 머지하는 것**으로 한다(PM 결정, D-010 취지 유지). 개발 DB 적용(`alembic upgrade head`)은 머지 후 PM이 한다.
+- **범위(건드릴 파일):** `docs/design/schema-v1.md`(9장 확정 + 부록 DDL + 13장 변경 기록 v1.4), `src/presagio/db/models/`(모델링 표 4개), `alembic/versions/0002_*.py`, `tests/db/`(DDL 일치 테스트 확장, 마이그레이션 왕복), `src/presagio/quality/checks.py` + `tests/quality/`(체크 3개).
+- **범위 밖:** `src/presagio/features|models|evaluation`(ML), `games.is_neutral`(D-046, 변경 없음), 데이터 적재·실험, 단계 4 표(`recommendations`, `bankroll_ledger`는 자리만 문서에), 개발 DB에 직접 `alembic upgrade`(임시 DB만).
+- **읽어야 할 파일:** `CLAUDE.md`, `docs/design/modeling-v1.md` 8장 전체·1-3·2-2·4-6(market_status 값)·6-2(학습 행 규칙)·9-3(T11·T12·T14가 전제하는 저장 규칙), `docs/design/schema-v1.md` 1·9장·부록 A, `docs/decisions.md` D-019·D-028·D-030·D-033·D-046·D-049, `alembic/versions/0001_schema_v1.py`, `src/presagio/db/models/`, `tests/db/`, `src/presagio/quality/checks.py`
+- **완료 기준 (전부 만족해야 DONE):**
+  1. `schema-v1.md` 9장이 초안에서 **확정 DDL**(컬럼·타입·NULL·기본값·키·CHECK·인덱스·뷰)로 바뀌고, 설계안 8-1~8-4의 **요구 항목마다** 어느 컬럼·제약으로 구현했는지 대응표가 있다. 빠지면 안 되는 것: `features` `UNIQUE (game_id, as_of, feature_version)`, `values jsonb`, `as_of`/`computed_at`/`snapshot_kind`/`origin`(`live`·`backtest`), `input_fingerprint jsonb`, `CHECK (as_of <= computed_at)`, `CHECK (origin <> 'live' OR computed_at - as_of <= interval '2 hours')`; `model_versions` `UNIQUE (model_name, version)`, `model_family`, `feature_version`, `hyperparameters jsonb`, `seed`, `code_version`, `training_window jsonb`, `tuning_data`, `experiment_id`, `holdout_seasons text[]`, `holdout_unlocked_reason`, `artifact_path`, `is_recommendation_model`, `retired_at`; `predictions` `UNIQUE (game_id, model_version_id, as_of)`, `p_home numeric(6,4)` CHECK (0,1), `total_mean`, `total_sd`, `over_prob`, `reference_line`, `reference_bookmaker`, `snapshot_kind`, `origin`, `train_cutoff` CHECK `<= as_of`, `scheduled_start_utc`, `feature_id` FK, `market_reference jsonb`, `market_status`(4-6의 6값 CHECK), `is_recommendation_basis` + 부분 유니크 `(game_id, model_version_id) WHERE is_recommendation_basis`; `evaluations` `UNIQUE (prediction_id, metric_version)`, 결과 컬럼(`home_won`, `actual_total`, `actual_margin`, `actual_start_utc`, `rescheduled`), 모델 지표 컬럼, 시장 지표 컬럼(NULL 허용), CLV 컬럼, `closing_lead_time interval`, `line_move`, `evaluated_at`, `source_fetched_at`. 결손 보충 행의 `origin = backtest` 규칙 한 줄(D-049 후속 메모).
+  2. 마이그레이션 0002는 표 4개 + 인덱스 + CHECK + 뷰 `predictions_recommendation_basis`만 만들고, 임시 DB에서 `alembic upgrade head` → `downgrade -1` → `upgrade head`가 왕복한다. `is_neutral`·기존 표 변경 없음.
+  3. D-030 규칙 준수: 제약 이름 규칙(`pk_`/`fk_`/`uq_`/`ck_`), CHECK는 `__table_args__`, `uv run alembic check` 통과, 설계 DDL 일치 테스트가 0002까지 확장되어 "설계 9장 = 마이그레이션" 비교가 통과한다.
+  4. 품질 체크 3개 추가: `features_after_tipoff`(`as_of >= games.start_time_utc` 행 수 = 0, fail), `predictions_after_tipoff`(같음, fail), `feature_drift`(재계산 불일치 보고형. 이 티켓에서는 체크 틀만, 비교 대상이 없으면 skip). 빈 표에서 pass 또는 skip. 테스트 포함.
+  5. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, 네트워크 0.
+  6. PR 본문 "결정 제안"에 설계안 8장과 다르게 한 점(있으면)과 이유, 그리고 사람이 9장을 읽을 때 봐야 할 지점 3개.
+- **확인 방법:** `uv run alembic check`, `PRESAGIO_REQUIRE_DB=1 uv run pytest tests/db tests/quality -q`, PR의 대응표.
+- **메모:**
+  - 2026-10-23 PM: D-049로 생성 확정. 브랜치 `feat/P-031-modeling-schema`. P-032와 병렬.
+
+### P-032 walk-forward 평가 틀 + 지표 + 시장 확률·CLV + 보류 시즌 가드 + 누수 테스트 틀
+- **상태:** TODO (2026-10-23 브리핑 `P-032-briefing.md` 작성, 사람 확인 후 ml-engineer 세션)
+- **담당 역할:** ml-engineer (Opus 5.5 높음, D-043 구현형. 설계는 D-049로 끝남)
+- **단계:** 2
+- **의존:** P-030 DONE (D-049). P-031과 병렬. `predictions`·`evaluations` 저장은 P-033(P-031 뒤)에서 붙인다.
+- **목표:** 설계안 6장(지표, walk-forward, 보류 시즌, 네스티드)·4장(시장 확률, 마감, CLV, market_status)을 코드로 만든다. 입력은 "예측 함수", 출력은 지표 표(markdown). 이 틀이 있어야 이후 기준선·Elo·모델 비교가 공정하다(D-045).
+- **범위(건드릴 파일):** `src/presagio/evaluation/`(예: `metrics.py`, `market.py`, `clv.py`, `walkforward.py`, `holdout.py`, `report.py`), `tests/evaluation/`, `src/presagio/cli.py`의 `backtest` 서브커맨드(ML 몫 부분만), `pyproject.toml`에 의존성 추가가 필요하면 PM에게 먼저(scipy/numpy 등은 결정 제안으로).
+- **범위 밖:** 피처 함수(P-035), Elo·기준선 구현(P-033·P-034), 모델링 표 쓰기(P-031·P-033), `docs/experiments.md`, 설계 변경(설계안과 다르게 하려면 PR "결정 제안"으로).
+- **읽어야 할 파일:** `CLAUDE.md`, `docs/design/modeling-v1.md` 전체(특히 1-2·1-3·2-2·2-3·4-2~4-6·5-1·6-1~6-4·9-1~9-3·12-1), `docs/decisions.md` D-033·D-035·D-036·D-043·D-049, `docs/design/schema-v1.md` 6·7·8장(읽는 표·뷰), `src/presagio/ingestion/odds_math.py`(기존 마진 제거 함수 재사용), `src/presagio/ingestion/possessions.py`, `src/presagio/db/models/`(읽기만), `.claude/agents/leakage-auditor.md`
+- **완료 기준 (전부 만족해야 DONE):**
+  1. **지표**(설계안 6-1 식 그대로): 정확도, log loss(p를 `[1e-6, 1−1e-6]`로 자름, 자연로그), Brier, 보정 구간표(10 등간격) + ECE, 총점 MAE/RMSE, 오버 확률 log loss/Brier(`T = L` push 제외), 같은 경기 집합의 Δlog loss·ΔBrier, Brier 스킬 점수, 경기 단위 재표집 부트스트랩(기본 1,000회, 시드 고정) 90% 구간. 각 함수에 손계산 기대값 단위 테스트.
+  2. **시장 확률**(4-2·4-3·4-6): 암시 확률, 비례 배분(기존 함수 재사용), Shin, power 구현; 합의 중앙값(같은 `captured_at`에 양쪽 있는 북메이커 ≥ 3곳), 기준 북메이커 폴백(`draftkings` → `fanduel` → `betmgm`), 예측 시점 배당 R3(`captured_at ≤ as_of`, 24시간 안), 토탈 기준 라인 L, `market_status` 6값 판정. 합성 스냅숏으로 분기마다 테스트. 2-outcome에서 Shin·power가 Σp = 1을 만족하고 비례 배분과 롱샷 방향이 맞는지 테스트.
+  3. **마감과 CLV**(4-4·4-5): 마감 = 뷰 `odds_closing_lines` + `lead_time ≤ 2h`(설정값), `clv_prob`, `clv_return`, `beat_close`, `line_move`(라인이 다르면 `clv_return` NULL). `odds_closing_lines`를 읽는 코드는 `evaluation/`에만 있다(`features/`·`models/`에 그 뷰 이름이 나오면 실패하는 테스트, 9-3 Q4).
+  4. **walk-forward 실행기**(6-2·2-2·2-3·6-4): 동부 날짜 단위, as_of = 백테스트 07:00 UTC, 입력은 예측 함수 `predict(as_of, games) → p_home/total_mean[/over_prob]`, 학습 집합 규칙 `D(h) < fit_cutoff` + 가용 지연 Δ(기본 3시간, 설정값), 재학습 주기(기본 7일), 확장 창, 최소 학습 규칙(학습 모델은 2023-24 전체 뒤, 비학습 기준선은 2024-01-01 이후 보고), 보고 구간(시즌 × 정규/포스트시즌 × `market_status` × 전체/시장 있음 두 줄, n 표기, n < 100 참고 표시). 피처 함수에 재학습 시점 as_of를 넘길 수 없는 인터페이스(`training_matrix(feature_version, fit_cutoff)`만 노출, 6-2) — 이 티켓에서는 인터페이스와 더미 구현.
+  5. **보류 시즌 가드**(6-3): `--seasons`에 2025-26이 있으면 `--unlock-holdout "<가설 번호와 사유>"` 없이는 거부(테스트). 해제 사유를 반환값·로그에 남겨 P-033이 `model_versions.holdout_unlocked_reason`에 쓸 수 있게.
+  6. **누수 테스트 틀**(9-3의 T1·T2·T4·T9·T10 해당분): 더미 예측 함수와 임시 DB 복제본으로 시간 여행 테스트(as_of 이후 행 변경 → 예측 불변), 미래 주입 테스트(미래 결과 극단값 → 과거 예측 불변), Δ 경계 테스트, 보류 거부 테스트가 **실행기 수준**에서 통과. `KFold|cross_val_score|GridSearchCV|lightgbm.cv|xgboost.cv` import 금지 테스트(T9. `.sample(frac=1)`은 `replace=True` 없는 경우만 금지, D-049 후속 메모).
+  7. **CLI 골격**: `uv run presagio backtest run --experiment H-00 --seasons 2023-24,2024-25 [--dry-run]`이 더미 예측 함수(예: 항상 0.5)로 돌아 지표 표(markdown)를 출력한다. DB는 `games`·`team_game_stats_primary`·`odds_*`·`odds_closing_lines` **읽기만**. 저장 없음(P-033).
+  8. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, 네트워크 0, 외부 호출 0. 테스트는 임시 DB(conftest)만 쓴다.
+- **확인 방법:** 테스트, CLI 더미 실행 출력, `git grep odds_closing_lines src/presagio` 결과가 `evaluation/`만.
+- **메모:**
+  - 2026-10-23 PM: D-049로 생성 확정. 브랜치 `feat/P-032-walkforward-eval`. P-031과 병렬. 리뷰는 reviewer + leakage-auditor 관점(단계 2 첫 코드).
+
+### P-026 2022-23 시즌 추가 수집 (D-049 M-11, DR-1)
+- **상태:** TODO
+- **담당 역할:** data-engineer (Opus 5.5 높음)
+- **단계:** 2
+- **의존:** P-031 뒤(같은 역할이 동시에 두 티켓을 하지 않음). P-034(Elo) 전에 끝나야 함.
+- **목표:** Elo 워밍업·`prev_season_*` 피처·carry 탐색용으로 2022-23 시즌(정규·플레이인·플레이오프)을 개발 DB에 넣는다. 학습·평가 대상이 아니다(배당 없음).
+- **범위:** 실행(`uv run presagio backfill --season 2022-23`), `docs/research/backfill-report-stage1.md`에 2022-23 절 추가, 필요 시 최소 코드 수정(2022-23 응답 형식 차이, 중립 경기 보완 목록 확장 — 2022-23에도 멕시코시티·파리 경기가 있고 `isNeutral`이 false일 가능성).
+- **범위 밖:** 배당, 스키마, 2022-23을 학습 대상에 넣는 것.
+- **완료 기준:**
+  1. `backfill --season 2022-23`이 종료 코드 0, nba_api 호출 ≤ 4(일정 1 + 게임로그 3; 재실행 포함 합계 ≤ 8).
+  2. 2022-23 `games` 수 = 일정 응답의 002·004·005 수, `team_game_stats` = 종료 경기 × 2. 품질 체크 `--season 2022-23` 14 pass.
+  3. 다른 시즌 행 수 불변, 같은 명령 재실행 후 불변(전후 count).
+  4. 2022-23 중립 경기를 raw(`arenaCity`·`gameLabel`)로 확인해 `is_neutral`이 맞다(필요하면 P-025 목록 확장 + 테스트). 보고서에 표(경기 수·홈 승률·평균 총점·중립 수).
+- **메모:** 2026-10-23 PM: D-049 M-11로 생성.
+
+### P-027 스탯 정정 빈도 품질 체크 (설계안 DR-2)
+- **상태:** TODO (상세 완료 기준은 P-031 뒤 확정)
+- **담당 역할:** data-engineer
+- **단계:** 2~3
+- **의존:** P-031
+- **목표:** 같은 경기·팀의 `team_game_stats` 값이 raw 버전 사이에 바뀐 횟수를 세는 품질 체크(2026-27부터). 정정이 잦으면 실시간과 백테스트의 입력이 체계적으로 달라 재현성(누수 질문 5)에 영향.
+- **메모:** 2026-10-23 PM: D-049(설계안 3-2 DR-2)로 생성. 우선순위 중간.
+
+### P-028 주말 낮 경기 배당 캡처 2회 추가 (D-027 개정, D-049 M-9, DR-8)
+- **상태:** TODO
+- **담당 역할:** platform-engineer (Opus 5.5 높음)
+- **단계:** 2 (단계 6 선행)
+- **의존:** P-024 DONE
+- **목표:** 토·일 14:45·16:45 ET에 `ingest-daily --odds-only` 캡처 2회를 더해 낮 경기(12:00~18:00 ET 시작) 마감 배당 커버리지를 87.6% → 97.0%로 올린다. 평일은 4회 그대로. 월 최대 425크레딧.
+- **범위:** `scripts/launchd/`(래퍼 슬롯 규칙·plist 깨어남), `tests/scripts/`, README 운영 소절, `docs/team/risks.md` B2 숫자(PM이 같은 PR에서 또는 별도). 설정값이 필요하면(`ODDS_WEEKEND_CLOSING_TIMES_ET` 등) `src/presagio/config.py` 변경은 data-engineer 영역이므로 PM이 범위를 정한다.
+- **완료 기준(초안, P-024 머지 후 확정):** 토·일 6회·평일 4회를 7개월 모의로 증명, 중복 없음, 월 크레딧 계산 표(≤ 425), 실제 주말 1회 결과.
+- **메모:** 2026-10-23 PM: D-049 M-9로 생성.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
 - **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `3a4dddd`. 재리뷰 **"수락 가능(기준 5 대기)"**. 기준 1~4 O. **기준 5 = 16:00 KST launchd 첫 실제 실행 → PM 확인 → 작성자가 PR 본문에 기록 → PM 수락 → 사람 머지**)

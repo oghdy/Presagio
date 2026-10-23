@@ -43,7 +43,7 @@ Presagio는 매일 자동으로 NBA 경기 데이터를 모으고, 승률과 총
 - 커밋 제목은 Conventional Commits 형식. 예: `feat(ingestion): add nba_api schedule adapter`
 - 커밋 메시지 끝에는 항상 다음 줄을 붙인다: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`
 - Python 3.12, uv, ruff, pytest. 외부 네트워크는 테스트에서 mock 처리한다.
-- 파이썬 코드는 `src/presagio/` 아래에만 둔다. 테스트는 `tests/` 아래에 같은 구조로 둔다.
+- 제품 파이썬 코드는 `src/presagio/` 아래에만 둔다. 운영·조사용 스크립트(스케줄 래퍼, 일회성 조사)는 `scripts/` 아래에 두고 `src/`를 import할 수 있지만 그 반대는 금지다(D-051). 테스트는 `tests/` 아래에 같은 구조로 둔다(`scripts/`의 테스트는 `tests/scripts/`).
 - 타입 힌트를 쓴다. 함수에는 한 줄 docstring을 단다.
 
 ## 5. 파일 소유권 (충돌을 막는 규칙)
