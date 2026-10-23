@@ -12,6 +12,7 @@ from sqlalchemy import Engine, text
 
 from presagio import cli
 from presagio.evaluation import cli as backtest_cli
+from presagio.evaluation.store import StoreError
 from presagio.evaluation.walkforward import LeakageGuardError
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
@@ -91,7 +92,8 @@ def test_store_writes_once_and_a_rerun_changes_nothing(
     out = capsys.readouterr().out
     assert "Stored (--store): model_versions always_home_b0 v1 (model_version_id " in out
     assert "new); predictions inserted 345, already stored 0, differing 0; " in out
-    assert "evaluations inserted 345, already stored 0, differing 0; " in out
+    assert "evaluations inserted 345, already stored 0, differing 0, " in out
+    assert "not written for differing predictions 0; " in out
     assert "holdout rows not written: 0 predictions, 0 evaluations." in out
     after_first = counts(engine, MODELING)
     assert after_first == {"model_versions": 1, "predictions": 345, "evaluations": 345}
@@ -128,6 +130,8 @@ def test_a_changed_stored_value_is_reported_with_exit_4(
     assert backtest(engine, *args) == backtest_cli.EXIT_MISMATCH == 4
     out = capsys.readouterr().out
     assert "predictions inserted 0, already stored 173, differing 1" in out
+    assert "evaluations inserted 0, already stored 173, differing 0, " in out
+    assert "not written for differing predictions 1; " in out
     assert "WARNING: 1 stored row(s) differ from this run and were NOT overwritten" in out
     assert "prediction ('0022300050'," in out and "p_home: Decimal('0.1234') ->" in out
     with engine.connect() as conn:
@@ -177,6 +181,51 @@ def test_store_and_dry_run_are_exclusive_and_the_dummy_is_not_storable(
     code = backtest(engine, "--experiment", "H-00", "--seasons", "2023-24", "--store")
     err = capsys.readouterr().err
     assert code == 64 and "not a storable model" in err
+    assert counts(engine, MODELING) == {"model_versions": 0, "predictions": 0, "evaluations": 0}
+
+
+def test_the_run_phase_is_a_read_only_transaction(
+    engine: Engine, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The walk-forward and the scoring run under SET TRANSACTION READ ONLY: a write attempted
+    on their connection fails (exit 1, the server's read-only message), even with --store."""
+
+    def write_attempt(conn: object, *args: object, **kwargs: object) -> None:
+        """Pretend a predictor tried to write."""
+        conn.execute(text("UPDATE games SET status_text = status_text WHERE false"))  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(backtest_cli, "run_walk_forward", write_attempt)
+    code = backtest(engine, "--experiment", "B0", "--seasons", "2023-24", "--store")
+    captured = capsys.readouterr()
+    assert code == 1 and "read-only transaction" in captured.err and captured.out == ""
+    assert counts(engine, MODELING) == {"model_versions": 0, "predictions": 0, "evaluations": 0}
+
+
+def test_store_error_exits_1_with_an_error_log_and_writes_nothing(
+    engine: Engine,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A StoreError (configuration conflict) is exit 1, one stderr line, an ERROR log, and
+    the store transaction is rolled back."""
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        """Pretend the configuration row conflicts."""
+        raise StoreError(
+            "model_versions always_home_b0 v1 already exists with a different configuration"
+        )
+
+    monkeypatch.setattr(backtest_cli, "store_run", refuse)
+    with caplog.at_level(logging.ERROR, logger="presagio.evaluation"):
+        code = backtest(engine, "--experiment", "B0", "--seasons", "2023-24", "--store")
+    captured = capsys.readouterr()
+    assert code == 1 and captured.err.startswith("presagio backtest: StoreError: ")
+    assert "Traceback" not in captured.err and captured.out == ""
+    assert any(
+        r.levelno == logging.ERROR and "store refused the run" in r.getMessage()
+        for r in caplog.records
+    )
     assert counts(engine, MODELING) == {"model_versions": 0, "predictions": 0, "evaluations": 0}
 
 

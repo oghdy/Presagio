@@ -249,7 +249,8 @@ def storage_lines(store: StoreReport | None, dry_run: bool) -> list[str]:
             else ""
         )
         + f"); {_table_line('predictions', store.predictions)}; "
-        f"{_table_line('evaluations', store.evaluations)}; holdout rows not written: "
+        f"{_table_line('evaluations', store.evaluations)}, not written for differing "
+        f"predictions {store.evaluations_skipped_for_mismatch}; holdout rows not written: "
         f"{store.holdout_skipped_predictions} predictions, "
         f"{store.holdout_skipped_evaluations} evaluations."
     ]

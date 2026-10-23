@@ -559,6 +559,20 @@ class BadSource:
 
 
 @pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
+def test_training_guard_rules_hold_without_the_cross_check(conn: Connection, mode: str) -> None:
+    """Each 6-2 rule pinned on its own (P-033 review: the games cross-check must not be the
+    only thing catching these): called without `games`, the guard still refuses features at
+    the refit date, D(h) moved to the cutoff date, and the same-day row whose only broken
+    rule is the strict R1 `D(h) < fit_cutoff`."""
+    cutoff = date(2024, 11, 20)
+    matrix = BadSource(conn, mode).training_matrix("dummy-fv0", cutoff)
+    with pytest.raises(LeakageGuardError):
+        _check_training(matrix, cutoff, backtest_as_of(cutoff))
+    honest = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
+    _check_training(honest.training_matrix("dummy-fv0", cutoff), cutoff, backtest_as_of(cutoff))
+
+
+@pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
 def test_runner_guard_rejects_training_rows_that_break_6_2(conn: Connection, mode: str) -> None:
     """Features recomputed at the refit date, or a game not before the cutoff -> error."""
     with pytest.raises(LeakageGuardError):

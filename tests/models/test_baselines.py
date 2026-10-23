@@ -137,7 +137,7 @@ def test_b0_previous_season_is_the_latest_earlier_one_not_the_target_season() ->
     previous = home_wins(4, "2022-23", 10)  # home rate 1
     current = away_wins(2, "2023-24", 20)
     game = target("g", "2023-24", C, D)
-    assert b0_home_probability(older + previous + current, game, min_season_games=4) == 1.0
+    assert b0_home_probability(older + previous + current, game, min_season_games=4) == 0.95
 
 
 def test_b0_neutral_game_is_one_half_whatever_the_rate() -> None:
@@ -147,7 +147,7 @@ def test_b0_neutral_game_is_one_half_whatever_the_rate() -> None:
         b0_home_probability(results, target("g", "2023-24", C, D, neutral=True), min_season_games=4)
         == 0.5
     )
-    assert b0_home_probability(results, target("g", "2023-24", C, D), min_season_games=4) == 1.0
+    assert b0_home_probability(results, target("g", "2023-24", C, D), min_season_games=4) == 0.95
 
 
 def test_b0_default_threshold_is_the_design_proposal() -> None:
@@ -155,9 +155,29 @@ def test_b0_default_threshold_is_the_design_proposal() -> None:
     assert MIN_SEASON_GAMES == 100
     game = target("g", "2023-24", C, D)
     assert b0_home_probability(home_wins(99, "2023-24"), game) == 0.5
-    assert b0_home_probability(home_wins(100, "2023-24"), game) == 1.0
+    assert b0_home_probability(home_wins(100, "2023-24"), game) == 0.95
     with pytest.raises(ValueError):
         AlwaysHomeBaseline(min_season_games=0)
+
+
+def test_b0_is_clipped_like_b1_so_a_0_or_1_rate_never_stops_the_run() -> None:
+    """D-055 item 6: a 4-0 (home) season sample gives 0.95, a 0-4 one 0.05, with the default
+    [0.05, 0.95]; the previous-season fallback is clipped too; a custom range applies; the
+    range is recorded in the hyperparameters; a bad range is refused."""
+    game = target("g", "2023-24", C, D)
+    assert b0_home_probability(home_wins(4, "2023-24"), game, min_season_games=4) == 0.95
+    assert b0_home_probability(away_wins(4, "2023-24"), game, min_season_games=4) == 0.05
+    assert b0_home_probability(away_wins(4, "2022-23"), game, min_season_games=4) == 0.05
+    assert (
+        b0_home_probability(home_wins(4, "2023-24"), game, min_season_games=4, clip=(0.1, 0.9))
+        == 0.9
+    )
+    b0 = AlwaysHomeBaseline(min_season_games=4, clip=(0.2, 0.8))
+    assert predict(b0, [game], context(home_wins(4, "2023-24"))) == {"g": 0.8}
+    assert b0.spec.hyperparameters["clip"] == [0.2, 0.8]
+    assert AlwaysHomeBaseline().spec.hyperparameters["clip"] == [0.05, 0.95]
+    with pytest.raises(ValueError):
+        AlwaysHomeBaseline(clip=(0.6, 0.9))
 
 
 # --- B1 ---------------------------------------------------------------------------------

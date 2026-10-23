@@ -4,17 +4,26 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from presagio.evaluation.dummy import ConstantPredictor
+from presagio.evaluation.market import NO_ODDS_SEASONS, market_status
 from presagio.evaluation.scoring import EvaluationRecord, ScoringResult, score_prediction, score_run
 from presagio.evaluation.walkforward import WalkForwardConfig, WalkForwardResult, run_walk_forward
 
-from .league import LIVE_AVAILABLE, LIVE_PRED_ONLY, LIVE_UNMATCHED, League
+from .league import (
+    LIVE_AVAILABLE,
+    LIVE_PRED_ONLY,
+    LIVE_UNMATCHED,
+    League,
+    et,
+    insert_games,
+    insert_stats,
+)
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 
@@ -98,6 +107,51 @@ def test_past_seasons_are_no_odds_season(conn: Connection) -> None:
     assert {r.market_status for r in scoring.records} == {"no_odds_season"}
     assert all(r.market_p_home_pred is None for r in scoring.records)
     assert len(scoring.records) == 171
+
+
+def test_2022_23_is_a_no_odds_season(conn: Connection, league: League) -> None:
+    """P-033 criterion 5 (h): the warm-up season 2022-23 (P-026, M-11) has no odds, so a
+    scored 2022-23 game is `no_odds_season`, not `no_snapshot_at_as_of`."""
+    assert NO_ODDS_SEASONS == ("2022-23", "2023-24", "2024-25", "2025-26")
+    assert (
+        market_status(
+            season="2022-23",
+            rescheduled=False,
+            has_prediction_market=False,
+            has_closing_market=False,
+            has_matched_event=False,
+            has_unmatched_candidate=False,
+        )
+        == "no_odds_season"
+    )
+    a, b, _, _ = league.teams
+    raw = conn.execute(text("SELECT min(raw_response_id) FROM raw_api_responses")).scalar_one()
+    older = [
+        {
+            "game_id": f"00222{n:05d}",
+            "season": "2022-23",
+            "start_time_utc": et(date(2023, 1, 10) + timedelta(2 * n), 20),
+            "status_code": 3,
+            "status_text": "Final",
+            "home_team_id": a,
+            "away_team_id": b,
+            "home_score": 100 + n,
+            "away_score": 90,
+            "is_neutral": False,
+            "source": "leaguegamelog",
+        }
+        for n in range(3)
+    ]
+    insert_games(conn, older, raw)
+    for game in older:
+        insert_stats(conn, game, raw)
+    run = run_walk_forward(
+        conn, ConstantPredictor(), WalkForwardConfig(seasons=("2022-23",)), now=NOW
+    )
+    scoring = score_run(conn, run)
+    assert len(scoring.records) == 3
+    assert {r.market_status for r in scoring.records} == {"no_odds_season"}
+    assert {p.market_status for p in run.predictions} == {"no_odds_season"}
 
 
 def test_rescheduled_game_leaves_the_market_comparison(conn: Connection, league: League) -> None:

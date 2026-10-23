@@ -8,7 +8,9 @@ runner hands it: results() (finished games passing R1 and R2), schedule() and th
 - B0 always home:   p_home = the season's cumulative home win rate (F-17 league_home_rate_std)
                     once the season sample has at least MIN_SEASON_GAMES games, before that the
                     previous season's final home win rate, and 0.5 without one; 0.5 for neutral
-                    games. "Always home" for accuracy is p_home >= 0.5.
+                    games; clipped to WIN_RATE_CLIP like B1 (D-055 item 6: a 0/1 rate from a
+                    tiny sample must not stop the run). "Always home" for accuracy is
+                    p_home >= 0.5.
 - B1 season win %:  p_home = 0.5 + 0.5 x (win%_home - win%_away), clipped to WIN_RATE_CLIP;
                     0.5 (home) when the rates tie or either team has no game this season.
 - B3 market:        p_home = the prediction-time consensus market probability (design 4-3,
@@ -27,7 +29,8 @@ from typing import Any, Protocol
 
 from presagio.models.spec import BASELINE_HOME, BASELINE_SEASON_WR, MARKET, ModelSpec
 
-# Design 5-1 proposal values (D-049): season sample below which B0 falls back, B1 clipping.
+# Design 5-1 proposal values (D-049): season sample below which B0 falls back, and the
+# probability clipping of B1 (D-055 item 6: B0 uses the same range).
 MIN_SEASON_GAMES = 100
 WIN_RATE_CLIP = (0.05, 0.95)
 NEUTRAL_P_HOME = 0.5
@@ -120,26 +123,41 @@ def previous_season(results: Iterable[Result], season: str) -> str | None:
     return max(earlier) if earlier else None
 
 
+def validate_clip(clip: tuple[float, float]) -> tuple[float, float]:
+    """A clipping range with 0 < lower <= 0.5 <= upper < 1, as floats; ValueError otherwise."""
+    lower, upper = clip
+    if not 0.0 < lower <= 0.5 <= upper < 1.0:
+        raise ValueError(f"clip must satisfy 0 < lower <= 0.5 <= upper < 1, got {clip!r}")
+    return (float(lower), float(upper))
+
+
+def clip_probability(p: float, clip: tuple[float, float] = WIN_RATE_CLIP) -> float:
+    """p clipped into [lower, upper]."""
+    lower, upper = clip
+    return min(max(p, lower), upper)
+
+
 def b0_home_probability(
     results: Sequence[Result],
     game: Target,
     *,
     min_season_games: int = MIN_SEASON_GAMES,
+    clip: tuple[float, float] = WIN_RATE_CLIP,
 ) -> float:
     """B0: season home win rate, previous season's before the sample is big enough, else 0.5;
-    0.5 for a neutral game (design 5-1, F-17)."""
+    0.5 for a neutral game (design 5-1, F-17); the rate is clipped (D-055 item 6)."""
     if game.is_neutral:
         return NEUTRAL_P_HOME
     this_season = season_results(results, game.season)
     if len(this_season) >= min_season_games:
         rate = home_win_rate(this_season)
         assert rate is not None
-        return rate
+        return clip_probability(rate, clip)
     previous = previous_season(results, game.season)
     if previous is None:
         return NO_SAMPLE_P_HOME
     rate = home_win_rate(season_results(results, previous))
-    return NO_SAMPLE_P_HOME if rate is None else rate
+    return NO_SAMPLE_P_HOME if rate is None else clip_probability(rate, clip)
 
 
 def season_records(results: Iterable[Result], season: str) -> dict[int, SeasonRecord]:
@@ -165,8 +183,7 @@ def b1_home_probability(
     tie (design 5-1)."""
     if home_rate is None or away_rate is None or home_rate == away_rate:
         return TIE_P_HOME
-    lower, upper = clip
-    return min(max(0.5 + 0.5 * (home_rate - away_rate), lower), upper)
+    return clip_probability(0.5 + 0.5 * (home_rate - away_rate), clip)
 
 
 class AlwaysHomeBaseline:
@@ -177,11 +194,14 @@ class AlwaysHomeBaseline:
     feature_version = None
     uses_results = True
 
-    def __init__(self, min_season_games: int = MIN_SEASON_GAMES) -> None:
-        """Keep the fallback threshold (a proposal value, design 5-1)."""
+    def __init__(
+        self, min_season_games: int = MIN_SEASON_GAMES, clip: tuple[float, float] = WIN_RATE_CLIP
+    ) -> None:
+        """Keep the fallback threshold and the clipping range (proposal values, 5-1, D-055)."""
         if min_season_games < 1:
             raise ValueError("min_season_games must be >= 1")
         self.min_season_games = min_season_games
+        self.clip = validate_clip(clip)
 
     @property
     def spec(self) -> ModelSpec:
@@ -192,10 +212,11 @@ class AlwaysHomeBaseline:
             model_family=BASELINE_HOME,
             hyperparameters={
                 "min_season_games": self.min_season_games,
+                "clip": list(self.clip),
                 "neutral_p_home": NEUTRAL_P_HOME,
                 "no_sample_p_home": NO_SAMPLE_P_HOME,
                 "rate": "season cumulative home win rate (F-17), previous season before "
-                "min_season_games",
+                "min_season_games, clipped",
             },
         )
 
@@ -209,7 +230,9 @@ class AlwaysHomeBaseline:
         results = tuple(context.results())
         return {
             g.game_id: BaselinePrediction(
-                b0_home_probability(results, g, min_season_games=self.min_season_games)
+                b0_home_probability(
+                    results, g, min_season_games=self.min_season_games, clip=self.clip
+                )
             )
             for g in games
         }
@@ -225,10 +248,7 @@ class SeasonWinRateBaseline:
 
     def __init__(self, clip: tuple[float, float] = WIN_RATE_CLIP) -> None:
         """Keep the clipping range (a proposal value, design 5-1)."""
-        lower, upper = clip
-        if not 0.0 < lower <= 0.5 <= upper < 1.0:
-            raise ValueError(f"clip must satisfy 0 < lower <= 0.5 <= upper < 1, got {clip!r}")
-        self.clip = (float(lower), float(upper))
+        self.clip = validate_clip(clip)
 
     @property
     def spec(self) -> ModelSpec:

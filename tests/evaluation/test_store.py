@@ -134,17 +134,19 @@ def test_storing_twice_changes_nothing_and_reports_no_difference(conn: Connectio
 def test_changed_values_are_reported_with_examples_and_never_overwritten(
     conn: Connection,
 ) -> None:
-    """Criterion 3: a prediction whose p_home differs and an evaluation whose log loss
-    differs are counted and shown; the stored rows keep their first values; counts stay."""
+    """Criterion 3 and D-055 item 2: a prediction whose p_home differs is counted and shown
+    and gets NO evaluation row from this run (its stored evaluation stays); an evaluation
+    whose log loss differs (prediction unchanged) is counted and shown; the stored rows keep
+    their first values; row counts stay."""
     predictor, run, scoring = run_and_score(conn)
     store(conn, predictor, run, scoring)
     before = counts(conn)
-    target = run.predictions[10]
-    changed_prediction = replace(target, p_home=0.1234)
+    changed_prediction = replace(run.predictions[10], p_home=0.1234)
     changed_run = replace(
         run, predictions=[*run.predictions[:10], changed_prediction, *run.predictions[11:]]
     )
-    record = next(r for r in scoring.records if r.prediction.game.game_id == target.game.game_id)
+    other = run.predictions[20].game.game_id
+    record = next(r for r in scoring.records if r.prediction.game.game_id == other)
     changed_record = replace(record, log_loss=9.0, brier=0.999)
     changed_scoring = ScoringResult(
         [changed_record, *(r for r in scoring.records if r is not record)], scoring.not_final
@@ -152,17 +154,26 @@ def test_changed_values_are_reported_with_examples_and_never_overwritten(
     report = store(conn, predictor, changed_run, changed_scoring)
     assert counts(conn) == before
     assert (report.predictions.mismatched, report.predictions.existing) == (1, 173)
-    assert (report.evaluations.mismatched, report.evaluations.existing) == (1, 173)
-    assert report.mismatches == 2
+    assert report.evaluations_skipped_for_mismatch == 1
+    assert (report.evaluations.mismatched, report.evaluations.existing) == (1, 172)
+    assert report.evaluations.total == 173 and report.mismatches == 2
     assert len(report.predictions.examples) == 1 and "p_home" in report.predictions.examples[0]
-    assert target.game.game_id in report.predictions.examples[0]
-    assert (
-        "log_loss" in report.evaluations.examples[0] and "brier" in report.evaluations.examples[0]
-    )
+    assert changed_prediction.game.game_id in report.predictions.examples[0]
+    assert "log_loss" in report.evaluations.examples[0]
+    assert "brier" in report.evaluations.examples[0]
     stored = conn.execute(
-        text("SELECT p_home FROM predictions WHERE game_id = :g"), {"g": target.game.game_id}
+        text("SELECT p_home FROM predictions WHERE game_id = :g"),
+        {"g": changed_prediction.game.game_id},
     ).scalar_one()
-    assert stored == probability(target.p_home) != Decimal("0.1234")
+    assert stored == probability(run.predictions[10].p_home) != Decimal("0.1234")
+    stored_ll = conn.execute(
+        text(
+            "SELECT e.log_loss FROM evaluations e JOIN predictions p USING (prediction_id) "
+            "WHERE p.game_id = :g"
+        ),
+        {"g": other},
+    ).scalar_one()
+    assert stored_ll == quantize(record.log_loss, 6) != Decimal("9.000000")
 
 
 def test_locked_holdout_rows_are_never_written(conn: Connection) -> None:

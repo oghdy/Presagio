@@ -6,6 +6,9 @@ Rules (schema v1 9-1, modeling design 8-2..8-4, D-030):
   NOTHING; a row that already exists under the same key is never updated. Its stored values
   are compared with the values this run produced and every difference is reported with a
   count and examples (the same way the feature_drift quality check reports), never written.
+  An evaluation is never attached to a prediction whose stored values differ from this
+  run's (it would score the stored prediction with this run's numbers, D-055 item 2); those
+  evaluations are counted separately.
 - One model_versions row per (model_name, version). An existing row must describe the same
   configuration (family, feature version, hyperparameters, seed, training window, tuning
   data, experiment); otherwise nothing is stored (StoreError: bump the version). Only
@@ -116,6 +119,7 @@ class TableReport:
     existing: int = 0  # same key, same values
     mismatched: int = 0  # same key, different values: reported, not written
     examples: list[str] = field(default_factory=list)
+    mismatched_keys: set[tuple] = field(default_factory=set, repr=False)
 
     @property
     def total(self) -> int:
@@ -136,6 +140,8 @@ class StoreReport:
     evaluations: TableReport
     holdout_skipped_predictions: int
     holdout_skipped_evaluations: int
+    # Evaluations not written because their prediction's stored values differ (D-055 item 2).
+    evaluations_skipped_for_mismatch: int = 0
 
     @property
     def mismatches(self) -> int:
@@ -363,6 +369,7 @@ def _compare(
             report.existing += 1
             continue
         report.mismatched += 1
+        report.mismatched_keys.add(k)
         if len(report.examples) < MAX_EXAMPLES:
             report.examples.append(f"{label} {k}: " + "; ".join(diffs))
     return report
@@ -433,10 +440,14 @@ def store_run(
     )
     scored = [r for r in scoring.records if r.prediction.game.season not in locked]
     eval_rows = []
+    skipped_for_mismatch = 0
     for r in scored:
         key = (r.prediction.game.game_id, model_version_id, r.prediction.as_of)
         if key not in stored_preds:
             raise StoreError(f"evaluation of a prediction this run did not make: {key}")
+        if key in pred_report.mismatched_keys:
+            skipped_for_mismatch += 1  # never score a stored prediction with this run's values
+            continue
         eval_rows.append(evaluation_row(r, stored_preds[key]["prediction_id"], now, code_version))
     eval_key = ("prediction_id", "metric_version")
     eval_table = Evaluation.__table__
@@ -462,10 +473,11 @@ def store_run(
         evaluations=eval_report,
         holdout_skipped_predictions=len(run.predictions) - len(kept),
         holdout_skipped_evaluations=len(scoring.records) - len(scored),
+        evaluations_skipped_for_mismatch=skipped_for_mismatch,
     )
     logger.info(
         "stored %s v%s (model_version_id %d%s): predictions +%d =%d !%d, evaluations +%d =%d "
-        "!%d, holdout skipped %d/%d",
+        "!%d (not written for differing predictions %d), holdout skipped %d/%d",
         spec.model_name,
         spec.version,
         model_version_id,
@@ -476,6 +488,7 @@ def store_run(
         eval_report.inserted,
         eval_report.existing,
         eval_report.mismatched,
+        skipped_for_mismatch,
         report.holdout_skipped_predictions,
         report.holdout_skipped_evaluations,
     )
