@@ -22,6 +22,7 @@ from presagio.ingestion.sources.nba_api import (
     parse_game_log,
     parse_schedule,
 )
+from presagio.ingestion.sources.nba_api.schedule import UNFLAGGED_NEUTRAL_GAME_IDS
 
 from ..helpers import (
     BROKEN_GAMES,
@@ -112,6 +113,45 @@ def test_current_season_scheduled_tbd_and_final_games() -> None:
     assert cup_final.is_neutral is True
     assert cup_final.if_necessary is False  # the schedule sends the string "false"
     assert games["0022600002"].game_subtype is None  # "" -> None
+
+
+def test_2023_24_neutral_sites_are_true_although_the_source_says_false() -> None:
+    """P-025: 2023-24 sends isNeutral=false everywhere; the five neutral-site games become true."""
+    data = fixture_json("scheduleleaguev2__2023-24_neutral")
+    sent = {g["gameId"]: (g["isNeutral"], g["arenaCity"]) for g in schedule_games(data)}
+    assert sent == {
+        "0022300172": (False, "Mexico City"),
+        "0022301229": (False, "Las Vegas"),  # cup East semifinal
+        "0022301230": (False, "Las Vegas"),  # cup West semifinal
+        "0022300527": (False, "Paris"),
+        "0022300965": (False, "Austin"),  # SAS home game away from San Antonio: not neutral
+    }
+    neutral = {g.game_id: g.is_neutral for g in parse_schedule(data, "2023-24", PROV).games}
+    # The type-per-game fixture adds the cup final in Las Vegas and a regular game in Denver.
+    typed = parse_schedule(fixture_json("scheduleleaguev2__2023-24"), "2023-24", PROV)
+    neutral |= {g.game_id: g.is_neutral for g in typed.games}
+    assert neutral["0062300001"] is True
+    assert neutral["0022300061"] is False
+    assert neutral["0022300965"] is False
+    assert {game_id for game_id, flag in neutral.items() if flag} == UNFLAGGED_NEUTRAL_GAME_IDS
+
+
+def test_unflagged_neutral_list_is_closed_to_2023_24_stored_games() -> None:
+    """The list only fills the 2023-24 gap: a true flag is kept, false elsewhere stays false."""
+    assert len(UNFLAGGED_NEUTRAL_GAME_IDS) == 5
+    assert {season_of(game_id) for game_id in UNFLAGGED_NEUTRAL_GAME_IDS} == {"2023-24"}
+    assert {game_type_of(game_id) for game_id in UNFLAGGED_NEUTRAL_GAME_IDS} == {
+        "regular",
+        "cup_final",
+    }
+    data = fixture_json("scheduleleaguev2__2024-25")
+    flagged = {g["gameId"] for g in schedule_games(data) if g["isNeutral"] is True}
+    assert flagged == {"0012400001", "0062400001"}  # Abu Dhabi preseason (skipped), cup final
+    neutral = {g.game_id: g.is_neutral for g in parse_schedule(data, "2024-25", PROV).games}
+    assert {game_id for game_id, flag in neutral.items() if flag} == {"0062400001"}
+    for game in schedule_games(data):
+        game["isNeutral"] = False
+    assert not any(g.is_neutral for g in parse_schedule(data, "2024-25", PROV).games)
 
 
 def test_season_mismatch_is_rejected() -> None:

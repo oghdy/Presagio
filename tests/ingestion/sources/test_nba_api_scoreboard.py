@@ -76,6 +76,21 @@ def test_final_games_keep_scores_and_overtime_text() -> None:
     assert not batch.issues  # every game starts inside ET 2026-03-05
 
 
+def test_2023_24_neutral_site_game_is_true_like_the_schedule() -> None:
+    """P-025: a past 2023-24 date must not turn a listed neutral-site game back to false."""
+    data = board()
+    data["scoreboard"]["gameDate"] = "2023-11-09"
+    mexico, other = data["scoreboard"]["games"]
+    mexico.update(gameId="0022300172", gameTimeUTC="2023-11-10T02:30:00Z", isNeutral=False)
+    other.update(gameId="0022300171", gameTimeUTC="2023-11-10T00:00:00Z", isNeutral=False)
+    batch = parse_scoreboard(data, date(2023, 11, 9), PROV)
+    assert {g.game_id: g.is_neutral for g in batch.games} == {
+        "0022300172": True,
+        "0022300171": False,
+    }
+    assert not batch.rejected and not batch.issues
+
+
 def test_response_for_another_date_is_a_format_error() -> None:
     """Asking for 10-21 and getting gameDate 10-22 means the call itself is wrong."""
     with pytest.raises(SourceFormatError, match="asked for 2026-10-21"):

@@ -35,6 +35,14 @@ LEAGUE_ID = "00"
 NBA_SEASON_TYPES = {"regular": "Regular Season", "playin": "PlayIn", "playoffs": "Playoffs"}
 STATUS_FINAL = 3
 TBD_STATUS_TEXT = "TBD"
+# The 2023-24 schedule sends isNeutral=false for all 1,396 games, so its neutral-site games are
+# listed here (P-025, D-046), found in raw arenaCity/gameLabel: Mexico City, the cup semifinals
+# and final in Las Vegas, Paris. From 2024-25 the flag marks every neutral game (Indianapolis
+# hosts the 2026-27 cup final, so a host-city list could not), and the past season is closed.
+# The schedule and the scoreboard both apply it.
+UNFLAGGED_NEUTRAL_GAME_IDS = frozenset(
+    {"0022300172", "0022301229", "0022301230", "0062300001", "0022300527"}
+)
 
 
 def provenance_of(result: FetchResult) -> Provenance:
@@ -62,6 +70,11 @@ def parse_bool(value: Any, where: str) -> bool:
     if isinstance(value, str) and value.lower() in ("true", "false"):
         return value.lower() == "true"
     raise SourceFormatError(f"{where}: expected a boolean, got {value!r}")
+
+
+def is_neutral_game(game_id: str, flag: bool) -> bool:
+    """The isNeutral flag, or a known neutral-site game the source does not flag."""
+    return flag or game_id in UNFLAGGED_NEUTRAL_GAME_IDS
 
 
 def team_id_or_none(value: Any, where: str) -> int | None:
@@ -112,7 +125,7 @@ def parse_schedule_game(game: Any) -> GameRecord:
         # The schedule sends 0 for games not played yet; 0 points and "no score" differ.
         home_score=score(require(home, "score", where), f"{where} homeTeam") if final else None,
         away_score=score(require(away, "score", where), f"{where} awayTeam") if final else None,
-        is_neutral=parse_bool(require(game, "isNeutral", where), where),
+        is_neutral=is_neutral_game(game_id, parse_bool(require(game, "isNeutral", where), where)),
         if_necessary=parse_bool(require(game, "ifNecessary", where), where),
     )
 
