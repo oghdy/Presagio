@@ -49,18 +49,19 @@ def test_clean_data_prints_a_table_and_exits_0(
     code, out = run(capsys, "--season", "2023-24", engine=engine)
     assert code == 0
     lines = out.splitlines()
-    assert lines[0] == "Quality check: season 2023-24 (14 checks, read only)"
+    assert lines[0] == "Quality check: season 2023-24 (17 checks, read only)"
     assert lines[1].split() == [
         "#", "check", "target", "status", "passed", "failed", "examples", "description"
     ]  # fmt: skip
     for name in CHECK_NAMES:
-        assert any(f" {name} " in line and " PASS " in line for line in lines), name
+        status = " SKIP " if name == "feature_drift" else " PASS "  # nothing to compare yet
+        assert any(f" {name} " in line and status in line for line in lines), name
     row = next(line for line in lines if " team_rows_per_game " in line)
     assert "final games (regular, playin, playoffs); season 2023-24" in row
     assert " 1232       0 " in row  # passed, failed
     assert "each final game has 2 team stat rows, 1 home" in row
     assert "  5. regular_season_games: expected 1230 +/- 0; 2023-24: 1230 final" in out
-    assert lines[-1] == "Summary: 14 pass, 0 fail, 0 warn, 0 error, 0 skip -> exit code 0"
+    assert lines[-1] == "Summary: 16 pass, 0 fail, 0 warn, 0 error, 1 skip -> exit code 0"
 
 
 def test_failure_exits_1_and_shows_the_game_id(
@@ -75,7 +76,7 @@ def test_failure_exits_1_and_shows_the_game_id(
     # The wrong pts also breaks pts = 2*fgm + fg3m + ftm for that row.
     arithmetic = next(line for line in out.splitlines() if " stat_arithmetic " in line)
     assert " FAIL  " in arithmetic and f"{broken_game}:" in arithmetic
-    assert out.splitlines()[-1].endswith("2 fail, 0 warn, 0 error, 0 skip -> exit code 1")
+    assert out.splitlines()[-1].endswith("2 fail, 0 warn, 0 error, 1 skip -> exit code 1")
 
 
 def test_json_output_is_machine_readable(
