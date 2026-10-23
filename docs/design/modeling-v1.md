@@ -762,6 +762,7 @@ docker compose exec postgres psql -U presagio -d presagio -c "SELECT season, min
 - 2026-27 매일 수집이 실제로 돌기 시작했는지(Q-R 시점에는 아직. P-024 진행 중).
 - NBA 승패 log loss의 "알려진 범위"(0.62~0.69라고 적은 것은 기억이며 미확인). 판정 기준은 **차이**(Δ)로 두었으므로 절대 수준에 의존하지 않는다.
 - `postponed_status` 값의 뜻(schema 6-1 미확인 그대로). 연기 판단은 1-2의 시각 비교로만 한다.
+- 진행 중 시즌(2026-27)에서 스코어보드 갱신이 일정의 `is_neutral = true`를 false로 덮어쓸 위험(P-025 PR #21이 후속 후보로 적음. 스코어보드 응답에 `arenaCity`가 없음). F-09·Elo 홈 어드밴티지는 "일정 기준 값"을 전제하므로, P-031 전에 Data Engineer가 확인·보완해야 한다. 2023-24 값 보완은 P-025에서 끝났다(개발 DB 2023-24 `is_neutral` true 5, 12-1 Q-A는 그 전 값 0).
 
 ### 12-4. 완료 기준 1~9가 어디에 있나
 
