@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·P-031·P-032·**P-026** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. P-033 BLOCKED: 첫 클라우드 세션이 셋업 스크립트 실패(상대 경로 → exit 127, Q-024)로 시작 못 함 → 환경 셋업 칸 수정 뒤 새 세션.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·P-031·P-032·**P-026** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. P-033 IN PROGRESS(2차 클라우드 세션 `p-033-baselines-2`. 1차는 셋업 스크립트 상대 경로로 실패 → Q-024로 환경 셋업 칸을 경로 무관 래퍼로 교체).** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -439,7 +439,7 @@
 | P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | TODO | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
-| P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | BLOCKED (클라우드 셋업 스크립트 실패, Q-024 → 환경 수정 뒤 재시작) | P-031·P-032 DONE ✓ |
+| P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | IN PROGRESS (2차 클라우드 세션 p-033-baselines-2, presagio-dev) | P-031·P-032 DONE ✓ |
 | P-034 | Elo 레이팅(홈 어드밴티지, 시즌 간 평균 회귀, 중립 경기 처리) + 총점 기준선(최근 N경기 평균) | ml-engineer | TODO | P-033 |
 | P-035 | as_of 피처 모듈 v1 (최근 5/10/20 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정, 시즌 누적) + 누수 테스트 | ml-engineer | TODO | P-031 |
 | P-036 | 누수 감사 1차 (P-032~P-035 대상: as_of 강제, 시간 여행 테스트, 미래 주입 테스트) | leakage-auditor | TODO | P-035 |
@@ -526,7 +526,7 @@
   - 2026-10-23 PM 18:2x: 작성자 수정 `81fca24`("score-free prediction context, pin every runner guard": `PredictionContext`를 R1·R2 결과 튜플 + 점수 없는 일정 뷰 `ScheduledGame`(cup_final 포함) + 읽기 전용 시장만 담는 frozen dataclass로, 전체 경기 목록은 실행기 내부 `_History`로, 가드 3곳 전용 테스트, 실행기 수준 배당 시간 여행 테스트, 테스트 121→133). **재리뷰 "수락 가능" + [누수 감사] "누수 없음"**(`P-032-review-2.md`): 1차 재현 코드가 `AttributeError`/`FrozenInstanceError`로 중단, gc 수준 객체 그래프 검사 위반 0(하루 최대 26,495객체), 1차 생존 변이 3개 전부 잡힘, 610 passed(네트워크 0), CLI 출력 1차와 바이트 동일·SQL 424개 전부 SELECT, 복제본 시간 여행·미래 주입·배당 시간 여행 불변(일정 뷰 포함 해시로도). 새 [낮음] 2: cup_final 제외 조건 변이가 살아남음(픽스처 cup final에 스탯 없어서 R2가 대신 막음 → P-033에서 픽스처 스탯 2행), PR 본문 옛 문구(작성자가 본문만 정리). 참고: 의도적 스택 프레임 우회(`sys._getframe`)는 파이썬 한계 → P-033/P-036 AST 금지 테스트, `ScheduledGame`에 상태 없음(P-035 설계 문제), `GameMarket` 내부 dict 가변(P-033 저장 시 복사). **PM 수락.** 사람 머지 대기 → 머지 후 P-033 브리핑(P-031도 머지돼야 함).
 
 ### P-033 승패 기준선 3종(B0·B1·B3) + 결과 저장 경로
-- **상태:** BLOCKED (2026-10-23 21:5x 첫 클라우드 세션 `p-033-baselines`가 **셋업 스크립트 실패로 시작 못 함**: `Setup script failed with exit code 127 / bash: scripts/cloud-setup.sh: No such file or directory`. 레포 복제는 됐고("리포지토리 1개 복제 완료") 플랫폼이 스크립트를 레포 루트가 아닌 작업 디렉터리에서 돌린다. 환경 셋업 칸을 경로 무관 스크립트로 바꾼 뒤(Q-024) 같은 브리핑으로 새 세션을 띄운다. 실패한 세션은 "이 세션은 계속할 수 없습니다"라 폐기)
+- **상태:** IN PROGRESS (2026-10-24 00:1x 사람 지시 → **2차 클라우드 세션** `p-033-baselines-2`(환경 `presagio-dev`, 셋업 칸 Q-024 래퍼로 교체 뒤). 1차(10-23 21:4x)는 셋업 스크립트 실패로 시작 못 해 폐기. 브리핑 = 1차 전문 + "Q-024용 사실(`pwd`·`CLAUDE_PROJECT_DIR`·클론 경로)을 PR에 적어라". 기준 6(실데이터)은 머지 후 PM이 로컬 개발 DB에서. 완료 확인은 `gh pr list --head feat/P-033-baselines-store`(D-052))
 - **담당 역할:** ml-engineer (Opus 5.5 높음)
 - **단계:** 2
 - **의존:** P-031 DONE, P-032 DONE (둘 다 2026-10-23 머지, 개발 DB 0002 적용)
@@ -544,6 +544,7 @@
   7. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, 네트워크 0, 새 의존성은 numpy 명시만.
 - **확인 방법:** CLI 명령 + `SELECT mv.model_family, count(p.*) FROM predictions p JOIN model_versions mv USING (model_version_id) GROUP BY 1`, 두 번 실행 전후 count, 테스트.
 - **메모:**
+  - 2026-10-24 PM 00:1x: 사람이 Q-024 (a) 승인 → PM이 Claude in Chrome으로 `presagio-dev` 편집(환경 선택기 → 클라우드 → 행 hover → 톱니 → 설정 스크립트) 칸을 래퍼로 교체, 사람 확인 뒤 "변경사항 저장"(토스트 "환경 업데이트됨"). 같은 브리핑(+Q-024 사실 수집 지시)으로 2차 세션 요청(task_385637e4).
   - 2026-10-23 PM 21:5x: 첫 시도 실패(위). 공식 문서(`cloud-environments.md` Setup scripts 절)는 "runs as root on Ubuntu 24.04, before Claude Code launches"만 말하고 작업 디렉터리·클론 경로는 적지 않는다. `scripts/cloud-setup.sh` 자체는 `$BASH_SOURCE` 기준으로 레포를 찾으므로 절대 경로로 부르면 된다 — 클론 경로를 모르니 `find`로 찾는 한 줄 래퍼를 셋업 칸에 넣는 수정안(Q-024). P-040 리뷰·첫 클라우드 세션 실측에도 클론 경로(`pwd`) 기록이 없었다(교훈: 셋업 칸 문구는 실제 플랫폼 실행 1회로 검증해야 했다 = 기준 4가 바로 그것).
   - 2026-10-23 PM 21:4x: 환경 `presagio-dev` 생성 직후 `start_session target: cloud`로 세션 요청(task_3915f1ce). 앱 환경 목록이 생성 뒤 약 1분 늦게 갱신돼 1회 거부("No cloud environment named") 후 재시도 성공. 기준 5에 (h) `NO_ODDS_SEASONS` 2022-23 추가(P-026 리뷰). 클라우드 세션은 완료 알림이 없으므로 PM이 `gh pr list --head feat/P-033-baselines-store`로 확인.
   - 2026-10-23 PM: P-031·P-032 머지 뒤 상세 확정. P-032 리뷰(1·2회차)의 P-033 후속을 기준 5에 전부 넣음. 브랜치 `feat/P-033-baselines-store`.
@@ -626,6 +627,7 @@
   5. 로컬 영향 0: 로컬에서 `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, launchd 잡과 compose 설정 변경 없음, `git diff main...HEAD -- src alembic docker-compose.yml`이 비어 있음.
 - **확인 방법:** 기준 4의 클라우드 세션 PR 본문, 로컬에서 훅 스크립트 무동작 실행, `bash -n scripts/cloud-setup.sh`.
 - **메모:**
+  - 2026-10-24 PM 00:1x: Q-024 (a) 적용 — `presagio-dev` 셋업 칸을 경로 무관 래퍼로 교체(저장 확인). 기준 4는 P-033 2차 세션이 다시 본다. 래퍼 첫 줄 출력(`pwd`·script 경로)과 세션 안 `pwd`·`CLAUDE_PROJECT_DIR`가 README 수정(P-042)의 근거.
   - 2026-10-23 PM 21:5x: **기준 4 첫 실측 실패(수정 필요).** `presagio-dev`의 첫 세션(P-033)이 셋업 단계에서 `bash: scripts/cloud-setup.sh: No such file or directory`(exit 127). 플랫폼의 셋업 스크립트 작업 디렉터리 ≠ 레포 루트(공식 문서에 명시 없음, 실측으로 확인). README 345~365행의 "셋업 스크립트 칸: `bash scripts/cloud-setup.sh`"는 틀린 안내 → Q-024(환경 칸 교체)·P-042(README·스크립트 머리말 수정, 실제 `pwd`·클론 경로 기록). 훅(`$CLAUDE_PROJECT_DIR` 기준)은 영향 없음. 기준 4는 수정 뒤 새 세션으로 다시 본다.
   - 2026-10-23 PM 21:3x: **환경 `presagio-dev` 생성(Q-023 (a) 승인)** — 사람이 Claude in Chrome 확장을 연결, PM이 claude.ai/code 환경 선택기 → 새 환경 폼을 README 345~365행 값으로 채우고 사람 확인 뒤 "환경 추가". 실제 UI 표기: 네트워크 액세스 선택지는 없음/제한됨/전체 셋이고 "Trusted" 라벨이 없다 → "제한됨 · 도메인 없음 · 패키지 관리자 켜짐"이 문서의 Trusted(허용 목록만)와 같은 뜻(README 문구 보정은 P-042). 시크릿 없음, 셋업 `bash scripts/cloud-setup.sh`, 환경변수 2개. 환경 id `env_01UoBDS4VzgW1DDEPHrA7rLy`. 기준 4는 P-033 클라우드 세션의 PR이 증명.
   - 2026-10-23 PM 20:5x: 사람 지시로 `gh pr update-branch 31`(BEHIND → HEAD `589ba07`, CI 초록) → **squash 머지 `24abf4b`**. 로컬 훅 무동작 확인(공유 체크아웃에서 `bash scripts/cloud/session-start.sh` 출력 없이 exit 0, launchd 영향 없음). 리뷰 worktree 제거. 사람 질문 "환경은 내가 만들어야 하나, 네가 못 만드나" → 공식 문서로 확인해 **Q-023**(UI에서만 추가 가능. 선택지: PM이 네 크롬으로 / 네가 직접 / Default 환경 우회).
