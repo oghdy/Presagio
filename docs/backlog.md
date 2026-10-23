@@ -434,8 +434,10 @@
 | P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | TODO | P-031 뒤(같은 역할 순서) |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
-| P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | IN PROGRESS | P-030 DONE |
-| P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | IN PROGRESS | P-030 DONE |
+| P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | IN PROGRESS (클라우드 세션 요청, PR로 확인) | P-024 DONE |
+| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | TODO | P-031 DONE, Q-022 |
+| P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | REVIEW (PR #25, PM 수락, 🧑 사람이 9장 읽고 머지) | P-030 DONE |
+| P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | REVIEW (PR #26, 수정 후 재리뷰 1회차: context 누수 경로) | P-030 DONE |
 | P-033 | 기준선 3종: 시장 암시 확률(마진 제거), 항상 홈팀, 시즌 승률 + 결과 저장 | ml-engineer | TODO | P-031, P-032 |
 | P-034 | Elo 레이팅(홈 어드밴티지, 시즌 간 평균 회귀, 중립 경기 처리) + 총점 기준선(최근 N경기 평균) | ml-engineer | TODO | P-033 |
 | P-035 | as_of 피처 모듈 v1 (최근 5/10/20 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정, 시즌 누적) + 누수 테스트 | ml-engineer | TODO | P-031 |
@@ -478,7 +480,7 @@
   - 2026-10-23 PM 13:3x: **3차 재리뷰 "수락 가능 + 후속 메모"**: N1·N2 해결(CHECK는 live 행에만, 시장 비교 집합 통일), N3~N9 전부 반영, 기준 1~9 전부 O, 12-1 쿼리 28개 재현, 새 모순·숫자 오류·누수 경로 없음. 누수 관점: 1차 의심 경로 닫힘(6-2 규칙, live-only CHECK, live 우선, T14), "누수 없음" 선언 없음, 최종 판정은 P-036. [낮음] 후속 2: L1 T9의 `.sample(frac=1)` 금지가 평가 모듈의 경기 단위 부트스트랩(`replace=True`)과 충돌 가능 → P-032 때 "replace 없는 셔플만 금지"로, L2 M-9 추천안 칸에 D-027 표기. 참고: 결손 날 보충 행의 origin은 사실상 `backtest`(한 줄 명시 권장). **PM이 0·1·3-2·3-3·6-3·6-4·7·8·10·11·12-3장을 직접 읽고 기준 1~9 대조 → 수락.** 수락 메시지 `P-030-acceptance.md`. 사람 승인 질문 **Q-020(M-1~M-11)** 올림. 승인되면 PR #22 머지 + D-049 기록 + 후속 티켓(DR-1 2022-23 수집, DR-2 스탯 정정 품질 체크, DR-8은 M-9 결과대로) + P-031·P-032 브리핑. 재리뷰 방법: 같은 reviewer 서브에이전트(이 PM 세션 안) 또는 새 서브에이전트가 `~/.claude/worktrees/presagio-review-p-030`에서 `git fetch origin docs/P-030-modeling-design && git checkout --detach origin/docs/P-030-modeling-design` 후 1차 보고서 `P-030-review.md`의 발견 1~20 처리 여부 + 기준 5·9 재대조.
 
 ### P-031 🧑 모델링 레이어 스키마 v1 → 마이그레이션 0002
-- **상태:** IN PROGRESS (2026-10-23 16:4x 사람 확인 → data-engineer 세션 `p-031-schema`(local_7fb12dd8…), Opus 5.5 높음, 브랜치 `feat/P-031-modeling-schema`. 브리핑 `P-031-briefing.md`)
+- **상태:** REVIEW (2026-10-23 PR #25 https://github.com/oghdy/Presagio/pull/25, `97f02d0`. 리뷰 "수락 가능"(기준 1~6 전부 O, [낮음] 10) → **PM 수락**. 🧑 사람이 PR 9장 읽고 머지 → 머지 후 PM이 개발 DB에 `uv run alembic upgrade head`)
 - **담당 역할:** data-engineer (Opus 5.5 높음, D-043 구현형)
 - **단계:** 2
 - **의존:** P-030 DONE (D-049). P-032와 병렬(파일 겹침 없음: `db/`·`alembic/`·`quality/` vs `evaluation/`).
@@ -496,9 +498,10 @@
 - **확인 방법:** `uv run alembic check`, `PRESAGIO_REQUIRE_DB=1 uv run pytest tests/db tests/quality -q`, PR의 대응표.
 - **메모:**
   - 2026-10-23 PM: D-049로 생성 확정. 브랜치 `feat/P-031-modeling-schema`. P-032와 병렬.
+  - 2026-10-23 PM 17:1x: **리뷰 "수락 가능"**(`P-031-review.md`): 530 passed(네트워크 차단), 임시 DB 왕복 뒤 카탈로그 691줄 동일, 0001 변경 0, 제약 61개 이름 규칙 준수, 9장 컬럼 표 85/85·CHECK 48/48 카탈로그 일치, 제약 동작(live 2h 초과 거부·backtest 통과·p_home 경계·train_cutoff·market_status·basis 중복) 직접 재현, 품질 체크 3개 FAIL/PASS/SKIP 재현, D-030 변이 13종 중 12 잡힘(M5 모델 전용 부분 유니크 WHERE 변경만 미탐지). 개발 DB는 0001 그대로. [낮음] 10: feature_id 같은 경기·as_of 순서 미검증(누수 경로, P-033/P-035 전 품질 체크), predictions market_status 6값 vs 9-4 문구, basis origin 무관, 0002 이후 표 없을 때 SKIP, M5, feature_drift compared=0 PASS, 9장 밖 `predicted_at` 잔존·13장 오기, README 14→17, 범위 밖 2파일(체크 수 반영만 — PM 사후 인정), artifact_path 규칙 없음. → **P-041**(data-engineer 후속) + **Q-022**(basis origin, market_status 뜻). 리뷰어가 "사람이 9장에서 볼 지점 3개"를 적음(`P-031-acceptance.md`에 옮김). 범위 밖 파일 변경(`tests/ingestion/test_incremental.py` 2줄, `quality/__init__.py` export)은 체크 수 반영에 그쳐 PM 인정.
 
 ### P-032 walk-forward 평가 틀 + 지표 + 시장 확률·CLV + 보류 시즌 가드 + 누수 테스트 틀
-- **상태:** IN PROGRESS (2026-10-23 16:4x 사람 확인 → ml-engineer 세션 `p-032-walkforward`(local_124cf954…), Opus 5.5 높음, 브랜치 `feat/P-032-walkforward-eval`. 브리핑 `P-032-briefing.md`)
+- **상태:** REVIEW (2026-10-23 PR #26 https://github.com/oghdy/Presagio/pull/26, `b816fe0`(+main 머지 `e619648`). 리뷰 "**수정 후 재리뷰**"(반려 1회차): 기준 1~8 전부 O, 누수 의심 1(인터페이스) → 작성자 수정 중)
 - **담당 역할:** ml-engineer (Opus 5.5 높음, D-043 구현형. 설계는 D-049로 끝남)
 - **단계:** 2
 - **의존:** P-030 DONE (D-049). P-031과 병렬. `predictions`·`evaluations` 저장은 P-033(P-031 뒤)에서 붙인다.
@@ -518,6 +521,7 @@
 - **확인 방법:** 테스트, CLI 더미 실행 출력, `git grep odds_closing_lines src/presagio` 결과가 `evaluation/`만.
 - **메모:**
   - 2026-10-23 PM: D-049로 생성 확정. 브랜치 `feat/P-032-walkforward-eval`. P-031과 병렬. 리뷰는 reviewer + leakage-auditor 관점(단계 2 첫 코드).
+  - 2026-10-23 PM 18:1x: ml-engineer 세션(Opus 높음) → PR #26(파일 26, +4748, 테스트 121 추가, 598 passed). 리뷰+누수 감사 겸임 서브에이전트(`P-032-review.md`, 261줄. 중간에 사람 플랜 세션 한도로 중단 후 재개): **기준 1~8 전부 O** — 지표 손계산 전부 일치, Shin·power Σp=1·롱샷 방향 확인, 합의·폴백 분기 6종, R3 경계(= 포함, +1µs 제외, 24h), CLV 손계산, 보류 가드 exit 64(사유 없는 "H-08"도 거부), CLI SQL 424개 전부 SELECT·READ ONLY, 598 passed(루프백 밖 연결 0), 변이 32종 중 29 잡힘. **누수 감사: 복제본에서 시간 여행(기준일 뒤 2,071경기 300-0 + 삭제·삽입)·미래 주입·배당 시간 여행 모두 기준일까지 예측 불변(검정력 확인). 단, [중간][누수 의심 — 인터페이스] `PredictionContext._games`가 미래 점수 포함 전체 경기 목록을 품어 예측 함수가 읽으면 정확도 1.000(재현)** → context를 R1·R2 결과+시장만 담는 frozen dataclass로, 점수 없는 일정 뷰(cup_final 포함) 별도, 재귀 단언 테스트. [낮음] 실행기 가드 3곳 테스트 미고정(변이 생존), 실행기 수준 배당 시간 여행 테스트 없음, `_check_training` 자기 보고 신뢰, 상태별 지표 행 없음(4-6 두 줄은 충족), 학습 창 시즌 하한 없음(P-026 뒤 2022-23 섞임 위험). 작성자에게 필수 1~3(context 경계, 가드 테스트, 배당 시간 여행 테스트) 수정 요청, 나머지는 P-033 후속. 기준 자체 메모(PM): 기준 3의 grep 문구는 main에서 이미 거짓(`VIEW_NAMES`·docstring·quality SQL에 뷰 이름 존재) → 의도(features/·models/ 0줄)는 테스트로 고정됨, 다음 티켓부터 문구 정확히; 기준 7 읽는 표에 `team_aliases`(unmatched_event 판정용) 누락. 리뷰어 간 scratchpad 디렉터리 충돌 1회(둘 다 고유 디렉터리에서 재실행해 결과 동일).
 
 ### P-026 2022-23 시즌 추가 수집 (D-049 M-11, DR-1)
 - **상태:** TODO
@@ -551,6 +555,34 @@
 - **범위:** `scripts/launchd/`(래퍼 슬롯 규칙·plist 깨어남), `tests/scripts/`, README 운영 소절, `docs/team/risks.md` B2 숫자(PM이 같은 PR에서 또는 별도). 설정값이 필요하면(`ODDS_WEEKEND_CLOSING_TIMES_ET` 등) `src/presagio/config.py` 변경은 data-engineer 영역이므로 PM이 범위를 정한다.
 - **완료 기준(초안, P-024 머지 후 확정):** 토·일 6회·평일 4회를 7개월 모의로 증명, 중복 없음, 월 크레딧 계산 표(≤ 425), 실제 주말 1회 결과. 함께: P-024 리뷰 3회차 [낮음] 1(23h 정지라 19:45 차단 뒤 다음 날 18:45부터 재개 — 주석·README 문구 정정 또는 "같은 슬롯 벽시계 −10분"으로 변경 + 19:45 차단 테스트).
 - **메모:** 2026-10-23 PM: D-049 M-9로 생성.
+
+### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
+- **상태:** TODO (상세 완료 기준은 Q-022 답 뒤 확정)
+- **담당 역할:** data-engineer (Opus 5.5 높음). D-052상 클라우드 후보(mock 테스트로 완결).
+- **단계:** 2
+- **의존:** P-031 DONE(머지), Q-022.
+- **목표:** P-031 리뷰(`P-031-review.md`)의 [낮음] 중 코드·문서로 고칠 것을 한 PR로. 스키마(DDL) 변경 없음.
+- **범위(초안):** `src/presagio/quality/checks.py`(+tests): (a) `predictions.feature_id`가 같은 `game_id`이고 피처 `as_of ≤ 예측 as_of`인지 검사하는 체크(fail), (b) `feature_drift` compared=0이면 SKIP, (c) 모델링 표가 없을 때 `alembic_version` < 0002면 SKIP·그 외 error, (d) 예측 행 `market_status`가 4값 밖이면 fail(Q-022 (2)(a)); `tests/db/test_migrations.py`에 `pg_indexes.indexdef` 비교 추가(M5); `docs/design/schema-v1.md` 9장 머리말 메모·3장 Q7·7-2의 `predicted_at`→`as_of`·13장 1-1 오기·`artifact_path` 규칙("디렉터리 + `train_cutoff` 기준 파일명") 한 줄·9-4 두 표의 `market_status` 뜻 차이 명시; `README.md` 품질 체크 14→17 표.
+- **메모:** 2026-10-23 PM: P-031 리뷰로 생성. PR #25 머지를 막지 않음.
+
+### P-040 🧑 Claude Code 클라우드 세션 환경 셋업
+- **상태:** IN PROGRESS (2026-10-23 18:1x 사람 지시 "클라우드에서 할 수 있는 건 다 클라우드에서" → **클라우드 세션으로 요청**(`p-040-cloud`). 자기 VM이 테스트 대상이라 기준 4(클라우드 실제 검증)까지 한 세션에서 가능. 완료 알림이 없으므로 PM이 `gh pr list`로 `feat/P-040-cloud-setup` PR 확인. 환경 부재로 거부되면 로컬 platform-engineer로 대체)
+- **담당 역할:** platform-engineer (Opus 5.5 높음). 환경 생성(claude.ai/code 입력)은 사람.
+- **단계:** 2 (단계 6 선행). **시간 민감:** 클라우드 크레딧 US$250이 2026-11-05 16:59 KST에 만료된다.
+- **의존:** P-024 DONE. Q-021 승인.
+- **목표:** 구현·리뷰 티켓을 Claude Code 클라우드 세션(Ubuntu 24.04 VM, 약 4 vCPU·16GB)에서 돌릴 수 있게 레포 쪽 준비물(셋업 스크립트, SessionStart 훅, 운영 절차)을 만들고, 사람이 환경을 만든 뒤 첫 클라우드 세션 1회로 검증한다. 로컬 플랜 한도를 아끼고 만료 전 크레딧을 쓴다.
+- **범위(건드릴 파일):** `scripts/cloud-setup.sh`, `.claude/settings.json`(SessionStart 훅. `CLAUDE_CODE_REMOTE`가 설정된 클라우드 세션에서만 동작), `README.md` 운영 소절("클라우드 세션"). `docs/team/workflow.md`의 운영 규칙은 PM(D-052 예정).
+- **범위 밖:** 제품 코드, 스키마, 로컬 compose·launchd 변경, 실제 nba_api·The Odds API 호출(클라우드 네트워크 Trusted 목록에 stats.nba.com이 없고 구현 티켓은 전부 mock), `ODDS_API_KEY`를 환경변수로 두는 것(금지. 필요해지면 network secret).
+- **읽어야 할 파일:** `CLAUDE.md`, `README.md` 1~6절, `docker-compose.yml`(DB 사용자·DB 이름·포트 규칙), `.env.example`, `tests/conftest.py`(`PRESAGIO_REQUIRE_DB`, 임시 DB 생성에 `CREATEDB` 권한 필요), `alembic.ini`, D-019·D-020·D-022·D-029(CI의 postgres 설정과 같은 모양으로), 공식 문서 `code.claude.com/docs/en/cloud-environments.md`·`claude-code-on-the-web.md`(창업 세션이 2026-10-23 확인한 사실은 메모 참고. **작업자는 다시 읽고 바뀐 것이 있으면 PR에 적는다** — 추측 금지)
+- **완료 기준 (전부 만족해야 DONE):**
+  1. `scripts/cloud-setup.sh`(루트로 실행됨): uv 설치, `uv sync`, PostgreSQL 16 시작(`service postgresql start`), `presagio` 롤(CREATEDB 포함, 클라우드 전용 비밀번호)·`presagio` DB 생성, `uv run alembic upgrade head`. **멱등**(두 번 실행해도 성공), **5분 이내**(실측 시간을 PR에), 비밀값 없음, 실패 시 0이 아닌 종료 코드와 원인 한 줄.
+  2. `.claude/settings.json` SessionStart 훅: `CLAUDE_CODE_REMOTE`가 설정된 경우에만 Postgres가 떠 있는지 확인·시작하고 `DATABASE_URL` 연결을 1회 검사한다. **로컬 세션에서는 아무 동작도 하지 않는다**(테스트: 로컬에서 훅 스크립트를 직접 실행하면 출력 없이 종료 0). 훅 스크립트는 `scripts/` 아래에 두고 settings.json은 그것을 부른다(D-051).
+  3. README 운영 소절: (a) 사람이 claude.ai/code 환경 선택기에서 **복사해 붙일 값** — 환경 이름(제안 `presagio-dev`), 네트워크 수준(Trusted. stats.nba.com 미포함을 명시), 환경변수 두 개(`DATABASE_URL=postgresql+psycopg://presagio:<클라우드 전용 비번>@localhost:5432/presagio`, `PRESAGIO_REQUIRE_DB=1`. 둘 다 비밀 아님), 셋업 스크립트 내용(`scripts/cloud-setup.sh` 호출 한 줄 또는 본문). (b) 세션 시작법(`claude --cloud`, claude.ai/code, 데스크탑 앱 환경 선택기). (c) **클라우드 세션은 앱에 완료 알림을 보내지 않으므로 PM이 `gh pr list`로 확인**한다는 한 줄. (d) 클라우드 DB는 비어 있으므로 실데이터가 필요한 티켓은 로컬. (e) `ODDS_API_KEY`는 환경변수 금지, 필요 시 network secret.
+  4. **클라우드 세션 1회 실제 검증:** 사람이 환경을 만든 뒤 PM이 띄운 첫 클라우드 세션에서 `PRESAGIO_REQUIRE_DB=1 uv run pytest -q`가 main 기준 전체 통과(skipped 0), `uv run alembic current`가 head, 그리고 그 세션이 PR을 하나 연다(이 티켓의 README 보완이나 검증 로그 추가). 통과 수·소요 시간·셋업 캐시 적중 여부를 PR 본문에.
+  5. 로컬 영향 0: 로컬에서 `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, launchd 잡과 compose 설정 변경 없음, `git diff main...HEAD -- src alembic docker-compose.yml`이 비어 있음.
+- **확인 방법:** 기준 4의 클라우드 세션 PR 본문, 로컬에서 훅 스크립트 무동작 실행, `bash -n scripts/cloud-setup.sh`.
+- **메모:**
+  - 2026-10-23 PM: 창업 세션 요청(사람이 claude.ai GitHub 커넥터 연결·Claude GitHub App을 `oghdy`에 설치·Presagio 선택 완료, 크레딧 US$250 잔액 확인). 창업 세션이 공식 문서로 확인한 사실: VM은 Ubuntu 24.04·약 4 vCPU·16GB·30GB, PostgreSQL 16과 docker compose 설치됨(Postgres는 꺼져 있음), 프로세스는 세션 간 비유지(파일·패키지·이미지 캐시만 유지) → DB 시작은 SessionStart 훅으로, 셋업 스크립트는 5분 안에 끝나야 캐시(약 7일), 환경변수는 환경 사용자 모두 읽음 → 비밀값은 network secret, 기본 Trusted 네트워크에 PyPI·GitHub·Docker Hub 있음·stats.nba.com 없음, 클라우드 세션은 레포의 CLAUDE.md·.claude/settings.json·.claude/agents를 읽고 사용자 ~/.claude는 없음, 시작 시 푸시된 브랜치를 클론, **완료 알림 없음**. 진행 중인 P-031·P-032는 로컬에서 끝낸다. 2단계 진행: ① 로컬 platform-engineer가 1·2·3·5 → PR(사람 머지) → ② 사람이 환경 생성 → PM이 첫 클라우드 세션으로 4 검증.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
 - **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `3a4dddd`. 재리뷰 "수락 가능(기준 5 대기)" → **16:00 KST 첫 실제 실행 성공(run 102, PM 확인 16:04)** → 리뷰 3회차 "수락 가능" → PM 수락 → **사람 지시로 PM이 squash 머지 `5035231`, 공유 체크아웃에서 `install.sh` 재설치 완료(plist 래퍼 경로 = 공유 체크아웃, `--uv` 없음). DONE**)
