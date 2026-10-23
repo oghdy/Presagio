@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Presagio interim schedule (P-024, D-048). Template: scripts/launchd/install.sh fills every
+  placeholder and writes the result to ~/Library/LaunchAgents/com.presagio.ingest-daily.plist. Do not edit paths here.
+  StartCalendarInterval is the Mac's local time (Asia/Seoul). The wrapper decides on each wake-up
+  whether it is a D-038 slot (16:00 KST full run, 18:45/19:45/21:45 ET odds-only) and otherwise
+  exits quietly, so the day has exactly four ingest-daily runs in summer and in winter.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>@LABEL@</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>@UV@</string>
+        <string>run</string>
+        <string>--project</string>
+        <string>@REPO@</string>
+        <string>python</string>
+        <string>@WRAPPER@</string>
+        <string>run</string>
+        <string>--repo</string>
+        <string>@REPO@</string>
+        <string>--uv</string>
+        <string>@UV@</string>
+        <string>--log-dir</string>
+        <string>@LOG_DIR@</string>
+        <string>--state-dir</string>
+        <string>@STATE_DIR@</string>
+    </array>
+    <!-- presagio.config reads .env from the working directory (the repository root). -->
+    <key>WorkingDirectory</key>
+    <string>@REPO@</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>@UV_DIR@:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>@HOME@</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+@CALENDAR@
+    </array>
+    <key>RunAtLoad</key>
+    <false/>
+    <!-- Only output of the wrapper itself (e.g. uv failing to start); runs log to ingest-<date>.log. -->
+    <key>StandardOutPath</key>
+    <string>@LOG_DIR@/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG_DIR@/launchd.err.log</string>
+</dict>
+</plist>

@@ -236,6 +236,97 @@ uv run presagio ingest-daily --odds-only
 - 종료 코드는 백필과 같다: 전부 성공 `0`, 하나라도 성공 아님(`partial` 포함) `1`, 403/429 차단으로 즉시 멈춤 `2`, 인자 오류 `64`.
 - 기록은 `ingestion_runs`에 부모 행(`job_type = 'incremental'`, `scope_key = 'date_kst=<D>'`) 1개와 단계별 자식 행으로 남는다. 어제 날짜의 결과 단위는 `job_type = 'schedule'`, `scope_key = 'date_et=<D-1>'`이다.
 
+#### 운영: 임시 스케줄(launchd)
+
+단계 6(서버 스케줄) 전까지 **이 맥의 launchd**가 `presagio ingest-daily`를 하루 4번 돌린다(P-024, D-048). 배당은 그 시각에 받지 않으면 영영 없기 때문이다. 단계 6에서 서버 스케줄로 바꾸면 이 잡은 끈다(아래 "끄는 법").
+
+**전제.** 맥이 켜져 있고(잠자기는 괜찮다, 아래 참고), Docker Desktop이 켜져 DB 컨테이너가 떠 있고, 실행할 레포 루트에 `.env`(`DATABASE_URL`, `ODDS_API_KEY`)가 있어야 한다. 맥 시간대는 서울이어야 한다(설치 스크립트가 확인한다).
+
+**언제 도나.** 시각은 `.env`의 `INGEST_DAILY_TIME_KST`, `ODDS_CLOSING_TIMES_ET`를 그대로 읽는다(D-038).
+
+| 실행 | 기준 시각 | 한국 시각: 서머타임(EDT, ~10-31) | 한국 시각: 겨울(EST, 11-01~) |
+| --- | --- | --- | --- |
+| 본 실행 `ingest-daily --date <한국 날짜>` | 한국 16:00 | 16:00 | 16:00 |
+| 마감 배당 `ingest-daily --date <동부 날짜> --odds-only` | 동부 18:45 | 다음날 07:45 | 다음날 08:45 |
+| 〃 | 동부 19:45 | 다음날 08:45 | 다음날 09:45 |
+| 〃 | 동부 21:45 | 다음날 10:45 | 다음날 11:45 |
+
+launchd는 맥의 한국 시각으로만 예약할 수 있어서, 잡은 여름·겨울 후보 시각을 모두 합친 **하루 6번**(07:45, 08:45, 09:45, 10:45, 11:45, 16:00) 깨어난다. 깰 때마다 래퍼(`scripts/launchd/presagio_launchd.py`)가 실제 시계로 "지금이 동부 기준 마감 시각 ±10분인가 / 한국 16:00 이후인가"를 판단해서, 아니면 로그에 `skip` 한 줄만 남기고 끝낸다. 그래서 여름이든 겨울이든 **실제 호출은 하루 정확히 4번**이다(월 최대 372크레딧, D-027). 같은 시각이 두 번 깨도(수동 실행, 잠자기 후) 시각마다 표시 파일이 있어 두 번째는 호출하지 않는다.
+
+`ingest-daily --odds-only`는 스스로 시각을 확인하지 않고 부를 때마다 배당을 받는다(`src/presagio/ingestion/incremental.py`의 `plan_daily`). 시각 판단은 래퍼만 한다. 마감 배당에는 `--date <그 경기의 동부 날짜>`를 넘긴다. `ingest-daily --dry-run`이 보여 주는 "planned runs"(기준 날짜 D의 마감 배당은 동부 날짜 D 저녁)와 같은 규칙이다.
+
+앞으로 며칠의 판단을 미리 보려면(호출 0번, DB도 안 씀):
+
+```bash
+uv run python scripts/launchd/presagio_launchd.py plan --from 2026-10-30 --days 4
+```
+
+예상 결과(일부): `2026-11-01 10:45 KST = 10-31 21:45 EDT  ->  odds ...`, `2026-11-02 07:45 KST = 11-01 17:45 EST  ->  skip`, `2026-11-02 08:45 KST = 11-01 18:45 EST  ->  odds ...`.
+
+**켜는 법.** 매일 수집을 돌릴 체크아웃(루트에 `.env`가 있는 곳)에서:
+
+```bash
+scripts/launchd/install.sh
+```
+
+인자를 주지 않으면 스크립트가 들어 있는 레포에서 돈다. 다른 체크아웃에서 돌리려면 `scripts/launchd/install.sh /path/to/Presagio`. 설치 스크립트가 `uv` 절대 경로(`command -v uv`), 레포 경로, 로그 폴더를 채워 `~/Library/LaunchAgents/com.presagio.ingest-daily.plist`를 만들고 `launchctl bootstrap`으로 올린다(사용자 단위 LaunchAgent. Docker Desktop이 사용자 세션에서 돌기 때문). `.env`는 있는지만 확인하고 열지 않는다. 다시 실행하면 기존 잡을 내리고 새로 올린다. 마지막 줄에 예상 결과:
+
+```
+-	0	com.presagio.ingest-daily
+```
+
+(칸: 실행 중이면 PID, 아니면 `-` / 마지막 종료 코드 / 이름.) 언제든 `launchctl list | grep presagio`로 같은 줄을 볼 수 있다.
+
+**끄는 법.**
+
+```bash
+scripts/launchd/uninstall.sh
+```
+
+`launchctl list | grep presagio`가 아무것도 출력하지 않으면 꺼진 것이다. 로그와 표시 파일은 남는다.
+
+**로그 보는 법.** 한국 날짜별 파일 하나: `~/Library/Logs/Presagio/ingest-YYYY-MM-DD.log`. 실행마다 `start ...` 줄, `ingest-daily`의 표준 출력·오류 전부, 그리고 `RESULT` 줄이 남는다.
+
+```bash
+tail -n 80 ~/Library/Logs/Presagio/ingest-$(date +%F).log
+grep RESULT ~/Library/Logs/Presagio/ingest-*.log
+```
+
+| `RESULT` 줄 | 뜻 | 할 일 |
+| --- | --- | --- |
+| `exit=0 OK` | 전부 성공 | 없음 |
+| `exit=1 FAILED` | 실패 또는 `partial`(어제 경기가 덜 끝남, 품질 체크 FAIL, DB 연결 실패 등) | 위 출력의 보고서를 본다. `partial`은 다음 실행이 3일 안에서 다시 받는다(D-039) |
+| `exit=2 BLOCKED` | 403/429 차단으로 즉시 멈춤(D-037) | **사람에게 알린다**(자동 알림은 단계 6). 래퍼는 24시간 동안 모든 실행을 건너뛴다. 원인을 확인한 뒤 일찍 재개하려면 `rm ~/Library/Application\ Support/Presagio/launchd/blocked` |
+| `exit=64 USAGE` | 인자 오류(래퍼 버그) | 티켓을 연다 |
+
+`launchd.out.log`/`launchd.err.log`(같은 폴더)에는 래퍼 자체가 못 뜬 경우(예: `uv`를 못 찾음)만 남는다. 시각이 아닌 깨어남은 `skip: no slot now (20:45 ET, 09:45 KST)`처럼 한 줄이다.
+
+**맥이 잠들어 있거나 꺼져 있던 날.** Apple 문서(`man launchd.plist`의 `StartCalendarInterval`)에 따르면 cron과 달리 잠든 동안 지난 예약은 **깨어난 뒤 한 번** 실행되고, 여러 개가 지났으면 하나로 합쳐진다. 래퍼는 그 늦은 실행을 이렇게 다룬다: 마감 배당은 ±10분을 넘겼으면 건너뛴다(늦은 배당은 "마감"이 아니다). 본 실행은 같은 한국 날짜 안이면 늦게라도 돌고, 자정을 넘기면 건너뛴다(다음 날 본 실행이 어제 결과를 다시 받는다). 맥이 **꺼져** 있던 동안의 예약에 대해서는 문서에 언급이 없고 실제로 꺼 보고 확인하지 않았다(미확인). 어느 경우든 래퍼가 시각을 다시 판단하므로 하루 4번을 넘지 않는다. Docker Desktop이 꺼져 있으면 DB 연결 실패로 `exit=1`이고 그 시각의 데이터는 없다. **빠진 배당은 메우지 않는다**(정직한 결손, D-048).
+
+**빠진 날 확인 쿼리.** 정상인 날은 `full_runs = 1`, `odds_only_runs = 3`이다. 마감 배당은 동부 날짜로 묶이므로 가장 최근 날짜는 한국 다음날 오전까지 3이 안 될 수 있다. 0인 날이 맥·Docker가 꺼져 있던 날이다.
+
+```bash
+docker compose exec -T postgres psql -U presagio -d presagio -c "
+SELECT d::date AS day,
+       count(*) FILTER (WHERE r.scope_key = 'date_kst=' || d::date) AS full_runs,
+       count(*) FILTER (WHERE r.scope_key = 'date_kst=' || d::date || ';odds_only') AS odds_only_runs,
+       string_agg(r.status, ',' ORDER BY r.run_id) AS statuses
+FROM generate_series(current_date - 13, current_date, interval '1 day') AS d
+LEFT JOIN ingestion_runs r
+       ON r.job_type = 'incremental' AND r.parent_run_id IS NULL
+      AND r.scope_key IN ('date_kst=' || d::date, 'date_kst=' || d::date || ';odds_only')
+GROUP BY d ORDER BY d"
+```
+
+`scope_key`는 본 실행이 `date_kst=<한국 날짜>`, 마감 배당이 `date_kst=<동부 날짜>;odds_only`다(래퍼가 `--date`로 동부 날짜를 넘기기 때문. 이름의 `date_kst`는 CLI의 기준 날짜 D라는 뜻이다).
+
+**래퍼만 시험해 보기(호출 0번).** `--dry-run`은 `ingest-daily --dry-run`을 부르고 표시 파일을 남기지 않는다. `--now`로 시각을 흉내 낸다.
+
+```bash
+uv run python scripts/launchd/presagio_launchd.py run --dry-run --now 2026-11-02T08:45+09:00 \
+  --repo "$PWD" --uv "$(command -v uv)" --log-dir /tmp/presagio-dry --state-dir /tmp/presagio-dry
+```
+
 ### 9. 품질 체크 (데이터가 상식에 맞는지 보기)
 
 `presagio quality-check`는 DB에 들어 있는 데이터가 말이 되는지 검사하고 체크마다 한 줄씩 표로 보여 준다. **읽기만 한다**(DB를 고치지 않고, 외부 호출도 0번). 체크는 읽기 전용 트랜잭션 안에서 돌아서, 실수로 쓰려고 해도 DB가 거부한다.
