@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, text
 
+from presagio.evaluation import walkforward
 from presagio.evaluation.data import load_games, load_prediction_quotes
 from presagio.evaluation.dummy import ConstantPredictor, HomeRateLearner
 from presagio.evaluation.holdout import HoldoutLockedError
@@ -18,6 +19,7 @@ from presagio.evaluation.timing import backtest_as_of, et_date
 from presagio.evaluation.walkforward import (
     SKIP_AFTER_NOW,
     SKIP_MIN_TRAINING,
+    SKIP_STARTED,
     LeakageGuardError,
     Prediction,
     PredictionContext,
@@ -28,6 +30,7 @@ from presagio.evaluation.walkforward import (
     TrainingRow,
     WalkForwardConfig,
     WalkForwardResult,
+    _check_prediction_times,
     run_walk_forward,
 )
 
@@ -116,6 +119,8 @@ def outputs(result: WalkForwardResult, until: date | None = None) -> list[tuple]
             p.train_cutoff,
             p.reference_line,
             p.market.home.p_home if p.market.home else None,
+            p.reference_bookmaker,
+            p.market.reference(),
         )
         for p in result.predictions
         if until is None or p.game.et_date <= until
@@ -394,7 +399,10 @@ class BadSource:
     """A training source that breaks one rule, to show the runner's guard catches it."""
 
     def __init__(self, conn: Connection, mode: str) -> None:
-        """mode: 'refit_as_of' (features at the refit date) or 'future' (D(h) >= cutoff)."""
+        """mode: 'refit_as_of' (features at the refit date), 'future' (D(h) moved to the
+        cutoff date) or 'same_day' (a game of the cutoff date whose only broken rule is
+        D(h) < fit_cutoff: features as of its own date, before its tip-off, and a reported
+        available_at at the refit as_of)."""
         self.inner = ScheduleOnlyTrainingSource(load_games(conn))
         self.mode = mode
 
@@ -404,6 +412,16 @@ class BadSource:
         row = good.rows[-1]
         if self.mode == "refit_as_of":
             bad = TrainingRow(**{**row.__dict__, "feature_as_of": good.fit_as_of})
+        elif self.mode == "same_day":
+            bad = TrainingRow(
+                **{
+                    **row.__dict__,
+                    "et_date": fit_cutoff,
+                    "start_time_utc": good.fit_as_of + timedelta(hours=16),
+                    "feature_as_of": good.fit_as_of,
+                    "available_at": good.fit_as_of,
+                }
+            )
         else:
             bad = TrainingRow(**{**row.__dict__, "et_date": fit_cutoff})
         return TrainingMatrix(
@@ -411,7 +429,7 @@ class BadSource:
         )
 
 
-@pytest.mark.parametrize("mode", ["refit_as_of", "future"])
+@pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
 def test_runner_guard_rejects_training_rows_that_break_6_2(conn: Connection, mode: str) -> None:
     """Features recomputed at the refit date, or a game not before the cutoff -> error."""
     with pytest.raises(LeakageGuardError):
@@ -455,3 +473,124 @@ def test_config_rejects_impossible_settings() -> None:
         WalkForwardConfig(seasons=DEV, availability_lag=timedelta(hours=-1))
     with pytest.raises(ValueError):
         WalkForwardConfig(seasons=DEV, refit_every_days=0)
+
+
+def test_started_games_are_skipped_not_predicted(conn: Connection, league: League) -> None:
+    """A game whose tip-off is before its date's 07:00 UTC as_of (01:00 ET = 05:00 UTC) is
+    counted as started_before_as_of and never predicted (design 1-2 "start_time_utc > as_of")."""
+    a, b, _, _ = league.teams
+    raw = conn.execute(text("SELECT min(raw_response_id) FROM raw_api_responses")).scalar_one()
+    early = extreme_game("0022400900", "2024-25", et(date(2024, 10, 23), 1, 0), a, b)
+    insert_games(conn, [early], raw)
+    insert_stats(conn, early, raw)
+    result = run(conn, seasons=("2024-25",))
+    assert result.skipped[SKIP_STARTED] == 1
+    assert "0022400900" not in {p.game.game_id for p in result.predictions}
+
+
+@pytest.mark.parametrize(
+    ("cutoff", "as_of", "start", "ok"),
+    [
+        (None, datetime(2024, 1, 2, 7, tzinfo=UTC), datetime(2024, 1, 3, tzinfo=UTC), True),
+        (
+            datetime(2024, 1, 2, 7, tzinfo=UTC),
+            datetime(2024, 1, 2, 7, tzinfo=UTC),
+            datetime(2024, 1, 3, tzinfo=UTC),
+            True,
+        ),
+        (
+            datetime(2024, 1, 2, 8, tzinfo=UTC),
+            datetime(2024, 1, 2, 7, tzinfo=UTC),
+            datetime(2024, 1, 3, tzinfo=UTC),
+            False,
+        ),
+        (None, datetime(2024, 1, 2, 7, tzinfo=UTC), datetime(2024, 1, 2, 7, tzinfo=UTC), False),
+    ],
+)
+def test_prediction_time_guard(
+    cutoff: datetime | None, as_of: datetime, start: datetime, ok: bool
+) -> None:
+    """train_cutoff <= as_of < tip-off, each side alone (T8 guard)."""
+    if ok:
+        _check_prediction_times("g", cutoff, as_of, start)
+    else:
+        with pytest.raises(LeakageGuardError, match="train_cutoff/as_of/tip-off order"):
+            _check_prediction_times("g", cutoff, as_of, start)
+
+
+class LateSource:
+    """Training rows reported available after the prediction as_of."""
+
+    def __init__(self, conn: Connection) -> None:
+        """Wrap the honest source."""
+        self.inner = ScheduleOnlyTrainingSource(load_games(conn))
+
+    def training_matrix(self, feature_version: str, fit_cutoff: date) -> TrainingMatrix:
+        """Every row's available_at a day after the refit as_of."""
+        good = self.inner.training_matrix(feature_version, fit_cutoff)
+        late = good.fit_as_of + timedelta(days=1)
+        rows = tuple(TrainingRow(**{**r.__dict__, "available_at": late}) for r in good.rows)
+        return TrainingMatrix(good.feature_version, good.fit_cutoff, good.fit_as_of, rows)
+
+
+def test_prediction_time_guard_is_wired_into_the_runner(
+    conn: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the training guard switched off, the per-prediction guard alone still stops a
+    train_cutoff after as_of."""
+    monkeypatch.setattr(walkforward, "_check_training", lambda *args: None)
+    with pytest.raises(LeakageGuardError, match="train_cutoff/as_of/tip-off order"):
+        run_walk_forward(
+            conn,
+            HomeRateLearner(),
+            WalkForwardConfig(seasons=("2024-25",)),
+            training_source=LateSource(conn),
+            now=NOW,
+        )
+
+
+def change_odds_after(conn: Connection, moment: datetime) -> int:
+    """Absurd prices and lines on every snapshot captured after `moment`."""
+    return conn.execute(
+        text(
+            """
+            UPDATE odds_snapshots
+            SET price_decimal = CASE WHEN outcome_side IN ('home', 'over') THEN 1.01 ELSE 25 END,
+                point = point + 30
+            WHERE captured_at > :moment
+            """
+        ),
+        {"moment": moment},
+    ).rowcount
+
+
+def test_odds_time_travel_at_runner_level(conn: Connection, league: League) -> None:
+    """Odds rows after the 2026-10-21 as_of are changed (the 10-21 closing quotes and the
+    10-22 game's quote) and new quotes at as_of + 1 microsecond are added: predictions and
+    market_reference up to 10-21 are identical. Power: the 10-22 prediction changes, and a
+    quote exactly at as_of (equality, T6) changes the 10-21 prediction."""
+    pivot = date(2026, 10, 21)
+    as_of = backtest_as_of(pivot)
+    before = run(conn, seasons=("2026-27",))
+    game = league.games[LIVE_AVAILABLE]
+    event = conn.execute(
+        text("SELECT odds_event_id FROM odds_events WHERE game_id = :g"), {"g": LIVE_AVAILABLE}
+    ).scalar_one()
+    raw = conn.execute(text("SELECT min(raw_response_id) FROM raw_api_responses")).scalar_one()
+    assert change_odds_after(conn, as_of) == 10  # 8 closing rows of 10-21 + 2 of 10-22
+    later = as_of + timedelta(microseconds=1)
+    for book in ("draftkings", "fanduel", "betmgm", "bovada"):
+        for side, price in (("home", "30"), ("away", "1.02")):
+            insert_snapshot(
+                conn, event, game["start_time_utc"], later, book, "h2h", side, price, raw
+            )
+    after = run(conn, seasons=("2026-27",))
+    assert outputs(after, pivot) == outputs(before, pivot)
+    changed = [o for o in outputs(after) if o not in outputs(before)]
+    assert [o[0] for o in changed] == [LIVE_PRED_ONLY]
+    for side, price in (("home", "1.20"), ("away", "5.00")):
+        insert_snapshot(
+            conn, event, game["start_time_utc"], as_of, "draftkings", "h2h", side, price, raw
+        )
+    equal = run(conn, seasons=("2026-27",))
+    assert outputs(equal, pivot) != outputs(before, pivot)

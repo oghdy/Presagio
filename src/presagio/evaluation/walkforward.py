@@ -1,11 +1,14 @@
 """Walk-forward backtest runner (modeling design v1.2 6-2, 2-2, 2-3, 6-3, 6-4).
 
 One iteration per US Eastern date d with target games, in date order. as_of = d 07:00 UTC.
-A predictor sees only:
+A predictor sees only what the runner puts in front of it (the runner's game list, with
+today's and future scores, never leaves the runner):
 
 - the target games' schedule (TargetGame has no score or status),
-- PredictionContext.results(): finished games passing R1 and R2 for (d, as_of),
-- PredictionContext.market(game_id): the prediction-time market by rule R3,
+- a frozen PredictionContext built before predict() is called, holding
+  results(): finished games passing R1 and R2 for (d, as_of),
+  schedule(): score-free schedule of earlier dates (Cup final included, for rest features),
+  market(game_id): the prediction-time market by rule R3,
 - for learning predictors, fit(TrainingMatrix) at refit days. The runner asks the training
   source for training_matrix(feature_version, fit_cutoff) only: a training row h carries the
   features of h's own prediction date (as_of(h)), never features recomputed at the refit
@@ -22,10 +25,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+from bisect import bisect_left
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from types import MappingProxyType
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import Connection
@@ -147,71 +152,142 @@ class Prediction:
     total_sd: float | None = None
 
 
-class PredictionContext:
-    """Everything a predictor may read on one day; nothing past as_of passes through."""
+@dataclass(frozen=True)
+class ScheduledGame:
+    """A game on the schedule before the target date: schedule only, no score, no status.
 
-    def __init__(
-        self,
-        *,
-        as_of: datetime,
-        target_date: date,
-        games: Sequence[GameRecord],
-        lag: timedelta,
-        markets: Mapping[str, GameMarket],
-    ) -> None:
-        """Bind the day's information boundary (R1, R2 for results; R3 markets)."""
-        self.as_of = as_of
-        self.target_date = target_date
-        self.lag = lag
-        self._games = games
-        self._markets = dict(markets)
-        self._results: tuple[GameResult, ...] | None = None
+    For schedule features (rest days, back-to-backs); it includes the Cup final, which
+    results() leaves out (D-049 M-3). Only dates before the target date are listed: the
+    final schedule of later dates can reveal results (if-necessary playoff games).
+    """
+
+    game_id: str
+    season: str
+    game_type: str
+    et_date: date
+    start_time_utc: datetime
+    home_team_id: int
+    away_team_id: int
+    is_neutral: bool
+
+
+@dataclass(frozen=True)
+class PredictionContext:
+    """Everything a predictor may read on one day, built by the runner beforehand.
+
+    It holds the R1/R2 results, the schedule before the target date and the R3 markets of
+    the target games, and nothing else: no game list, no score outside results(), no
+    closing odds. Frozen, so a predictor cannot move as_of or target_date.
+    """
+
+    as_of: datetime
+    target_date: date
+    lag: timedelta
+    visible_results: tuple[GameResult, ...]
+    past_schedule: tuple[ScheduledGame, ...]
+    markets: Mapping[str, GameMarket]
 
     def results(self) -> tuple[GameResult, ...]:
-        """Finished predicted-type games with D(h) < target date and start + lag <= as_of
-        and both stat rows, in start order (cup_final excluded, D-049 M-3)."""
-        if self._results is None:
-            self._results = tuple(
-                GameResult(
-                    game_id=g.game_id,
-                    season=g.season,
-                    game_type=g.game_type,
-                    et_date=g.et_date,
-                    start_time_utc=g.start_time_utc,
-                    available_at=available_at(g.start_time_utc, self.lag),
-                    home_team_id=g.home_team_id,
-                    away_team_id=g.away_team_id,
-                    home_score=g.home_score,
-                    away_score=g.away_score,
-                    is_neutral=g.is_neutral,
-                )
-                for g in self._games
-                if g.game_type in PREDICTED_GAME_TYPES
-                and g.home_team_id is not None
-                and g.away_team_id is not None
-                and g.home_score is not None
-                and g.away_score is not None
-                and is_available(
-                    start_time_utc=g.start_time_utc,
-                    status_code=g.status_code,
-                    has_stats=g.has_stats,
-                    target_date=self.target_date,
-                    as_of=self.as_of,
-                    lag=self.lag,
-                    game_et_date=g.et_date,
-                )
-            )
-        return self._results
+        """Finished predicted-type games with D(h) < target date, start + lag <= as_of and
+        both stat rows, in start order (cup_final excluded, D-049 M-3)."""
+        return self.visible_results
+
+    def schedule(self) -> tuple[ScheduledGame, ...]:
+        """Score-free schedule of every loaded game with D(h) < target date, cup_final
+        included, in start order."""
+        return self.past_schedule
 
     def market(self, game_id: str) -> GameMarket | None:
         """Prediction-time market of a target game (R3), or None."""
-        return self._markets.get(game_id)
+        return self.markets.get(game_id)
 
     @property
     def info_cutoff(self) -> datetime | None:
         """Latest available_at among the visible results (None before any result)."""
-        results = self.results()
+        results = self.visible_results
         return max(r.available_at for r in results) if results else None
+
+
+class _History:
+    """The runner's index of the loaded games. It stays inside the runner: a predictor only
+    ever gets the PredictionContext it builds for one day."""
+
+    def __init__(self, games: Sequence[GameRecord], lag: timedelta) -> None:
+        """Index games sorted by start (so D(h) < d is a prefix)."""
+        self._games = list(games)
+        self._lag = lag
+        self._dates = [g.et_date for g in self._games]
+        if self._dates != sorted(self._dates):
+            raise ValueError("games must be in start order")
+        self._results = [self._as_result(g) for g in self._games]
+        self._schedule = [
+            None
+            if g.home_team_id is None or g.away_team_id is None
+            else ScheduledGame(
+                game_id=g.game_id,
+                season=g.season,
+                game_type=g.game_type,
+                et_date=g.et_date,
+                start_time_utc=g.start_time_utc,
+                home_team_id=g.home_team_id,
+                away_team_id=g.away_team_id,
+                is_neutral=g.is_neutral,
+            )
+            for g in self._games
+        ]
+
+    def _as_result(self, g: GameRecord) -> GameResult | None:
+        """A GameResult candidate (predicted type, teams and score known), else None."""
+        if (
+            g.game_type not in PREDICTED_GAME_TYPES
+            or g.home_team_id is None
+            or g.away_team_id is None
+            or g.home_score is None
+            or g.away_score is None
+        ):
+            return None
+        return GameResult(
+            game_id=g.game_id,
+            season=g.season,
+            game_type=g.game_type,
+            et_date=g.et_date,
+            start_time_utc=g.start_time_utc,
+            available_at=available_at(g.start_time_utc, self._lag),
+            home_team_id=g.home_team_id,
+            away_team_id=g.away_team_id,
+            home_score=g.home_score,
+            away_score=g.away_score,
+            is_neutral=g.is_neutral,
+        )
+
+    def context(
+        self, day: date, as_of: datetime, markets: Mapping[str, GameMarket]
+    ) -> PredictionContext:
+        """The context of ET date `day` at as_of: R1 prefix, then R2 per game."""
+        end = bisect_left(self._dates, day)
+        results = tuple(
+            r
+            for g, r in zip(self._games[:end], self._results[:end], strict=True)
+            if r is not None
+            and is_available(
+                start_time_utc=g.start_time_utc,
+                status_code=g.status_code,
+                has_stats=g.has_stats,
+                target_date=day,
+                as_of=as_of,
+                lag=self._lag,
+                game_et_date=g.et_date,
+            )
+        )
+        schedule = tuple(s for s in self._schedule[:end] if s is not None)
+        return PredictionContext(
+            as_of=as_of,
+            target_date=day,
+            lag=self._lag,
+            visible_results=results,
+            past_schedule=schedule,
+            markets=MappingProxyType(dict(markets)),
+        )
 
 
 @dataclass(frozen=True)
@@ -460,6 +536,14 @@ def _check_training(matrix: TrainingMatrix, fit_cutoff: date, as_of: datetime) -
         raise LeakageGuardError("training set reaches past the prediction as_of")
 
 
+def _check_prediction_times(
+    game_id: str, train_cutoff: datetime | None, as_of: datetime, start: datetime
+) -> None:
+    """Runner-level guard of every prediction (T8): train_cutoff <= as_of < tip-off."""
+    if not as_of < start or (train_cutoff is not None and not train_cutoff <= as_of):
+        raise LeakageGuardError(f"{game_id}: train_cutoff/as_of/tip-off order")
+
+
 def run_walk_forward(
     conn: Connection,
     predictor: Predictor,
@@ -471,7 +555,11 @@ def run_walk_forward(
 ) -> WalkForwardResult:
     """Predict every target game of the requested seasons day by day (6-2). Read only."""
     holdout = check_holdout(config.seasons, config.unlock_holdout, config.holdout_seasons)
-    loaded = list(games) if games is not None else load_games(conn)
+    loaded = sorted(
+        games if games is not None else load_games(conn),
+        key=lambda g: (g.start_time_utc, g.game_id),
+    )
+    history = _History(loaded, config.availability_lag)
     if training_source is None:
         training_source = ScheduleOnlyTrainingSource(loaded, config.availability_lag)
     result = WalkForwardResult(
@@ -532,13 +620,7 @@ def run_walk_forward(
             )
             for gid in ids
         }
-        context = PredictionContext(
-            as_of=as_of,
-            target_date=day,
-            games=loaded,
-            lag=config.availability_lag,
-            markets=markets,
-        )
+        context = history.context(day, as_of, markets)
         targets = [_as_target(g) for g in eligible]
         output = predictor.predict(as_of, targets, context)
         unknown = set(output) - set(ids)
@@ -550,8 +632,7 @@ def run_walk_forward(
             if values is None:
                 result.skipped[SKIP_NOT_PREDICTED] += 1
                 continue
-            if cutoff is not None and not cutoff <= as_of < target.start_time_utc:
-                raise LeakageGuardError(f"{target.game_id}: train_cutoff/as_of/tip-off order")
+            _check_prediction_times(target.game_id, cutoff, as_of, target.start_time_utc)
             market = markets[target.game_id]
             totals_ref = market.totals_reference
             p_home = _check_probability(values.p_home, "p_home", target.game_id)
