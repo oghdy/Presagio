@@ -427,7 +427,7 @@
 
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
-| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | IN PROGRESS | P-017 |
+| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | REVIEW (PR #23, 기준 5 대기) | P-017 |
 | P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | REVIEW (PR #21, PM 수락, 사람 머지 대기) | P-021 |
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | REVIEW (PR #22) | P-021 |
@@ -472,7 +472,7 @@
   - 2026-10-23 PM: 작성자 v1.1 커밋 `5dc1a9c`("apply P-030 review round 1") push, PR 본문 갱신. 작성자 보고: 필수 6묶음 전부 반영, 낮음·참고 반영, 12-1 쿼리 19개 실행 시각과 함께 재실행. **재리뷰는 사람 복귀 후**(사람 지시: 진행 중 작업 끝나면 기록만 하고 휴식). 재리뷰 방법: 같은 reviewer 서브에이전트(이 PM 세션 안) 또는 새 서브에이전트가 `~/.claude/worktrees/presagio-review-p-030`에서 `git fetch origin docs/P-030-modeling-design && git checkout --detach origin/docs/P-030-modeling-design` 후 1차 보고서 `P-030-review.md`의 발견 1~20 처리 여부 + 기준 5·9 재대조.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
-- **상태:** IN PROGRESS (2026-10-23 platform-engineer 세션 `p-024-launchd`, Opus 5.5 높음, 브랜치 `feat/P-024-launchd-schedule`. 브리핑 `P-024-briefing.md`)
+- **상태:** REVIEW (2026-10-23 PR #23 https://github.com/oghdy/Presagio/pull/23, `126d857`, 파일 7, +975. 기준 1~4 작성자 자기 점검 O, **기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 대기**. 리뷰는 사람 복귀 후. **차단: macOS 권한 창**)
 - **담당 역할:** platform-engineer (단계 6 역할의 선행 예외 활성. D-002 예외, P-003·P-023과 같은 방식)
 - **단계:** 2 (단계 6 선행)
 - **의존:** P-017 (DONE), Q-017 승인
@@ -489,7 +489,8 @@
 - **확인 방법:** `launchctl list | grep presagio`, 로그 파일, `SELECT job_type, scope_key, status, started_at FROM ingestion_runs ORDER BY run_id DESC LIMIT 10`.
 - **메모:**
   - 2026-10-23 PM: 창업 세션 검증 노트 F-3로 생성. 맥·Docker Desktop이 꺼진 날은 결손이고 `ingestion_runs`에 run이 없는 것으로 드러난다(정직한 결손). 브랜치 `feat/P-024-launchd-schedule`.
-  - 2026-10-23 PM: platform-engineer 세션(Opus 5.5 높음) 시작. 세션이 10:57 KST 타이머를 기다리며 PR 본문을 준비해 둔 상태(10:17 기준 launchd 잡 미설치). PM 지시 변경: 16:00 launchd 실행을 기다리지 말고 10:57 확인 뒤 PR을 먼저 열고, 기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 결과로 채우되 확인 쿼리를 PR에 적기. 설치한 잡은 제거하지 말 것(머지 후 PM이 공유 체크아웃에서 재설치). **16:00 이후 PM이 `ingestion_runs`로 본 실행 결과를 확인해야 한다.**
+  - 2026-10-23 PM: platform-engineer 세션(Opus 5.5 높음) 시작. 세션이 10:57 KST 타이머를 기다리며 PR 본문을 준비해 둔 상태(10:17 기준 launchd 잡 미설치).
+  - 2026-10-23 PM 12:40: PR #23 도착(`scripts/launchd/` plist 템플릿·`install.sh`·`uninstall.sh`·`presagio_launchd.py` 래퍼, `tests/scripts/test_launchd_schedule.py`, README 운영 소절). 작성자 보고: 래퍼가 매 기동마다 실제 시계로 동부 시각을 판단해 하루 4회만 실행(서머타임 전환 두 번을 포함한 7개월 모의 테스트), `--odds-only`는 CLI가 시각을 판단하지 않아 래퍼가 전부 결정, 로그는 날짜별 OK/FAILED/BLOCKED. 12:36 KST에 잡 `com.presagio.ingest-daily` 설치(공유 체크아웃 대상, 래퍼 파일은 작업자 worktree 경로) 후 `kickstart` 1회 → **`uv` 프로세스(PID 82025)가 macOS 개인정보 보호(TCC) 창 "uv가 데스크탑 폴더에 접근"에 막혀 멈춤.** 사람이 Allow를 눌러야 풀리고, 그 전까지 16:00 본 실행 포함 어떤 예약 실행도 안 돌아간다. 외부 호출 0, run 95 그대로, odds 796 그대로. 미확인: 맥 완전 종료 중 예약 실행 처리(Apple 문서는 sleep만: 깨어나면 1회 실행). 작성자 인계 노트 `P-024-handover.md`. 머지 후 PM이 공유 체크아웃에서 `scripts/launchd/install.sh` 재실행(worktree 정리 전에). PM 지시 변경: 16:00 launchd 실행을 기다리지 말고 10:57 확인 뒤 PR을 먼저 열고, 기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 결과로 채우되 확인 쿼리를 PR에 적기. 설치한 잡은 제거하지 말 것(머지 후 PM이 공유 체크아웃에서 재설치). **16:00 이후 PM이 `ingestion_runs`로 본 실행 결과를 확인해야 한다.**
 
 ### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
 - **상태:** REVIEW (2026-10-23 PR #21 https://github.com/oghdy/Presagio/pull/21, 커밋 `f2bfce3`, CI 초록. 재리뷰 "수락 가능", **PM 수락**, 사람 머지 대기)
