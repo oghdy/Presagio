@@ -1,0 +1,760 @@
+{
+ "meta": {
+  "time": "2026-06-01T12:48:46.4846Z",
+  "request": "http://nba.cloud/league/00/2022-23/scheduleleaguev2?Format=json",
+  "version": 1
+ },
+ "leagueSchedule": {
+  "seasonYear": "2022-23",
+  "leagueId": "00",
+  "gameDates": [
+   {
+    "gameDate": "10/18/2022 00:00:00",
+    "games": [
+     {
+      "day": "Tue",
+      "gameId": "0022200001",
+      "awayTeam": {
+       "seed": 0,
+       "wins": 0,
+       "score": 117,
+       "losses": 1,
+       "teamId": 1610612755,
+       "teamCity": "Philadelphia",
+       "teamName": "76ers",
+       "teamSlug": "sixers",
+       "teamTricode": "PHI"
+      },
+      "gameCode": "20221018/PHIBOS",
+      "homeTeam": {
+       "seed": 0,
+       "wins": 1,
+       "score": 126,
+       "losses": 0,
+       "teamId": 1610612738,
+       "teamCity": "Boston",
+       "teamName": "Celtics",
+       "teamSlug": "celtics",
+       "teamTricode": "BOS"
+      },
+      "monthNum": 10,
+      "weekName": "Week 1",
+      "arenaCity": "Boston",
+      "arenaName": "TD Garden",
+      "gameLabel": "",
+      "isNeutral": false,
+      "arenaState": "MA",
+      "branchLink": "https://app.link.nba.com/Q9UVwfhzCsb",
+      "gameStatus": 3,
+      "seriesText": "",
+      "weekNumber": 1,
+      "gameDateEst": "2022-10-18T00:00:00Z",
+      "gameDateUTC": "2022-10-18T04:00:00Z",
+      "gameSubtype": "",
+      "gameTimeEst": "1900-01-01T19:31:00Z",
+      "gameTimeUTC": "1900-01-01T23:31:00Z",
+      "ifNecessary": "false",
+      "awayTeamTime": "2022-10-18T19:31:00Z",
+      "broadcasters": {
+       "awayTvBroadcasters": [],
+       "homeTvBroadcasters": [],
+       "awayOttBroadcasters": [],
+       "homeOttBroadcasters": [],
+       "nationalBroadcasters": [
+        {
+         "broadcasterId": 10,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "natl",
+         "broadcasterTeamId": -1,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "TNT",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "https://www.tntdrama.com/nba-on-tnt",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "TNT"
+        }
+       ],
+       "awayRadioBroadcasters": [
+        {
+         "broadcasterId": 1434,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612755,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "97.5 The Fanatic",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WPEN"
+        }
+       ],
+       "homeRadioBroadcasters": [
+        {
+         "broadcasterId": 1720,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612738,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "WROR (105.7 FM)",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WROR"
+        }
+       ],
+       "nationalOttBroadcasters": [],
+       "nationalRadioBroadcasters": []
+      },
+      "gameSequence": 1,
+      "gameSubLabel": "",
+      "homeTeamTime": "2022-10-18T19:31:00Z",
+      "pointsLeaders": [
+       {
+        "points": 35.0,
+        "teamId": 1610612738,
+        "lastName": "Brown",
+        "personId": 1627759,
+        "teamCity": "Boston",
+        "teamName": "Celtics",
+        "firstName": "Jaylen",
+        "teamTricode": "BOS"
+       },
+       {
+        "points": 35.0,
+        "teamId": 1610612738,
+        "lastName": "Tatum",
+        "personId": 1628369,
+        "teamCity": "Boston",
+        "teamName": "Celtics",
+        "firstName": "Jayson",
+        "teamTricode": "BOS"
+       },
+       {
+        "points": 35.0,
+        "teamId": 1610612755,
+        "lastName": "Harden",
+        "personId": 201935,
+        "teamCity": "Philadelphia",
+        "teamName": "76ers",
+        "firstName": "James",
+        "teamTricode": "PHI"
+       }
+      ],
+      "gameStatusText": "Final",
+      "gameDateTimeEst": "2022-10-18T19:31:00Z",
+      "gameDateTimeUTC": "2022-10-18T23:31:00Z",
+      "postponedStatus": "N",
+      "seriesGameNumber": ""
+     }
+    ]
+   },
+   {
+    "gameDate": "12/17/2022 00:00:00",
+    "games": [
+     {
+      "day": "Sat",
+      "gameId": "0022200439",
+      "awayTeam": {
+       "seed": 0,
+       "wins": 16,
+       "score": 111,
+       "losses": 15,
+       "teamId": 1610612748,
+       "teamCity": "Miami",
+       "teamName": "Heat",
+       "teamSlug": "heat",
+       "teamTricode": "MIA"
+      },
+      "gameCode": "20221217/MIASAS",
+      "homeTeam": {
+       "seed": 0,
+       "wins": 9,
+       "score": 101,
+       "losses": 20,
+       "teamId": 1610612759,
+       "teamCity": "San Antonio",
+       "teamName": "Spurs",
+       "teamSlug": "spurs",
+       "teamTricode": "SAS"
+      },
+      "monthNum": 12,
+      "weekName": "Week 9",
+      "arenaCity": "Mexico City, Mexico",
+      "arenaName": "Mexico City Arena",
+      "gameLabel": "",
+      "isNeutral": false,
+      "arenaState": "",
+      "branchLink": "https://app.link.nba.com/94uCXAmzCsb",
+      "gameStatus": 3,
+      "seriesText": "",
+      "weekNumber": 9,
+      "gameDateEst": "2022-12-17T00:00:00Z",
+      "gameDateUTC": "2022-12-17T05:00:00Z",
+      "gameSubtype": "",
+      "gameTimeEst": "1900-01-01T17:00:00Z",
+      "gameTimeUTC": "1900-01-01T22:00:00Z",
+      "ifNecessary": "false",
+      "awayTeamTime": "2022-12-17T17:00:00Z",
+      "broadcasters": {
+       "awayTvBroadcasters": [
+        {
+         "broadcasterId": 1000354,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612748,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "Bally Sports Sun",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "BSSUN"
+        }
+       ],
+       "homeTvBroadcasters": [
+        {
+         "broadcasterId": 1000928,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612759,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "KENS (English) / KNIC (Spanish)",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "KENS/KNIC"
+        }
+       ],
+       "awayOttBroadcasters": [],
+       "homeOttBroadcasters": [],
+       "nationalBroadcasters": [
+        {
+         "broadcasterId": 7,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "natl",
+         "broadcasterTeamId": -1,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "NBA TV",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "Watch with League Pass or your TV subscription",
+         "broadcasterAbbreviation": "NBA TV"
+        }
+       ],
+       "awayRadioBroadcasters": [
+        {
+         "broadcasterId": 1000147,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612748,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "AM 790 & FM 104.3 HD2 / WAQI 710",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WAXY/WAQI"
+        }
+       ],
+       "homeRadioBroadcasters": [
+        {
+         "broadcasterId": 1000260,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612759,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "WOAI/KXTN",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WOAI/KXTN"
+        }
+       ],
+       "nationalOttBroadcasters": [],
+       "nationalRadioBroadcasters": []
+      },
+      "gameSequence": 2,
+      "gameSubLabel": "",
+      "homeTeamTime": "2022-12-17T16:00:00Z",
+      "pointsLeaders": [
+       {
+        "points": 26.0,
+        "teamId": 1610612748,
+        "lastName": "Butler",
+        "personId": 202710,
+        "teamCity": "Miami",
+        "teamName": "Heat",
+        "firstName": "Jimmy",
+        "teamTricode": "MIA"
+       }
+      ],
+      "gameStatusText": "Final",
+      "gameDateTimeEst": "2022-12-17T17:00:00Z",
+      "gameDateTimeUTC": "2022-12-17T22:00:00Z",
+      "postponedStatus": "N",
+      "seriesGameNumber": ""
+     }
+    ]
+   },
+   {
+    "gameDate": "01/13/2023 00:00:00",
+    "games": [
+     {
+      "day": "Fri",
+      "gameId": "0022200635",
+      "awayTeam": {
+       "seed": 0,
+       "wins": 21,
+       "score": 144,
+       "losses": 21,
+       "teamId": 1610612744,
+       "teamCity": "Golden State",
+       "teamName": "Warriors",
+       "teamSlug": "warriors",
+       "teamTricode": "GSW"
+      },
+      "gameCode": "20230113/GSWSAS",
+      "homeTeam": {
+       "seed": 0,
+       "wins": 13,
+       "score": 113,
+       "losses": 30,
+       "teamId": 1610612759,
+       "teamCity": "San Antonio",
+       "teamName": "Spurs",
+       "teamSlug": "spurs",
+       "teamTricode": "SAS"
+      },
+      "monthNum": 1,
+      "weekName": "Week 13",
+      "arenaCity": "San Antonio",
+      "arenaName": "Alamodome",
+      "gameLabel": "",
+      "isNeutral": false,
+      "arenaState": "TX",
+      "branchLink": "https://app.link.nba.com/m3VHyTpzCsb",
+      "gameStatus": 3,
+      "seriesText": "",
+      "weekNumber": 13,
+      "gameDateEst": "2023-01-13T00:00:00Z",
+      "gameDateUTC": "2023-01-13T05:00:00Z",
+      "gameSubtype": "",
+      "gameTimeEst": "1900-01-01T19:30:00Z",
+      "gameTimeUTC": "1900-01-01T00:30:00Z",
+      "ifNecessary": "false",
+      "awayTeamTime": "2023-01-13T16:30:00Z",
+      "broadcasters": {
+       "awayTvBroadcasters": [
+        {
+         "broadcasterId": 1097,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612744,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "NBCSBA",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "http://stream.nbcsports.com/rsn/nba-warriors-live-stream",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "NBCSBA"
+        }
+       ],
+       "homeTvBroadcasters": [
+        {
+         "broadcasterId": 1000344,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612759,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "Bally Sports SW-SA",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "BSSW-SA"
+        }
+       ],
+       "awayOttBroadcasters": [],
+       "homeOttBroadcasters": [],
+       "nationalBroadcasters": [
+        {
+         "broadcasterId": 2,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "natl",
+         "broadcasterTeamId": -1,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "ESPN",
+         "broadcasterRanking": 2,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "https://www.espn.com/watch/player?id=a817dd76-6ce6-4fb9-b384-f2e166dd25a3",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "ESPN"
+        }
+       ],
+       "awayRadioBroadcasters": [
+        {
+         "broadcasterId": 1597,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612744,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "95.7 The Game",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "KGMZ-FM"
+        }
+       ],
+       "homeRadioBroadcasters": [
+        {
+         "broadcasterId": 1000260,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612759,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "WOAI/KXTN",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WOAI/KXTN"
+        }
+       ],
+       "nationalOttBroadcasters": [],
+       "nationalRadioBroadcasters": []
+      },
+      "gameSequence": 4,
+      "gameSubLabel": "",
+      "homeTeamTime": "2023-01-13T18:30:00Z",
+      "pointsLeaders": [
+       {
+        "points": 25.0,
+        "teamId": 1610612744,
+        "lastName": "Poole",
+        "personId": 1629673,
+        "teamCity": "Golden State",
+        "teamName": "Warriors",
+        "firstName": "Jordan",
+        "teamTricode": "GSW"
+       }
+      ],
+      "gameStatusText": "Final",
+      "gameDateTimeEst": "2023-01-13T19:30:00Z",
+      "gameDateTimeUTC": "2023-01-14T00:30:00Z",
+      "postponedStatus": "N",
+      "seriesGameNumber": ""
+     }
+    ]
+   },
+   {
+    "gameDate": "01/19/2023 00:00:00",
+    "games": [
+     {
+      "day": "Thu",
+      "gameId": "0022200678",
+      "awayTeam": {
+       "seed": 0,
+       "wins": 21,
+       "score": 126,
+       "losses": 24,
+       "teamId": 1610612741,
+       "teamCity": "Chicago",
+       "teamName": "Bulls",
+       "teamSlug": "bulls",
+       "teamTricode": "CHI"
+      },
+      "gameCode": "20230119/CHIDET",
+      "homeTeam": {
+       "seed": 0,
+       "wins": 12,
+       "score": 108,
+       "losses": 36,
+       "teamId": 1610612765,
+       "teamCity": "Detroit",
+       "teamName": "Pistons",
+       "teamSlug": "pistons",
+       "teamTricode": "DET"
+      },
+      "monthNum": 1,
+      "weekName": "Week 14",
+      "arenaCity": "Paris",
+      "arenaName": "Accor Arena",
+      "gameLabel": "",
+      "isNeutral": false,
+      "arenaState": "FR",
+      "branchLink": "https://app.link.nba.com/izmerKqzCsb",
+      "gameStatus": 3,
+      "seriesText": "",
+      "weekNumber": 14,
+      "gameDateEst": "2023-01-19T00:00:00Z",
+      "gameDateUTC": "2023-01-19T05:00:00Z",
+      "gameSubtype": "",
+      "gameTimeEst": "1900-01-01T15:00:00Z",
+      "gameTimeUTC": "1900-01-01T20:00:00Z",
+      "ifNecessary": "false",
+      "awayTeamTime": "2023-01-19T14:00:00Z",
+      "broadcasters": {
+       "awayTvBroadcasters": [
+        {
+         "broadcasterId": 1656,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612741,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "NBC Sports Chicago",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "http://stream.nbcsports.com/rsn/nba-bulls-live-stream",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "NBCSCH"
+        }
+       ],
+       "homeTvBroadcasters": [
+        {
+         "broadcasterId": 1000339,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612765,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "Bally Sports DET",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "BSDET"
+        }
+       ],
+       "awayOttBroadcasters": [],
+       "homeOttBroadcasters": [],
+       "nationalBroadcasters": [
+        {
+         "broadcasterId": 7,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "natl",
+         "broadcasterTeamId": -1,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "NBA TV",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "Watch with League Pass or your TV subscription",
+         "broadcasterAbbreviation": "NBA TV"
+        }
+       ],
+       "awayRadioBroadcasters": [
+        {
+         "broadcasterId": 1687,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612741,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "104.3 The Score",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WSCR"
+        }
+       ],
+       "homeRadioBroadcasters": [
+        {
+         "broadcasterId": 1188,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612765,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "97.1 FM The Ticket",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WXYT"
+        }
+       ],
+       "nationalOttBroadcasters": [],
+       "nationalRadioBroadcasters": []
+      },
+      "gameSequence": 1,
+      "gameSubLabel": "",
+      "homeTeamTime": "2023-01-19T15:00:00Z",
+      "pointsLeaders": [
+       {
+        "points": 30.0,
+        "teamId": 1610612741,
+        "lastName": "LaVine",
+        "personId": 203897,
+        "teamCity": "Chicago",
+        "teamName": "Bulls",
+        "firstName": "Zach",
+        "teamTricode": "CHI"
+       }
+      ],
+      "gameStatusText": "Final",
+      "gameDateTimeEst": "2023-01-19T15:00:00Z",
+      "gameDateTimeUTC": "2023-01-19T20:00:00Z",
+      "postponedStatus": "N",
+      "seriesGameNumber": ""
+     }
+    ]
+   },
+   {
+    "gameDate": "04/06/2023 00:00:00",
+    "games": [
+     {
+      "day": "Thu",
+      "gameId": "0022201199",
+      "awayTeam": {
+       "seed": 0,
+       "wins": 33,
+       "score": 127,
+       "losses": 47,
+       "teamId": 1610612757,
+       "teamCity": "Portland",
+       "teamName": "Trail Blazers",
+       "teamSlug": "blazers",
+       "teamTricode": "POR"
+      },
+      "gameCode": "20230406/PORSAS",
+      "homeTeam": {
+       "seed": 0,
+       "wins": 21,
+       "score": 129,
+       "losses": 59,
+       "teamId": 1610612759,
+       "teamCity": "San Antonio",
+       "teamName": "Spurs",
+       "teamSlug": "spurs",
+       "teamTricode": "SAS"
+      },
+      "monthNum": 4,
+      "weekName": "Week 25",
+      "arenaCity": "Austin",
+      "arenaName": "Moody Center",
+      "gameLabel": "",
+      "isNeutral": false,
+      "arenaState": "TX",
+      "branchLink": "https://app.link.nba.com/FEEzZmzzCsb",
+      "gameStatus": 3,
+      "seriesText": "",
+      "weekNumber": 25,
+      "gameDateEst": "2023-04-06T00:00:00Z",
+      "gameDateUTC": "2023-04-06T04:00:00Z",
+      "gameSubtype": "",
+      "gameTimeEst": "1900-01-01T20:00:00Z",
+      "gameTimeUTC": "1900-01-01T00:00:00Z",
+      "ifNecessary": "false",
+      "awayTeamTime": "2023-04-06T17:00:00Z",
+      "broadcasters": {
+       "awayTvBroadcasters": [
+        {
+         "broadcasterId": 1000709,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612757,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "ROOT SPORTS PLUS",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "ROOT-SP+"
+        }
+       ],
+       "homeTvBroadcasters": [
+        {
+         "broadcasterId": 1000696,
+         "broadcasterMedia": "tv",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612759,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "CW35",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "CW35"
+        }
+       ],
+       "awayOttBroadcasters": [],
+       "homeOttBroadcasters": [],
+       "nationalBroadcasters": [],
+       "awayRadioBroadcasters": [
+        {
+         "broadcasterId": 1472,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "away",
+         "broadcasterTeamId": 1610612757,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "Rip City Radio 620",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "KPOJ"
+        }
+       ],
+       "homeRadioBroadcasters": [
+        {
+         "broadcasterId": 1000260,
+         "broadcasterMedia": "radio",
+         "broadcasterScope": "home",
+         "broadcasterTeamId": 1610612759,
+         "tapeDelayComments": "",
+         "broadcasterDisplay": "WOAI/KXTN",
+         "broadcasterRanking": null,
+         "localizationRegion": "",
+         "broadcasterVideoLink": "",
+         "broadcasterDescription": "",
+         "broadcasterAbbreviation": "WOAI/KXTN"
+        }
+       ],
+       "nationalOttBroadcasters": [],
+       "nationalRadioBroadcasters": []
+      },
+      "gameSequence": 3,
+      "gameSubLabel": "",
+      "homeTeamTime": "2023-04-06T19:00:00Z",
+      "pointsLeaders": [
+       {
+        "points": 25.0,
+        "teamId": 1610612759,
+        "lastName": "Bates-Diop",
+        "personId": 1628966,
+        "teamCity": "San Antonio",
+        "teamName": "Spurs",
+        "firstName": "Keita",
+        "teamTricode": "SAS"
+       }
+      ],
+      "gameStatusText": "Final",
+      "gameDateTimeEst": "2023-04-06T20:00:00Z",
+      "gameDateTimeUTC": "2023-04-07T00:00:00Z",
+      "postponedStatus": "N",
+      "seriesGameNumber": ""
+     }
+    ]
+   }
+  ],
+  "weeks": [
+   {
+    "endDate": "2022-10-23T00:00:00Z",
+    "weekName": "Week 1",
+    "startDate": "2022-10-18T00:00:00Z",
+    "weekNumber": 1
+   },
+   {
+    "endDate": "2022-10-30T00:00:00Z",
+    "weekName": "Week 2",
+    "startDate": "2022-10-24T00:00:00Z",
+    "weekNumber": 2
+   }
+  ]
+ }
+}
