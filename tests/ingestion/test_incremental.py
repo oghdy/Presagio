@@ -42,7 +42,7 @@ from presagio.ingestion.sources.nba_api import NbaApiScheduleSource, NbaApiTeamS
 from presagio.ingestion.sources.nba_api.scoreboard import NbaApiScoreboardSource
 from presagio.ingestion.sources.nba_api.team_stats import NbaApiTeamStatsSource
 from presagio.ingestion.sources.odds import TheOddsApiSource
-from presagio.quality import CheckResult, QualityReport, Scope
+from presagio.quality import CHECK_NAMES, CheckResult, QualityReport, Scope
 
 from .helpers import FakeClock, fixture_bytes, fixture_json, fixture_name, html, json_bytes
 from .odds_helpers import (
@@ -713,7 +713,7 @@ def test_failed_quality_check_exits_1_and_is_summarised(db: Engine, world: World
     quality = parent.error_detail["quality"]
     assert quality["ok"] is False and quality["fail"] == ["stat_arithmetic"]
     assert quality["scope"]["date_et"] == "2026-10-22"
-    assert quality["summary"]["fail"] == 1 and sum(quality["summary"].values()) == 14
+    assert quality["summary"]["fail"] == 1 and sum(quality["summary"].values()) == len(CHECK_NAMES)
     steps = {s["step"]: s["status"] for s in parent.error_detail["steps"]}
     assert steps["checks"] == "failed" and steps["results"] == "succeeded"
     out = capsys.readouterr().out

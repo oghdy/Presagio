@@ -4,9 +4,20 @@ from presagio.quality.checks import (
     CHECK_NAMES,
     CheckResult,
     CheckSettings,
+    FeatureRecompute,
     QualityReport,
     Scope,
+    StoredFeature,
     run_checks,
 )
 
-__all__ = ["CHECK_NAMES", "CheckResult", "CheckSettings", "QualityReport", "Scope", "run_checks"]
+__all__ = [
+    "CHECK_NAMES",
+    "CheckResult",
+    "CheckSettings",
+    "FeatureRecompute",
+    "QualityReport",
+    "Scope",
+    "StoredFeature",
+    "run_checks",
+]

@@ -55,6 +55,24 @@ MAX_EXAMPLES = 5
 
 
 @dataclass(frozen=True)
+class StoredFeature:
+    """One stored features row, as feature_drift hands it to a recompute function."""
+
+    feature_id: int
+    game_id: str
+    as_of: datetime
+    feature_version: str
+    snapshot_kind: str
+    origin: str
+    values: dict[str, Any]
+
+
+# Recomputes a stored row's values at the same as_of and feature_version (read only, inside
+# the check's transaction); None means the row cannot be recomputed and is not compared.
+FeatureRecompute = Callable[[Connection, StoredFeature], dict[str, Any] | None]
+
+
+@dataclass(frozen=True)
 class CheckSettings:
     """Tunable thresholds; the defaults fit full 82-game seasons."""
 
@@ -69,6 +87,9 @@ class CheckSettings:
     recent_run_days: int = 7
     # A game that started this long ago (database clock) should be final by now.
     past_game_grace_hours: int = 24
+    # What feature_drift compares stored features against. The feature module (P-035)
+    # provides it; without one the check is skipped (schema v1 9-9).
+    feature_recompute: FeatureRecompute | None = None
 
 
 @dataclass(frozen=True)
@@ -642,6 +663,92 @@ def check_odds_events_per_game(conn: Connection, scope: Scope, cfg: CheckSetting
     return Outcome(len(rows), [r.game_id for r in rows if r.events > 1])
 
 
+def _table_missing(conn: Connection, table: str) -> bool:
+    """True when the table does not exist (e.g. the modeling layer before migration 0002)."""
+    found = conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar()
+    return found is None
+
+
+def _missing_table_outcome(table: str) -> Outcome:
+    """Skip row for a check whose table is not there yet."""
+    return Outcome(0, note=f"table {table} does not exist (migration 0002)", skipped=True)
+
+
+def _rows_after_tipoff(conn: Connection, scope: Scope, table: str, key: str) -> Outcome:
+    """Rows of a modeling table whose as_of is at or after its game's start_time_utc."""
+    if _table_missing(conn, table):
+        return _missing_table_outcome(table)
+    where, params = scope.games_where()
+    rows = _rows(
+        conn,
+        f"""
+        SELECT t.{key} AS id, t.game_id, t.as_of < g.start_time_utc AS ok
+        FROM {table} t
+        JOIN games g ON g.game_id = t.game_id
+        WHERE true {where}
+        ORDER BY t.{key}
+        """,
+        params,
+    )
+    return Outcome(len(rows), [f"{r.id}:{r.game_id}" for r in rows if not r.ok])
+
+
+def check_features_after_tipoff(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """No features row has as_of at/after its game's start (rule R4; spans two tables, so the
+    loader and this check guard it instead of a DB CHECK)."""
+    return _rows_after_tipoff(conn, scope, "features", "feature_id")
+
+
+def check_predictions_after_tipoff(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """No prediction has as_of at/after its game's start (rule R4). The row's own
+    scheduled_start_utc is a DB CHECK; this compares with the game's latest start."""
+    return _rows_after_tipoff(conn, scope, "predictions", "prediction_id")
+
+
+def check_feature_drift(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """Stored features rows whose recomputed values differ (reported, never overwritten, T11)."""
+    if cfg.feature_recompute is None:
+        return Outcome(0, note="no recompute function (feature module, P-035)", skipped=True)
+    if _table_missing(conn, "features"):
+        return _missing_table_outcome("features")
+    where, params = scope.games_where()
+    rows = _rows(
+        conn,
+        f"""
+        SELECT f.feature_id, f.game_id, f.as_of, f.feature_version, f.snapshot_kind, f.origin,
+               f."values"
+        FROM features f
+        JOIN games g ON g.game_id = f.game_id
+        WHERE true {where}
+        ORDER BY f.feature_id
+        """,
+        params,
+    )
+    if not rows:
+        return Outcome(0, note="no stored features rows to compare", skipped=True)
+    compared, drifted, unavailable = 0, [], 0
+    for row in rows:
+        stored = StoredFeature(*row)
+        recomputed = cfg.feature_recompute(conn, stored)
+        if recomputed is None:
+            unavailable += 1
+            continue
+        compared += 1
+        if recomputed != stored.values:
+            keys = sorted(
+                k
+                for k in stored.values.keys() | recomputed.keys()
+                if stored.values.get(k, ...) != recomputed.get(k, ...)
+            )
+            drifted.append(
+                f"{stored.feature_id}:{stored.game_id}:{stored.feature_version}:{keys[0]}"
+            )
+    outcome = Outcome(compared, drifted)
+    if unavailable:
+        outcome.note = f"{unavailable} row(s) could not be recomputed"
+    return outcome
+
+
 CHECKS: tuple[Check, ...] = (
     Check(
         "team_rows_per_game",
@@ -732,6 +839,25 @@ CHECKS: tuple[Check, ...] = (
         check_recent_failed_runs,
         finding=WARN,
         scoped=False,
+    ),
+    Check(
+        "features_after_tipoff",
+        "features rows",
+        "no features row with as_of at/after its game's start",
+        check_features_after_tipoff,
+    ),
+    Check(
+        "predictions_after_tipoff",
+        "predictions",
+        "no prediction with as_of at/after its game's start",
+        check_predictions_after_tipoff,
+    ),
+    Check(
+        "feature_drift",
+        "features rows",
+        "recomputed features equal the stored values (reported, never overwritten)",
+        check_feature_drift,
+        finding=WARN,
     ),
 )
 CHECK_NAMES = tuple(c.name for c in CHECKS)
