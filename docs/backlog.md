@@ -427,10 +427,10 @@
 
 | 티켓 | 제목 | 역할 | 상태 | 의존 |
 | --- | --- | --- | --- | --- |
-| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | TODO (D-048 승인, 세션 시작) | P-017 |
-| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | TODO (D-046 승인, 세션 시작) | P-021 |
-| P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | IN PROGRESS | - |
-| P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | TODO (브리핑 확정, 세션 시작) | P-021 |
+| P-024 | 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏, D-038 시각) | platform-engineer | IN PROGRESS | P-017 |
+| P-025 | 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님) + 2023-24 일정 `--force` 재수집 | data-engineer | IN PROGRESS | P-021 |
+| P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | REVIEW (PR #20) | - |
+| P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | IN PROGRESS | P-021 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (features, model_versions, predictions as_of 스냅숏, 참조 배당) → 마이그레이션 0002 (`is_neutral` 컬럼 추가 없음, D-046) | data-engineer | TODO | P-030 승인 |
 | P-032 | walk-forward 평가 틀 + 지표(log loss, Brier, 보정 구간, MAE/RMSE) + 시장 확률·CLV 계산 | ml-engineer | TODO | P-030 승인 |
 | P-033 | 기준선 3종: 시장 암시 확률(마진 제거), 항상 홈팀, 시즌 승률 + 결과 저장 | ml-engineer | TODO | P-031, P-032 |
@@ -445,7 +445,7 @@
 ### 티켓 상세 (2026-10-23 새 PM이 확정. 완료 기준은 사람만 바꾼다, D-008)
 
 ### P-030 🧑 모델링 설계안 v1 + 실험 계획
-- **상태:** TODO (브리핑 확정 2026-10-23 `P-030-briefing.md`, ml-engineer 세션 시작)
+- **상태:** IN PROGRESS (2026-10-23 ml-engineer 세션 `p-030-modeling`, Fable 5.1 xhigh, 브랜치 `docs/P-030-modeling-design`)
 - **담당 역할:** ml-engineer (설계안 작성. Fable 5.1, 노력 xhigh, D-043) → PM → 사람 승인
 - **단계:** 2
 - **의존:** P-021 (DONE)
@@ -466,9 +466,10 @@
 - **확인 방법:** 사람이 설계안을 읽고 M-번호에 답한다. reviewer(Opus 5.5 높음)가 문서 리뷰(숫자를 개발 DB에서 재현, 수식 검토, 누수 경로 점검)를 하고 PM이 기준 1~9를 대조한다.
 - **메모:**
   - 2026-10-23 PM: 브리핑 초안 `P-030-briefing.md`(공유 노트) 작성. 사람 확인 후 ml-engineer 세션(Fable 5.1 xhigh, 새 worktree) 시작. 브랜치 `docs/P-030-modeling-design`. 검증 노트 F-5의 데이터 사실(cup_final 별도 타입, `team_game_stats_primary`, `odds_closing_lines`, 배당은 live 1회분)을 브리핑에 넣었다.
+  - 2026-10-23 PM: 사람이 브리핑 확정 → 세션 시작. P-024·P-025 세션과 동시(파일 겹침 없음). PR이 오면 reviewer(Opus 높음)에게 문서 리뷰(숫자 재현·수식·누수 경로)를 맡기고, 누수 관점은 리뷰 브리핑에 체크리스트로 넣는다.
 
 ### P-024 맥 launchd 임시 스케줄 (단계 6 전까지 매일 수집 + 배당 스냅숏)
-- **상태:** TODO (Q-017 (a) 승인, D-048. 브리핑 `P-024-briefing.md`, platform-engineer 세션 시작)
+- **상태:** IN PROGRESS (2026-10-23 platform-engineer 세션 `p-024-launchd`, Opus 5.5 높음, 브랜치 `feat/P-024-launchd-schedule`. 브리핑 `P-024-briefing.md`)
 - **담당 역할:** platform-engineer (단계 6 역할의 선행 예외 활성. D-002 예외, P-003·P-023과 같은 방식)
 - **단계:** 2 (단계 6 선행)
 - **의존:** P-017 (DONE), Q-017 승인
@@ -487,7 +488,7 @@
   - 2026-10-23 PM: 창업 세션 검증 노트 F-3로 생성. 맥·Docker Desktop이 꺼진 날은 결손이고 `ingestion_runs`에 run이 없는 것으로 드러난다(정직한 결손). 브랜치 `feat/P-024-launchd-schedule`.
 
 ### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
-- **상태:** TODO (Q-015 (a) 승인, D-046. 브리핑 `P-025-briefing.md`, data-engineer 세션 시작)
+- **상태:** IN PROGRESS (2026-10-23 data-engineer 세션 `p-025-neutral`, Opus 5.5 높음, 브랜치 `fix/P-025-neutral-2023-24`. 브리핑 `P-025-briefing.md`)
 - **담당 역할:** data-engineer
 - **단계:** 2 (단계 1 보수)
 - **의존:** P-021 (DONE), Q-015 (a) 승인
@@ -505,7 +506,7 @@
   - 2026-10-23 PM: 창업 세션 검증 노트 F-1로 생성. D-044의 "컬럼 추가"는 틀린 전제였다(컬럼은 마이그레이션 0001에 있음) → Q-015로 정정 요청. 브랜치 `fix/P-025-neutral-2023-24`.
 
 ### P-029 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다
-- **상태:** IN PROGRESS (2026-10-23 사람 확인. PM이 worktree에서 브랜치 `docs/P-029-ops-docs-sync`로 작업)
+- **상태:** REVIEW (2026-10-23 PR #20 https://github.com/oghdy/Presagio/pull/20. PM 작성, 리뷰어 없음, 사람 머지 대기)
 - **담당 역할:** pm
 - **단계:** 2
 - **의존:** 없음 (Q-016 승인 → D-047도 같은 PR에)
@@ -521,6 +522,7 @@
 - **확인 방법:** PR diff, 기준 5의 grep.
 - **메모:**
   - 2026-10-23 PM: 검증 노트 F-4로 생성. P-030과 파일이 겹치지 않아 병렬. 브랜치 `docs/P-029-ops-docs-sync`. PM이 직접 쓰고 사람이 머지한다(리뷰어 없음, 문서 정합성 작업).
+  - 2026-10-23 PM: PR #20. 문서 4개, +43/-8줄. `git grep "하루 2회" docs/team CLAUDE.md` 0줄 확인. D-047 문구 포함. 사람 머지 대기.
 
 ### 티켓 초안 요지 (상세 완료 기준은 P-030 승인 후 새 PM이 확정)
 
