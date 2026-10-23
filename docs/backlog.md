@@ -488,6 +488,7 @@
 - **확인 방법:** `launchctl list | grep presagio`, 로그 파일, `SELECT job_type, scope_key, status, started_at FROM ingestion_runs ORDER BY run_id DESC LIMIT 10`.
 - **메모:**
   - 2026-10-23 PM: 창업 세션 검증 노트 F-3로 생성. 맥·Docker Desktop이 꺼진 날은 결손이고 `ingestion_runs`에 run이 없는 것으로 드러난다(정직한 결손). 브랜치 `feat/P-024-launchd-schedule`.
+  - 2026-10-23 PM: platform-engineer 세션(Opus 5.5 높음) 시작. 세션이 10:57 KST 타이머를 기다리며 PR 본문을 준비해 둔 상태(10:17 기준 launchd 잡 미설치). PM 지시 변경: 16:00 launchd 실행을 기다리지 말고 10:57 확인 뒤 PR을 먼저 열고, 기준 5(실제 본 실행 1회)는 16:00 KST launchd 실행 결과로 채우되 확인 쿼리를 PR에 적기. 설치한 잡은 제거하지 말 것(머지 후 PM이 공유 체크아웃에서 재설치). **16:00 이후 PM이 `ingestion_runs`로 본 실행 결과를 확인해야 한다.**
 
 ### P-025 2023-24 중립 경기장 `is_neutral` 값 보완 (컬럼 추가 아님)
 - **상태:** REVIEW (2026-10-23 PR #21 https://github.com/oghdy/Presagio/pull/21, 커밋 `27d2b53`, CI 초록. reviewer 서브에이전트 독립 리뷰 중)
