@@ -2,6 +2,8 @@
 
 Exit codes: 0 everything done, 1 some unit not done (or an error before starting), 2 stopped by
 a block (HTTP 403/429), 64 bad arguments (sysexits EX_USAGE, so it never reads as "blocked").
+`backtest run` adds 3 (a leakage guard fired) and 4 (stored rows differ from this run); see
+presagio.evaluation.cli.
 """
 
 from __future__ import annotations

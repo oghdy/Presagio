@@ -33,6 +33,7 @@ from presagio.evaluation.metrics import (
     expected_calibration_error,
 )
 from presagio.evaluation.scoring import METRIC_VERSION, EvaluationRecord, ScoringResult
+from presagio.evaluation.store import StoreReport, TableReport
 from presagio.evaluation.walkforward import WalkForwardResult
 
 # Design 4-6 (proposal value): market lines with fewer games are "reference only".
@@ -224,6 +225,56 @@ def _lead_buckets(chosen: Sequence[EvaluationRecord]) -> str:
     return " / ".join(str(sum(1 for x in leads if x <= b)) for b in buckets)
 
 
+def _table_line(name: str, t: TableReport) -> str:
+    """'predictions inserted 10, already stored 0, differing 0'."""
+    return f"{name} inserted {t.inserted}, already stored {t.existing}, differing {t.mismatched}"
+
+
+def storage_lines(store: StoreReport | None, dry_run: bool) -> list[str]:
+    """What the run wrote (or did not write) to the database."""
+    if store is None:
+        return [
+            "- "
+            + ("Dry run: " if dry_run else "")
+            + "nothing was written to the database"
+            + ("." if dry_run else " (pass --store to write predictions and evaluations).")
+        ]
+    lines = [
+        f"- Stored (--store): model_versions {store.model_name} v{store.version} "
+        f"(model_version_id {store.model_version_id}, "
+        f"{'new' if store.model_version_new else 'existing'}"
+        + (
+            f", holdout unlock recorded: {store.holdout_reason_recorded}"
+            if store.holdout_reason_recorded
+            else ""
+        )
+        + f"); {_table_line('predictions', store.predictions)}; "
+        f"{_table_line('evaluations', store.evaluations)}; holdout rows not written: "
+        f"{store.holdout_skipped_predictions} predictions, "
+        f"{store.holdout_skipped_evaluations} evaluations."
+    ]
+    if store.mismatches:
+        lines.append(
+            f"- WARNING: {store.mismatches} stored row(s) differ from this run and were NOT "
+            "overwritten (determinism check, design 8-3; bump the model version if the "
+            "change is intended). Examples:"
+        )
+        lines += [f"  - {e}" for e in store.predictions.examples + store.evaluations.examples]
+    return lines
+
+
+def _not_predicted_note(run: WalkForwardResult) -> str:
+    """market_status counts of the games the predictor returned nothing for."""
+    if not run.not_predicted:
+        return ""
+    counts = Counter(n.market_status for n in run.not_predicted)
+    return (
+        " (not predicted by market_status: "
+        + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+        + ")"
+    )
+
+
 def render_report(
     run: WalkForwardResult,
     scoring: ScoringResult,
@@ -231,6 +282,7 @@ def render_report(
     experiment: str,
     settings: ReportSettings | None = None,
     dry_run: bool = False,
+    store: StoreReport | None = None,
 ) -> str:
     """The full markdown report of one backtest run."""
     s = settings or ReportSettings()
@@ -262,10 +314,9 @@ def render_report(
         f"- Predictions: {len(run.predictions)} on {run.days} days; scored {len(reported)}; "
         f"warm-up (not reported) {warmup}; not final yet {scoring.not_final}; not predicted: "
         + (", ".join(f"{k} {v}" for k, v in sorted(run.skipped.items())) or "none")
+        + _not_predicted_note(run)
         + ".",
-        "- "
-        + ("Dry run: " if dry_run else "")
-        + "nothing was written to the database (prediction storage arrives with P-033).",
+        *storage_lines(store, dry_run),
         "",
     ]
     if not reported:

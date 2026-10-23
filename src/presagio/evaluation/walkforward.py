@@ -17,7 +17,10 @@ today's and future scores, never leaves the runner):
 Learning predictors refit every 7 days (expanding window from the first season) and start
 predicting after the minimum-training season (2023-24, D-049 M-6). Non-learning baselines
 predict from the first season but are reported only from 2024-01-01 (warm-up). Holdout
-seasons are refused without an unlock reason (6-3). Nothing is stored (P-033 adds storage).
+seasons are refused without an unlock reason (6-3). The training window starts at the first
+requested season (expanding window, M-6): a training row of an earlier season (2022-23, M-11)
+is a guard error, and every self-reported training value is cross-checked against the games
+table by game_id. The runner reads only; presagio.evaluation.store writes what it produced.
 """
 
 from __future__ import annotations
@@ -36,14 +39,21 @@ from typing import Protocol, runtime_checkable
 from sqlalchemy import Connection
 
 from presagio.evaluation.clv import CLOSING_TOLERANCE
-from presagio.evaluation.data import GameRecord, load_games, load_prediction_quotes
+from presagio.evaluation.data import (
+    GameRecord,
+    load_event_matching,
+    load_games,
+    load_prediction_quotes,
+)
 from presagio.evaluation.holdout import HOLDOUT_SEASONS, HoldoutDecision, check_holdout
 from presagio.evaluation.market import (
     CONSENSUS_MIN_BOOKS,
     DEFAULT_MARGIN_METHOD,
     MAX_MARKET_AGE,
+    NO_ODDS_SEASONS,
     REFERENCE_BOOKMAKERS,
     GameMarket,
+    market_status,
     prediction_market,
 )
 from presagio.evaluation.timing import (
@@ -342,15 +352,21 @@ class ScheduleOnlyTrainingSource:
     """
 
     def __init__(
-        self, games: Sequence[GameRecord], lag: timedelta = DEFAULT_AVAILABILITY_LAG
+        self,
+        games: Sequence[GameRecord],
+        lag: timedelta = DEFAULT_AVAILABILITY_LAG,
+        train_start_season: str | None = None,
     ) -> None:
-        """Hold the loaded games and the availability lag."""
+        """Hold the loaded games, the availability lag and the first season of the window."""
         self._games = games
         self._lag = lag
+        self._train_start_season = train_start_season
 
     def training_matrix(self, feature_version: str, fit_cutoff: date) -> TrainingMatrix:
-        """Finished games with D(h) < fit_cutoff passing R2 at fit_cutoff's as_of."""
+        """Finished games with D(h) < fit_cutoff passing R2 at fit_cutoff's as_of, of the
+        training window's seasons only (expanding from train_start_season, M-6)."""
         fit_as_of = backtest_as_of(fit_cutoff)
+        start = self._train_start_season
         rows = tuple(
             TrainingRow(
                 game_id=g.game_id,
@@ -365,6 +381,7 @@ class ScheduleOnlyTrainingSource:
             )
             for g in self._games
             if g.game_type in PREDICTED_GAME_TYPES
+            and (start is None or g.season >= start)
             and g.home_score is not None
             and g.away_score is not None
             and is_available(
@@ -381,7 +398,11 @@ class ScheduleOnlyTrainingSource:
 
 
 class Predictor(Protocol):
-    """A model or baseline plugged into the runner (B0..B3 and later models, P-033+)."""
+    """A model or baseline plugged into the runner (B0..B3 and later models, P-033+).
+
+    An optional attribute `uses_results = False` (the market baseline B3) says the predictor
+    reads no past result, so its predictions' train_cutoff is as_of (schema v1 9-4).
+    """
 
     name: str
     trains: bool  # True: refit on the cadence, minimum-training rule applies
@@ -424,6 +445,13 @@ class WalkForwardConfig:
         if self.refit_every_days < 1:
             raise ValueError("refit cadence must be >= 1 day")
 
+    @property
+    def train_start_season(self) -> str:
+        """First season of the expanding training window: the earliest requested season
+        (D-049 M-6). Earlier seasons may feed state (Elo warm-up, M-11; holdout results
+        as inputs, 6-3 item 2) but never training, prediction or scoring."""
+        return min(self.seasons)
+
 
 @dataclass(frozen=True)
 class PredictionRecord:
@@ -437,11 +465,27 @@ class PredictionRecord:
     total_sd: float | None
     reference_line: float | None  # L at as_of (R3), what the over probability is scored on
     reference_bookmaker: str | None
-    train_cutoff: datetime | None
+    # Learning: latest available_at of the training set. Non-learning: latest available_at of
+    # the visible results, or as_of when no past result was used (schema v1 9-4).
+    train_cutoff: datetime
     market: GameMarket  # prediction-time market (R3)
+    # Prediction-time market_status (design 4-6, the four values known at as_of): available,
+    # no_snapshot_at_as_of, no_odds_season, unmatched_event. pred_only and rescheduled are
+    # decided by the evaluation (Q-022).
+    market_status: str
     reported: bool  # False for the non-learning warm-up before baseline_report_from
     snapshot_kind: str = SNAPSHOT_KIND
     origin: str = ORIGIN
+
+
+@dataclass(frozen=True)
+class NotPredicted:
+    """An eligible target game the predictor returned nothing for (B3 without a market),
+    with the prediction-time market_status as the reason record."""
+
+    game: TargetGame
+    as_of: datetime
+    market_status: str
 
 
 @dataclass(frozen=True)
@@ -465,6 +509,7 @@ class WalkForwardResult:
     holdout: HoldoutDecision
     games: dict[str, GameRecord]
     predictions: list[PredictionRecord] = field(default_factory=list)
+    not_predicted: list[NotPredicted] = field(default_factory=list)
     refits: list[RefitRecord] = field(default_factory=list)
     skipped: Counter[str] = field(default_factory=Counter)
     days: int = 0
@@ -516,11 +561,45 @@ def _check_total(value: float | None, what: str, game_id: str) -> float | None:
     return value
 
 
-def _check_training(matrix: TrainingMatrix, fit_cutoff: date, as_of: datetime) -> None:
-    """Runner-level guard of the training rules (6-2): raise on any violation."""
+def _check_training(
+    matrix: TrainingMatrix,
+    fit_cutoff: date,
+    as_of: datetime,
+    *,
+    games: Mapping[str, GameRecord] | None = None,
+    lag: timedelta = DEFAULT_AVAILABILITY_LAG,
+    train_start_season: str | None = None,
+) -> None:
+    """Runner-level guard of the training rules (6-2): raise on any violation.
+
+    With `games`, every self-reported row value (season, et_date, start_time_utc,
+    available_at) is cross-checked against the games table by game_id (P-032 review (a)),
+    and a row of a season before train_start_season is refused (M-6, M-11).
+    """
     if matrix.fit_cutoff != fit_cutoff or matrix.fit_as_of != backtest_as_of(fit_cutoff):
         raise LeakageGuardError(f"training matrix is for {matrix.fit_cutoff}, not {fit_cutoff}")
     for row in matrix.rows:
+        if games is not None:
+            game = games.get(row.game_id)
+            if game is None:
+                raise LeakageGuardError(f"training game {row.game_id} is not a loaded game")
+            reported = (row.season, row.et_date, row.start_time_utc, row.available_at)
+            actual = (
+                game.season,
+                game.et_date,
+                game.start_time_utc,
+                available_at(game.start_time_utc, lag),
+            )
+            if reported != actual:
+                raise LeakageGuardError(
+                    f"training game {row.game_id} self-reports {reported}, games table says "
+                    f"{actual}"
+                )
+        if train_start_season is not None and row.season < train_start_season:
+            raise LeakageGuardError(
+                f"training game {row.game_id} of {row.season} is before the training window "
+                f"({train_start_season}, M-6/M-11)"
+            )
         if not row.et_date < fit_cutoff:
             raise LeakageGuardError(f"training game {row.game_id} is not before {fit_cutoff}")
         if row.available_at > matrix.fit_as_of:
@@ -544,6 +623,28 @@ def _check_prediction_times(
         raise LeakageGuardError(f"{game_id}: train_cutoff/as_of/tip-off order")
 
 
+def prediction_time_status(
+    *,
+    season: str,
+    has_prediction_market: bool,
+    has_matched_event: bool,
+    has_unmatched_candidate: bool,
+    no_odds_seasons: Sequence[str] = NO_ODDS_SEASONS,
+) -> str:
+    """market_status as known at as_of (design 4-6): available, no_odds_season,
+    unmatched_event or no_snapshot_at_as_of. Whether the close arrives (pred_only) or the
+    game moves (rescheduled) is only known later, so the evaluation decides those."""
+    return market_status(
+        season=season,
+        rescheduled=False,
+        has_prediction_market=has_prediction_market,
+        has_closing_market=True,
+        has_matched_event=has_matched_event,
+        has_unmatched_candidate=has_unmatched_candidate,
+        no_odds_seasons=no_odds_seasons,
+    )
+
+
 def run_walk_forward(
     conn: Connection,
     predictor: Predictor,
@@ -561,7 +662,9 @@ def run_walk_forward(
     )
     history = _History(loaded, config.availability_lag)
     if training_source is None:
-        training_source = ScheduleOnlyTrainingSource(loaded, config.availability_lag)
+        training_source = ScheduleOnlyTrainingSource(
+            loaded, config.availability_lag, config.train_start_season
+        )
     result = WalkForwardResult(
         predictor_name=predictor.name,
         config=config,
@@ -592,7 +695,14 @@ def run_walk_forward(
             last_refit is None or (day - last_refit).days >= config.refit_every_days
         ):
             matrix = training_source.training_matrix(predictor.feature_version or "", day)
-            _check_training(matrix, day, as_of)
+            _check_training(
+                matrix,
+                day,
+                as_of,
+                games=result.games,
+                lag=config.availability_lag,
+                train_start_season=config.train_start_season,
+            )
             predictor.fit(matrix)
             last_refit, train_cutoff = day, matrix.max_available_at
             result.refits.append(
@@ -626,14 +736,27 @@ def run_walk_forward(
         unknown = set(output) - set(ids)
         if unknown:
             raise PredictorOutputError(f"predictions for games not asked for: {sorted(unknown)}")
-        cutoff = train_cutoff if predictor.trains else context.info_cutoff
+        if predictor.trains:
+            cutoff = train_cutoff
+        elif getattr(predictor, "uses_results", True):
+            cutoff = context.info_cutoff
+        else:
+            cutoff = None  # no past result used: train_cutoff = as_of (schema v1 9-4)
+        matched, candidates = load_event_matching(conn, ids)
         for target in targets:
+            market = markets[target.game_id]
+            status = prediction_time_status(
+                season=target.season,
+                has_prediction_market=market.home is not None,
+                has_matched_event=target.game_id in matched,
+                has_unmatched_candidate=target.game_id in candidates,
+            )
             values = output.get(target.game_id)
             if values is None:
                 result.skipped[SKIP_NOT_PREDICTED] += 1
+                result.not_predicted.append(NotPredicted(target, as_of, status))
                 continue
             _check_prediction_times(target.game_id, cutoff, as_of, target.start_time_utc)
-            market = markets[target.game_id]
             totals_ref = market.totals_reference
             p_home = _check_probability(values.p_home, "p_home", target.game_id)
             if p_home is None:
@@ -650,8 +773,9 @@ def run_walk_forward(
                     ),
                     reference_line=market.total_line,
                     reference_bookmaker=totals_ref.bookmaker_key if totals_ref else None,
-                    train_cutoff=cutoff,
+                    train_cutoff=as_of if cutoff is None else cutoff,
                     market=market,
+                    market_status=status,
                     reported=predictor.trains or day >= config.baseline_report_from,
                 )
             )

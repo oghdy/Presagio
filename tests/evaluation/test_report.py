@@ -10,6 +10,7 @@ from presagio.evaluation.dummy import ConstantPredictor
 from presagio.evaluation.report import ReportSettings, render_report
 from presagio.evaluation.scoring import score_run
 from presagio.evaluation.walkforward import WalkForwardConfig, run_walk_forward
+from presagio.models.baselines import MarketBaseline
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 FAST = ReportSettings(n_boot=50)
@@ -50,6 +51,18 @@ def test_live_season_marks_small_market_samples(conn: Connection) -> None:
     assert "+0.0769" in b4  # mean clv_return of the one value bet
     counts = text.split("## market_status counts")[1]
     assert "| 2026-27 | regular | 3 | 1 | 1 | 0 | 0 | 1 | 0 |" in counts
+
+
+def test_market_baseline_without_odds_reports_the_reason(conn: Connection) -> None:
+    """B3 over 2023-24 predicts nothing: the header counts the games by their prediction-time
+    market_status and no table follows."""
+    run = run_walk_forward(conn, MarketBaseline(), WalkForwardConfig(seasons=("2023-24",)), now=NOW)
+    text = render_report(run, score_run(conn, run), experiment="B3", settings=FAST)
+    assert (
+        "not predicted: not_predicted 174 (not predicted by market_status: no_odds_season 174)."
+        in text
+    )
+    assert "No scored predictions." in text
 
 
 def test_unlocked_holdout_is_announced(conn: Connection) -> None:
