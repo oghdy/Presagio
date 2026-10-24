@@ -6,6 +6,10 @@ savepoint, so one broken check is reported as 'error' and the others still run.
 
 Statuses: pass; fail (data is wrong, exit code 1); warn (worth a look, exit code unchanged);
 error (the check itself could not run, exit code 1); skip (not meaningful for this scope).
+
+The modeling-layer checks (schema v1 ch. 9) need the tables of migration 0002: on a database
+that has not reached 0002 they skip; on one that has (alembic_version >= 0002) a missing table
+is an error, because the table should be there.
 """
 
 from __future__ import annotations
@@ -51,6 +55,18 @@ SCORE_SOURCES = {
     "scheduleleaguev2": "$.leagueSchedule.gameDates[*].games[*]",
     "scoreboardv3": "$.scoreboard.games[*]",
 }
+# The Alembic revision that created the modeling tables (features, model_versions,
+# predictions, evaluations). Revisions are zero-padded, so they compare as strings.
+MODELING_REVISION = "0002"
+# predictions.market_status answers "was there a market at as_of?" and may only take these
+# four values (D-054 2). pred_only and rescheduled are only known after the game, so they
+# belong to evaluations.market_status; the DB CHECK on both tables allows all six.
+PREDICTION_MARKET_STATUSES = (
+    "available",
+    "no_snapshot_at_as_of",
+    "no_odds_season",
+    "unmatched_event",
+)
 MAX_EXAMPLES = 5
 
 
@@ -663,21 +679,48 @@ def check_odds_events_per_game(conn: Connection, scope: Scope, cfg: CheckSetting
     return Outcome(len(rows), [r.game_id for r in rows if r.events > 1])
 
 
+class MissingTableError(RuntimeError):
+    """A table the applied migrations should have created is not there."""
+
+
 def _table_missing(conn: Connection, table: str) -> bool:
     """True when the table does not exist (e.g. the modeling layer before migration 0002)."""
     found = conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar()
     return found is None
 
 
-def _missing_table_outcome(table: str) -> Outcome:
-    """Skip row for a check whose table is not there yet."""
-    return Outcome(0, note=f"table {table} does not exist (migration 0002)", skipped=True)
+def _schema_revision(conn: Connection) -> str | None:
+    """alembic_version.version_num, or None when Alembic never stamped this database."""
+    if _table_missing(conn, "alembic_version"):
+        return None
+    return conn.execute(text("SELECT max(version_num) FROM alembic_version")).scalar()
+
+
+def _modeling_tables_absent(conn: Connection, *tables: str) -> Outcome | None:
+    """None when every table exists. A missing table is a skip before migration 0002 (the
+    layer is not there yet) and an error from 0002 on (it should be there)."""
+    missing = [table for table in tables if _table_missing(conn, table)]
+    if not missing:
+        return None
+    revision = _schema_revision(conn)
+    if revision is None or revision < MODELING_REVISION:
+        return Outcome(
+            0,
+            note=f"table {missing[0]} does not exist (migration {MODELING_REVISION} not applied, "
+            f"alembic_version {revision or 'none'})",
+            skipped=True,
+        )
+    raise MissingTableError(
+        f"table {missing[0]} does not exist although alembic_version is {revision} "
+        f"(>= {MODELING_REVISION})"
+    )
 
 
 def _rows_after_tipoff(conn: Connection, scope: Scope, table: str, key: str) -> Outcome:
     """Rows of a modeling table whose as_of is at or after its game's start_time_utc."""
-    if _table_missing(conn, table):
-        return _missing_table_outcome(table)
+    absent = _modeling_tables_absent(conn, table)
+    if absent is not None:
+        return absent
     where, params = scope.games_where()
     rows = _rows(
         conn,
@@ -706,11 +749,16 @@ def check_predictions_after_tipoff(conn: Connection, scope: Scope, cfg: CheckSet
 
 
 def check_feature_drift(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
-    """Stored features rows whose recomputed values differ (reported, never overwritten, T11)."""
+    """Stored features rows whose recomputed values differ (reported, never overwritten, T11).
+
+    Skips whenever nothing was compared: no recompute function, no stored rows, or no row the
+    function could recompute. A pass means at least one row was recomputed and matched.
+    """
+    absent = _modeling_tables_absent(conn, "features")
+    if absent is not None:
+        return absent
     if cfg.feature_recompute is None:
         return Outcome(0, note="no recompute function (feature module, P-035)", skipped=True)
-    if _table_missing(conn, "features"):
-        return _missing_table_outcome("features")
     where, params = scope.games_where()
     rows = _rows(
         conn,
@@ -743,10 +791,76 @@ def check_feature_drift(conn: Connection, scope: Scope, cfg: CheckSettings) -> O
             drifted.append(
                 f"{stored.feature_id}:{stored.game_id}:{stored.feature_version}:{keys[0]}"
             )
+    if compared == 0:
+        return Outcome(
+            0, note=f"none of {len(rows)} stored row(s) could be recomputed", skipped=True
+        )
     outcome = Outcome(compared, drifted)
     if unavailable:
         outcome.note = f"{unavailable} row(s) could not be recomputed"
     return outcome
+
+
+def check_prediction_feature_link(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """A prediction's feature row is for the same game and its as_of is not after the
+    prediction's as_of (a later row would carry information the prediction could not have had,
+    rule R4). Predictions without a feature_id (models that read no features row) are not
+    checked. The FK keeps feature_id pointing at a row; a dangling one is reported anyway."""
+    absent = _modeling_tables_absent(conn, "predictions", "features")
+    if absent is not None:
+        return absent
+    where, params = scope.games_where()
+    rows = _rows(
+        conn,
+        f"""
+        SELECT p.prediction_id, p.game_id,
+               f.feature_id IS NOT NULL AS found,
+               f.game_id = p.game_id AS same_game,
+               f.as_of <= p.as_of AS in_time
+        FROM predictions p
+        JOIN games g ON g.game_id = p.game_id
+        LEFT JOIN features f ON f.feature_id = p.feature_id
+        WHERE p.feature_id IS NOT NULL {where}
+        ORDER BY p.prediction_id
+        """,
+        params,
+    )
+    failures = []
+    for row in rows:
+        if not row.found:
+            reason = "no_features_row"
+        elif not row.same_game:
+            reason = "other_game"
+        elif not row.in_time:
+            reason = "feature_after_as_of"
+        else:
+            continue
+        failures.append(f"{row.prediction_id}:{row.game_id}:{reason}")
+    return Outcome(len(rows), failures)
+
+
+def check_predictions_market_status(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """Every prediction carries one of the four prediction-time market_status values (D-054 2).
+    The DB CHECK also allows the two evaluation-only values, so the loader rule is checked here."""
+    absent = _modeling_tables_absent(conn, "predictions")
+    if absent is not None:
+        return absent
+    where, params = scope.games_where()
+    rows = _rows(
+        conn,
+        f"""
+        SELECT p.prediction_id, p.game_id, p.market_status, p.market_status IN :statuses AS ok
+        FROM predictions p
+        JOIN games g ON g.game_id = p.game_id
+        WHERE true {where}
+        ORDER BY p.prediction_id
+        """,
+        {**params, "statuses": PREDICTION_MARKET_STATUSES},
+    )
+    return Outcome(
+        len(rows),
+        [f"{r.prediction_id}:{r.game_id}:{r.market_status}" for r in rows if not r.ok],
+    )
 
 
 CHECKS: tuple[Check, ...] = (
@@ -858,6 +972,18 @@ CHECKS: tuple[Check, ...] = (
         "recomputed features equal the stored values (reported, never overwritten)",
         check_feature_drift,
         finding=WARN,
+    ),
+    Check(
+        "prediction_feature_link",
+        "predictions with a feature_id",
+        "the feature row is the same game and its as_of is not after the prediction's",
+        check_prediction_feature_link,
+    ),
+    Check(
+        "predictions_market_status",
+        "predictions",
+        "market_status is one of the 4 prediction-time values (D-054)",
+        check_predictions_market_status,
     ),
 )
 CHECK_NAMES = tuple(c.name for c in CHECKS)

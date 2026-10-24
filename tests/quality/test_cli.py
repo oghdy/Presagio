@@ -49,7 +49,7 @@ def test_clean_data_prints_a_table_and_exits_0(
     code, out = run(capsys, "--season", "2023-24", engine=engine)
     assert code == 0
     lines = out.splitlines()
-    assert lines[0] == "Quality check: season 2023-24 (17 checks, read only)"
+    assert lines[0] == f"Quality check: season 2023-24 ({len(CHECK_NAMES)} checks, read only)"
     assert lines[1].split() == [
         "#", "check", "target", "status", "passed", "failed", "examples", "description"
     ]  # fmt: skip
@@ -61,7 +61,8 @@ def test_clean_data_prints_a_table_and_exits_0(
     assert " 1232       0 " in row  # passed, failed
     assert "each final game has 2 team stat rows, 1 home" in row
     assert "  5. regular_season_games: expected 1230 +/- 0; 2023-24: 1230 final" in out
-    assert lines[-1] == "Summary: 16 pass, 0 fail, 0 warn, 0 error, 1 skip -> exit code 0"
+    passed = len(CHECK_NAMES) - 1  # all but feature_drift
+    assert lines[-1] == f"Summary: {passed} pass, 0 fail, 0 warn, 0 error, 1 skip -> exit code 0"
 
 
 def test_failure_exits_1_and_shows_the_game_id(
