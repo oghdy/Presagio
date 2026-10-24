@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040** DONE(기준선 3종 + 저장 경로, 클라우드 환경). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. **P-033 DONE(#41 `625edfa`, 10-24 13:12)·P-040 DONE(기준 4 = P-033 클라우드 세션 증거).** 개발 DB에 기준선 예측 5,288행 저장. **P-041 PR #49 PM 수락(사람 머지 대기), P-042 PR #48 수정 반영 → 재리뷰 중.** 클라우드 작업자 후속 요청은 `claude -p --cloud`(D-052 보완 3).** 다음: P-028(로컬). Q-025 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040** DONE(기준선 3종 + 저장 경로, 클라우드 환경). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. **P-033 DONE(#41 `625edfa`, 10-24 13:12)·P-040 DONE(기준 4 = P-033 클라우드 세션 증거).** 개발 DB에 기준선 예측 5,288행 저장. **P-041 PR #49·P-042 PR #48 둘 다 PM 수락, 사람 머지 대기.** 클라우드 작업자 후속 요청은 `claude -p --cloud`(D-052 보완 3).** 다음: P-028(로컬). Q-025 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -435,7 +435,7 @@
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | DONE (PR #31 `24abf4b`, 기준 4 = P-033 세션 증거) | P-024 DONE |
-| P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | REVIEW (PR #48 수정 반영, 재리뷰 중) | P-040 DONE |
+| P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | REVIEW (PR #48 PM 수락, 사람 머지 대기) | P-040 DONE |
 | P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | REVIEW (PR #49 PM 수락, 사람 머지 대기) | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
@@ -554,12 +554,13 @@
   - 2026-10-23 PM: P-031·P-032 머지 뒤 상세 확정. P-032 리뷰(1·2회차)의 P-033 후속을 기준 5에 전부 넣음. 브랜치 `feat/P-033-baselines-store`.
 
 ### P-042 클라우드 셋업 후속 (P-040 리뷰 [낮음] 5건)
-- **상태:** REVIEW (2026-10-24 16:3x 작성자가 CLI 메시지(D-052 보완 3)로 깨어나 수정 커밋 2개: `e4ebc5d` README(`/model`+`/effort high`+`/effort status`, 깨어남 문장을 관찰 vs Auto-fix 문서 보장으로 구분, Trusted 범위), `9e089a5` 훅(alembic 실패 사유를 한 줄 꼬리에 보존, 테스트 갱신). HEAD `9e089a5`, CI 초록, 782 passed. **같은 리뷰어 재리뷰 중** → `P-042-review-2.md` → 수락 → 사람 머지(`gh pr update-branch 48`))
+- **상태:** REVIEW (2026-10-24 16:5x **PM 수락**(`P-042-acceptance.md`): 2차 리뷰(`P-042-review-2.md`) "수락 가능" — 1차 필수 3 + 선택 2 전부 반영, 새 [낮음] 2(grep 필터·임시 파일 삭제 테스트 미고정, 동작은 종단 실행으로 확인). HEAD `9e089a5`, CI 초록. **사람 머지 대기**(`gh pr update-branch 48`). 머지 뒤 PM: workflow.md 클라우드 절 갱신, D-057 기록 → DONE)
 - **담당 역할:** platform-engineer (Opus 5.5 높음). D-052상 클라우드에서 수행 가능.
 - **단계:** 2 (단계 6 선행)
 - **의존:** P-040 DONE(머지 + 첫 환경 세션 확인)
 - **목표:** P-040 리뷰(`P-040-review.md`)의 [낮음] 5건을 한 PR로. (1) README 셋업 칸 안내: 플랫폼이 레포 루트에서 셋업을 돈다는 보장이 없으면 rc 127 → 셋업 칸을 `bash scripts/cloud-setup.sh || true` 또는 절대 경로 폴백으로, 실패 시 세션 안 수동 실행 안내. (2) 훅: `alembic current`가 head와 다르면 "캐시가 낡음, `bash scripts/cloud-setup.sh` 실행" 경고 + README에 "셋업 칸 주석을 바꿔 캐시 재생성". (3) README에 `claude --cloud` 전 `/remote-env`로 `presagio-dev` 선택 안내, Default 환경으로 뜬 경우의 훅 메시지. (4) 셋업 성공 경로 테스트(스텁 `runuser`·`psql`·`uv`로 CREATEDB·alembic·`--locked` 단언, 변이 5 생존 해소). (5) 훅 실패 출력 한 줄로. 함께: README 예시 수치 683/0002로 갱신, 클라우드에서 `gh pr` 불가(GraphQL 403) 안내와 `gh api` REST 예시.
 - **메모:**
+  - 2026-10-24 PM 16:5x: **2차 리뷰 "수락 가능"**: 782 passed·skipped 0, scripts 79, ruff·`bash -n` 파일별·CI 통과, 범위 밖 diff 0, main·#49 충돌 없음. README 변경은 350·385·403행뿐(1(c) `/model`+`/effort high`+`/effort status`, 관찰 vs Auto-fix 문서 보장 구분, Trusted 범위). 훅 `9e089a5`: stderr를 mktemp로 받아 `^INFO `·`^(Background on this error` 제외 마지막 줄을 꼬리에 보존, 임시 파일 삭제, stdout 1줄·exit 0 유지(진짜 alembic 종단 실행 2회로 확인), 변이 N1·N2·N5·N7 잡힘. [낮음] 2: grep 필터(N3·N4)·임시 파일 삭제(N8) 변이 생존(선택). 1차 생존 변이 3 그대로(선택). **PM 수락.**
   - 2026-10-24 PM 16:3x: PR 댓글(15:2x)로는 안 깨어남 → `claude -p --cloud session_01A2Mi74nuJBsvQPBuPS6SrE`(16:1x) → 16:29 확인 시 `e4ebc5d`·`9e089a5` 도착(필수 3건 + 선택 2건 반영, 작성자 댓글로 보고). 재리뷰 요청.
   - 2026-10-24 PM 15:2x: **리뷰(Opus) "수정 후 재리뷰"**: 782 passed·skipped 0(루프백 밖 0), ruff·`bash -n`·CI 통과, 범위 밖 diff 0, main·PR #49와 충돌 없음(병합 트리에서 scripts 테스트 27 passed). 변이 33 중 30 잡힘(P-040 생존 변이 5 중 4 해소, `PG_WAIT_SECONDS=0`만 남음), 스텁 PATH 격리 확인, alembic 호출 0.87초(훅 타임아웃 300초 대비 충분), `-q`가 출력을 지우는 것·`python -m alembic` 동작·실패 출력 여러 줄 재현, 공식 문서 인용 4건 원문 일치. **[중간]** README:385 `/model claude-opus-5-5`만 있고 `/effort high`가 없어 D-043 "높음" 미보장(Opus 기본 노력 medium) → 필수 1. **[낮음]** README:403 "GitHub 이벤트로 깨어나 main을 읽는다"는 문서 근거 없음(관찰로 고쳐 적기, 필수 2), `bash -n a b`는 첫 파일만 검사(필수 3), `session-start.sh:105,109` alembic stderr 버림(선택), 생존 변이 3(PG 대기·alembic_out 접기·uv 폴백 경로). 참고: README:350 Trusted 범위 좁게 적힘, Q-024 본문에 래퍼 주석 줄 없음(PM 기록 보완). PM에게: 브랜치명 플랫폼 고정, 기준 2 줄 번호는 2행·4~11행, 다음 브리핑에 `/effort high` 명시, 브리핑 양식의 `bash -n a b` 고치기.
   - 2026-10-24 PM 14:4x: PR #48 도착(세션 시작 약 40분 뒤). 작성자 결정 제안 4건(래퍼 확정·절대 경로 단순화 안 함, 캐시 경고는 stdout만, 클라우드 브랜치명은 플랫폼 고정 허용 + PR 제목으로 식별, 환경 설정 변경 없음). 셋업 단계의 실제 작업 디렉터리 값은 여전히 미확인(래퍼 첫 줄 출력을 사람이 세션 시작 화면에서 볼 수 있으면 README에 추가).
