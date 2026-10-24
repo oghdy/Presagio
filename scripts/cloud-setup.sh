@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Set up a Claude Code cloud session VM for Presagio (P-040, D-052).
+# Set up a Claude Code cloud session VM for Presagio (P-040, P-042, D-052).
 #
-# Paste one line into the "Setup script" field of the claude.ai/code environment
-# (README "운영: Claude Code 클라우드 세션"):
-#
-#   bash scripts/cloud-setup.sh
+# The "설정 스크립트" (setup script) field of the claude.ai/code environment holds the WRAPPER
+# printed in README "운영: Claude Code 클라우드 세션", not a call to this file by relative path:
+# the platform runs the setup script from a directory that is not the repository root (measured
+# 2026-10-23: `bash scripts/cloud-setup.sh` there ended in "No such file or directory", exit 127,
+# and no session started; the official docs do not name the directory). The wrapper locates this
+# file by absolute path (CLAUDE_PROJECT_DIR when set, else find) and runs it. Inside a session
+# the shell starts at the repository root, so `bash scripts/cloud-setup.sh` by hand is fine; the
+# script finds the repository from its own location either way.
 #
 # The platform runs it as root on the Ubuntu 24.04 session VM before Claude Code launches, and
 # snapshots the filesystem when it finishes within roughly five minutes; later sessions start
