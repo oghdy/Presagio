@@ -81,6 +81,7 @@ def test_baseline_passes_every_check(conn: Connection, baseline: Baseline) -> No
     assert checked["recent_failed_runs"] == 1
     # Empty modeling tables (migration 0002) pass with nothing checked.
     assert checked["features_after_tipoff"] == checked["predictions_after_tipoff"] == 0
+    assert checked["prediction_feature_link"] == checked["predictions_market_status"] == 0
 
 
 def test_at_least_the_five_required_checks_exist() -> None:
@@ -661,30 +662,51 @@ def insert_feature(conn: Connection, game_id: str, as_of: Any, values: dict[str,
     ).scalar_one()
 
 
-def insert_prediction(conn: Connection, game_id: str, as_of: Any, start: Any) -> int:
-    """Insert one model configuration and a backtest prediction; return the prediction_id."""
-    model_id = conn.execute(
-        text(
-            """
-            INSERT INTO model_versions (model_name, version, model_family, hyperparameters,
-                seed, code_version, training_window)
-            VALUES ('b0', '1', 'baseline_home', '{}', 0, 'test', '{}')
-            RETURNING model_version_id
-            """
-        )
+def baseline_model(conn: Connection) -> int:
+    """The test model configuration (b0 v1), inserted on first use; return its id."""
+    sql(
+        conn,
+        """
+        INSERT INTO model_versions (model_name, version, model_family, hyperparameters, seed,
+            code_version, training_window)
+        VALUES ('b0', '1', 'baseline_home', '{}', 0, 'test', '{}')
+        ON CONFLICT DO NOTHING
+        """,
+    )
+    return conn.execute(
+        text("SELECT model_version_id FROM model_versions WHERE model_name = 'b0'")
     ).scalar_one()
+
+
+def insert_prediction(
+    conn: Connection,
+    game_id: str,
+    as_of: Any,
+    start: Any,
+    *,
+    feature_id: int | None = None,
+    market_status: str = "no_odds_season",
+) -> int:
+    """Insert one backtest prediction of the test model; return the prediction_id."""
     return conn.execute(
         text(
             """
             INSERT INTO predictions (game_id, model_version_id, as_of, snapshot_kind, origin,
-                computed_at, train_cutoff, scheduled_start_utc, p_home, market_status,
-                code_version)
-            VALUES (:g, :m, :as_of, 'daily', 'backtest', :as_of, :as_of, :start, 0.55,
-                'no_odds_season', 'test')
+                computed_at, train_cutoff, scheduled_start_utc, feature_id, p_home,
+                market_status, code_version)
+            VALUES (:g, :m, :as_of, 'daily', 'backtest', :as_of, :as_of, :start, :f, 0.55,
+                :status, 'test')
             RETURNING prediction_id
             """
         ),
-        {"g": game_id, "m": model_id, "as_of": as_of, "start": start},
+        {
+            "g": game_id,
+            "m": baseline_model(conn),
+            "as_of": as_of,
+            "start": start,
+            "f": feature_id,
+            "status": market_status,
+        },
     ).scalar_one()
 
 
@@ -744,30 +766,139 @@ def test_feature_drift_reports_a_recomputed_difference(
     assert (seen[0].as_of, seen[0].feature_version, seen[0].origin) == (as_of, "fv1", "backtest")
     same = CheckSettings(feature_recompute=lambda _, row: dict(row.values))
     assert one(conn, "feature_drift", settings=same).status == PASS
-    unavailable = one(
-        conn, "feature_drift", settings=CheckSettings(feature_recompute=lambda *_: None)
+    # One of two rows cannot be recomputed: the other is compared, the gap is noted.
+    second = baseline.regular_games[1]
+    insert_feature(conn, second, baseline.games[second]["start_time_utc"] - timedelta(hours=12), {})
+    partial = CheckSettings(
+        feature_recompute=lambda _, row: dict(row.values) if row.game_id == game else None
     )
-    assert (unavailable.status, unavailable.checked) == (PASS, 0)
-    assert unavailable.note == "1 row(s) could not be recomputed"
+    result = one(conn, "feature_drift", settings=partial)
+    assert (result.status, result.checked, result.failed) == (PASS, 1, 0)
+    assert result.note == "1 row(s) could not be recomputed"
 
 
-def test_feature_drift_skips_without_anything_to_compare(conn: Connection) -> None:
-    """No recompute function, or no stored rows: skip (not pass, not fail)."""
+def test_feature_drift_skips_without_anything_to_compare(
+    conn: Connection, baseline: Baseline
+) -> None:
+    """No recompute function, no stored rows, or no row that could be recomputed: skip."""
     result = one(conn, "feature_drift")
     assert (result.status, result.note) == (SKIP, "no recompute function (feature module, P-035)")
     settings = CheckSettings(feature_recompute=lambda _, row: dict(row.values))
     result = one(conn, "feature_drift", settings=settings)
     assert (result.status, result.note) == (SKIP, "no stored features rows to compare")
+    # P-041 (b): rows exist but the function recomputes none of them (compared = 0) is a skip,
+    # not a pass that looks like "everything matched".
+    game = baseline.regular_games[0]
+    insert_feature(conn, game, baseline.games[game]["start_time_utc"] - timedelta(hours=12), {})
+    nothing = one(conn, "feature_drift", settings=CheckSettings(feature_recompute=lambda *_: None))
+    assert (nothing.status, nothing.checked, nothing.failed) == (SKIP, 0, 0)
+    assert nothing.note == "none of 1 stored row(s) could be recomputed"
+
+
+# The five checks that read the modeling tables of migration 0002 (schema v1 ch. 9).
+MODELING_CHECKS = {
+    "features_after_tipoff": "features",
+    "predictions_after_tipoff": "predictions",
+    "feature_drift": "features",
+    "prediction_feature_link": "predictions",
+    "predictions_market_status": "predictions",
+}
+
+
+def drop_modeling_tables(conn: Connection) -> None:
+    """Remove the four tables of migration 0002 (the view goes with them)."""
+    sql(conn, "DROP TABLE evaluations, predictions, features, model_versions CASCADE")
 
 
 def test_modeling_checks_skip_before_migration_0002(conn: Connection) -> None:
-    """A database still at 0001 (e.g. before the PM applies 0002) skips, it does not error."""
-    sql(conn, "DROP TABLE evaluations, predictions, features, model_versions CASCADE")
+    """A database that has not reached 0002 (or was never stamped) skips, it does not error."""
+    drop_modeling_tables(conn)
+    settings = CheckSettings(feature_recompute=lambda _, row: dict(row.values))
+    sql(conn, "UPDATE alembic_version SET version_num = '0001'")
+    report = run_checks(conn, settings=settings)
+    status = {r.name: (r.status, r.note) for r in report.results}
+    missing = "table {} does not exist (migration 0002 not applied, alembic_version 0001)"
+    for name, table in MODELING_CHECKS.items():
+        assert status[name] == (SKIP, missing.format(table)), name
+    assert report.exit_code == 0
+    # Never migrated at all (no alembic_version table): the same skip.
+    sql(conn, "DROP TABLE alembic_version")
+    result = one(conn, "predictions_after_tipoff", settings=settings)
+    assert (result.status, result.note) == (
+        SKIP,
+        "table predictions does not exist (migration 0002 not applied, alembic_version none)",
+    )
+
+
+def test_modeling_tables_missing_at_0002_is_an_error(conn: Connection) -> None:
+    """P-041 (c): alembic_version says 0002 but a table is gone: error (exit 1), not skip."""
+    drop_modeling_tables(conn)
     settings = CheckSettings(feature_recompute=lambda _, row: dict(row.values))
     report = run_checks(conn, settings=settings)
     status = {r.name: (r.status, r.note) for r in report.results}
-    missing = "table {} does not exist (migration 0002)"
-    assert status["features_after_tipoff"] == (SKIP, missing.format("features"))
-    assert status["predictions_after_tipoff"] == (SKIP, missing.format("predictions"))
-    assert status["feature_drift"] == (SKIP, missing.format("features"))
-    assert report.exit_code == 0
+    note = (
+        "check could not run: MissingTableError: table {} does not exist although "
+        "alembic_version is 0002 (>= 0002)"
+    )
+    for name, table in MODELING_CHECKS.items():
+        assert status[name] == (ERROR, note.format(table)), name
+    others = {name: s for name, (s, _) in status.items() if name not in MODELING_CHECKS}
+    assert others == dict.fromkeys(others, PASS)
+    assert report.exit_code == 1
+
+
+def test_prediction_feature_from_another_game_or_later_fails(
+    conn: Connection, baseline: Baseline
+) -> None:
+    """P-041 (a): the feature row must be the prediction's game with as_of <= the prediction's.
+
+    Same game and an earlier or equal as_of pass; another game's row and a later row fail with
+    the reason; predictions without a feature_id are not checked.
+    """
+    g0, g1, g2, g3 = baseline.regular_games[:4]
+    start = {g: baseline.games[g]["start_time_utc"] for g in (g0, g1, g2, g3)}
+    as_of = {g: start[g] - timedelta(hours=12) for g in (g0, g1, g2, g3)}
+    earlier = insert_feature(conn, g0, as_of[g0] - timedelta(hours=1), {})
+    same_time = insert_feature(conn, g1, as_of[g1], {})
+    later = insert_feature(conn, g3, as_of[g3] + timedelta(minutes=1), {})
+    insert_prediction(conn, g0, as_of[g0], start[g0], feature_id=earlier)
+    insert_prediction(conn, g1, as_of[g1], start[g1], feature_id=same_time)
+    assert one(conn, "prediction_feature_link").status == PASS
+    wrong_game = insert_prediction(conn, g2, as_of[g2], start[g2], feature_id=earlier)
+    too_late = insert_prediction(conn, g3, as_of[g3], start[g3], feature_id=later)
+    insert_prediction(conn, baseline.regular_games[4], as_of[g0], start[g0] + timedelta(days=4))
+    result = one(conn, "prediction_feature_link")
+    assert (result.status, result.checked, result.failed) == (FAIL, 4, 2)
+    assert result.examples == (
+        f"{wrong_game}:{g2}:other_game",
+        f"{too_late}:{g3}:feature_after_as_of",
+    )
+    assert one(conn, "prediction_feature_link", season="2024-25").checked == 0
+    # The FK normally forbids a dangling feature_id; without it the row is reported too.
+    sql(conn, "ALTER TABLE predictions DROP CONSTRAINT fk_predictions_feature_id_features")
+    sql(conn, "DELETE FROM predictions WHERE prediction_id = :p", p=too_late)
+    sql(conn, "DELETE FROM features WHERE feature_id = :f", f=later)
+    dangling = insert_prediction(conn, g3, as_of[g3], start[g3], feature_id=later)
+    result = one(conn, "prediction_feature_link")
+    assert result.examples == (f"{wrong_game}:{g2}:other_game", f"{dangling}:{g3}:no_features_row")
+
+
+def test_prediction_market_status_outside_the_four_values_fails(
+    conn: Connection, baseline: Baseline
+) -> None:
+    """P-041 (d): pred_only and rescheduled pass the DB CHECK but are evaluation-only values."""
+    games = baseline.regular_games[:3]
+    rows = {}
+    for game, status in zip(games, ("available", "pred_only", "rescheduled"), strict=True):
+        start = baseline.games[game]["start_time_utc"]
+        rows[status] = insert_prediction(
+            conn, game, start - timedelta(hours=12), start, market_status=status
+        )
+    result = one(conn, "predictions_market_status")
+    assert (result.status, result.checked, result.failed) == (FAIL, 3, 2)
+    assert result.examples == (
+        f"{rows['pred_only']}:{games[1]}:pred_only",
+        f"{rows['rescheduled']}:{games[2]}:rescheduled",
+    )
+    scoped = one(conn, "predictions_market_status", season="2024-25")
+    assert (scoped.status, scoped.checked) == (PASS, 0)
