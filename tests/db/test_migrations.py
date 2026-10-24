@@ -29,6 +29,14 @@ V1_CHECKS = 60
 MODELING_CHECKS = 48
 MODELING_TABLES = frozenset({"features", "model_versions", "predictions", "evaluations"})
 MODELING_VIEWS = frozenset({"predictions_recommendation_basis"})
+# The one partial unique index of the modeling layer (schema v1 9-4, D-033).
+PARTIAL_UNIQUE_INDEX = "uq_predictions_one_recommendation_basis"
+# CREATE UNIQUE INDEX ... ON [public.]<table> [USING btree] (<columns>) WHERE <predicate>, as
+# the design DDL writes it and as pg_indexes.indexdef prints it.
+PARTIAL_UNIQUE_INDEX_RE = re.compile(
+    r"CREATE UNIQUE INDEX (?P<name>\w+) ON (?:public\.)?(?P<table>\w+)(?: USING btree)? "
+    r"\((?P<columns>[^)]*)\) WHERE (?P<where>.+?);?$"
+)
 
 
 def _public_relations(conn: Connection) -> dict[str, str]:
@@ -286,6 +294,53 @@ def test_head_matches_design_ddl(
         [_design_ddl(), _modeling_ddl()],
         V1_CHECKS + MODELING_CHECKS,
     )
+
+
+def _design_index_statement(name: str) -> str:
+    """Return the CREATE INDEX statement for one index in the chapter 9-7 DDL, one line."""
+    match = re.search(rf"CREATE UNIQUE INDEX {name}\s.*?;", _modeling_ddl(), re.DOTALL)
+    assert match, f"{name} is not in the chapter 9 DDL"
+    return " ".join(match.group(0).split())
+
+
+def _parse_partial_unique_index(statement: str) -> tuple[str, str, tuple[str, ...], str]:
+    """Return (name, table, columns, WHERE predicate) of a CREATE UNIQUE INDEX ... WHERE."""
+    match = PARTIAL_UNIQUE_INDEX_RE.fullmatch(" ".join(statement.split()))
+    assert match, f"not a partial unique index statement: {statement}"
+    columns = tuple(c.strip() for c in match["columns"].split(","))
+    return match["name"], match["table"], columns, match["where"].strip()
+
+
+def _indexdef(conn: Connection, name: str) -> str:
+    """Return pg_indexes.indexdef of the named index in the public schema."""
+    return conn.execute(
+        text("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = :n"),
+        {"n": name},
+    ).scalar_one()
+
+
+def test_partial_unique_index_matches_design(
+    make_test_database: Callable[[], URL], alembic_config: AlembicConfig
+) -> None:
+    """M5: the recommendation-basis index has the design's name, columns and WHERE clause, in
+    the migrated database and in tables built straight from the models alike."""
+    # The catalog comparison strips index names and `alembic check` does not compare index
+    # predicates, so a WHERE clause edited in the model alone would otherwise go unnoticed.
+    design = _parse_partial_unique_index(_design_index_statement(PARTIAL_UNIQUE_INDEX))
+    assert design[:2] == (PARTIAL_UNIQUE_INDEX, "predictions")
+    migrated_url, models_url = make_test_database(), make_test_database()
+    _upgrade(alembic_config, migrated_url)
+    models_engine = make_engine(models_url)
+    Base.metadata.create_all(models_engine)
+    migrated_engine = make_engine(migrated_url)
+    try:
+        for label, engine in (("migration", migrated_engine), ("models", models_engine)):
+            with engine.connect() as conn:
+                indexdef = _indexdef(conn, PARTIAL_UNIQUE_INDEX)
+            assert _parse_partial_unique_index(indexdef) == design, f"{label}: {indexdef}"
+    finally:
+        migrated_engine.dispose()
+        models_engine.dispose()
 
 
 def _named_constraints(conn: Connection) -> set[tuple[str, str, str, str]]:

@@ -195,8 +195,8 @@ docker compose exec postgres psql -U presagio -d presagio -c "SELECT g.season, c
 
 읽는 법:
 - 늘어난 것은 2022-23 추가분뿐이다: games +1,320, team_game_stats +2,640(= 1,320 × 2). 다른 시즌과 배당·모델링 표는 그대로다.
-- C에서 일정·정규 게임로그를 다시 받아 upsert했지만 games·스탯 행 수는 같다. 바뀐 값은 `is_neutral` 2개(의도)와 `fetched_at`·`raw_response_id`·`source`다. D-042 2항 주의대로 일정을 다시 받으면 `games.source`가 `scheduleleaguev2`가 되고, 같은 실행에서 다시 받은 정규 게임로그가 정규 1,230경기를 `leaguegamelog`로 되돌린다. **플레이인 6·플레이오프 84경기는 게임로그를 다시 받지 않아 `games.source = scheduleleaguev2`로 남았다**(점수는 같다. 9장).
-- raw가 C에서 1행 는 것은 정규 게임로그(raw 100)다. 같은 요청·같은 크기(390,233바이트)인데 sha256이 달라 새 행이 됐다. 단계 1 보고서 5장의 "같은 내용을 행 순서만 바꿔 줌"과 같은 현상이다(D-042 3항). 일정(raw 94)은 본문이 같아 `fetch_count`만 2가 됐고, teams(raw 1)도 `fetch_count`만 올랐다.
+- C에서 일정·정규 게임로그를 다시 받아 upsert했지만 games·스탯 행 수는 같다. 바뀐 값은 `is_neutral` 2개(의도)와 `fetched_at`·`raw_response_id`·`source`다. D-042 2항 주의대로 일정을 다시 받으면 `games.source`가 `scheduleleaguev2`가 되고, 같은 실행에서 다시 받은 정규 게임로그가 정규 1,230경기를 `leaguegamelog`로 되돌린다. **플레이인 6·플레이오프 84경기는 게임로그를 다시 받지 않아 `games.source = scheduleleaguev2`로 남았다**(점수는 같다: raw 게임로그 응답과 90/90 대조, `points_match_score` 1,320 pass. 이 90경기는 `gamelog_vs_schedule_score` 대상 밖이다. 9장).
+- raw가 C에서 1행 늘어난 것은 정규 게임로그(raw 100)다. 같은 요청·같은 크기(390,233바이트)인데 sha256이 달라 새 행이 됐다. 단계 1 보고서 5장의 "같은 내용을 행 순서만 바꿔 줌"과 같은 현상이다(D-042 3항). 일정(raw 94)은 본문이 같아 `fetch_count`만 2가 됐고, teams(raw 1)도 `fetch_count`만 올랐다.
 - D는 끝난 시즌의 모든 단위가 succeeded라 5단위 전부 skip, 호출 0. `ingestion_runs`는 부모 1행만 는다.
 
 ## 6. 품질 체크 (완료 기준 2)
@@ -214,7 +214,7 @@ uv run presagio quality-check
 | --- | --- | --- |
 | `regular_season_games` | PASS | "2022-23: 1230 final". 82경기 시즌이라 기대값 1,230이 그대로 맞는다 |
 | `one_game_per_team_day` | PASS 2,640 | 팀×동부 날짜 중복 0 |
-| `gamelog_vs_schedule_score` | PASS 1,230 | 정규 게임로그 점수 = 최신 일정 raw 점수 |
+| `gamelog_vs_schedule_score` | PASS 1,230 | 정규 게임로그 점수 = 최신 일정 raw 점수. `source = 'leaguegamelog'` 행만 보므로 포스트시즌 90경기(`scheduleleaguev2`)는 대상 밖(9장) |
 | `team_rows_per_game`·`points_match_score`·`stat_arithmetic` | PASS 1,320 / 1,320 / 2,640 | |
 | `primary_stats_source` | PASS 1,320 | |
 | `past_games_not_final` | PASS 1,320 | |
@@ -262,10 +262,10 @@ uv run pytest tests/ingestion/sources/test_nba_api_schedule.py -q
 
 ## 9. 못 한 것 / 한계
 
-- **`docs/design/schema-v1.md` 6-1과 13장은 아직 "2023-24 보완 목록, 5경기"라고 적혀 있다.** 이 티켓 범위(브리핑의 건드릴 파일)에 없어서 고치지 않았다. 지금 목록은 2022-23 2경기를 더한 7경기다. PR 본문 결정 제안 2.
+- **`docs/design/schema-v1.md` 6-1과 13장은 아직 "2023-24 보완 목록, 5경기"라고 적혀 있다.** 이 티켓 범위(브리핑의 건드릴 파일)에 없어서 고치지 않았다. 지금 목록은 2022-23 2경기를 더한 7경기다. PR 본문 결정 제안 2. (P-041에서 정정)
 - 2022-23 홈 승률(0.580)이 다른 시즌보다 높은 것은 외부 수치와 직접 대조하지 않았다(알려진 시즌 특성으로 판단).
 - 픽스처는 DB의 `jsonb`에서 꺼내 잘랐기 때문에 원본 바이트와 키 순서가 다르다(값은 같다. `jsonb`는 객체 키를 길이·이름 순으로 정렬한다). 파서는 키 순서를 쓰지 않는다.
-- **2022-23 플레이인·플레이오프 90경기의 `games.source`가 `scheduleleaguev2`다**(정규 1,230은 `leaguegamelog`). 일정 재수집(C) 뒤 그 유형의 게임로그를 다시 받지 않았기 때문이다. 점수·상태는 게임로그 값과 같고(`gamelog_vs_schedule_score` pass, 팀 스탯은 `team_game_stats.source = leaguegamelog`로 `primary_stats_source` pass), 바뀐 것은 "마지막으로 이 행을 쓴 엔드포인트" 표시뿐이다. 맞추려면 `--season 2022-23 --season-type playin --season-type playoffs --force`(teams·일정 포함 4호출)가 필요한데, 합계 11호출로 완료 기준 1의 8을 넘어서 하지 않았다. 다음 일정 재수집 때 함께 맞추면 된다(PR 결정 제안 3).
+- **2022-23 플레이인·플레이오프 90경기의 `games.source`가 `scheduleleaguev2`다**(정규 1,230은 `leaguegamelog`). 일정 재수집(C) 뒤 그 유형의 게임로그를 다시 받지 않았기 때문이다. 점수·상태는 게임로그 값과 같고(근거: 리뷰어가 플레이인·플레이오프 raw 게임로그 응답과 90/90 대조, `points_match_score` 1,320 pass. 팀 스탯은 `team_game_stats.source = leaguegamelog`로 `primary_stats_source` pass. D-053 2항), 바뀐 것은 "마지막으로 이 행을 쓴 엔드포인트" 표시뿐이다. **이 90경기는 `gamelog_vs_schedule_score`(`source = 'leaguegamelog'` 행만 검사) 대상 밖이라, 그 체크의 pass는 이 90경기의 근거가 아니다.** 맞추려면 `--season 2022-23 --season-type playin --season-type playoffs --force`(teams·일정 포함 4호출)가 필요한데, 합계 11호출로 완료 기준 1의 8을 넘어서 하지 않았다. 다음 일정 재수집 때 함께 맞추면 된다(PR 결정 제안 3).
 - `--force` 재수집이 teams도 다시 받아(run 113) teams의 168시간 갱신 창이 지금부터 다시 시작된다. 행 수·값 변화는 없다(30팀, 별칭 90).
 - 2022-23은 학습·평가 대상이 아니다(M-11). 학습 창에서 빼는 하한은 P-033 몫이다. 이 PR은 데이터만 넣었다.
 - 스코어보드 경로(`ingest-daily --date` 과거 날짜)로 2022-23 날짜를 돌려 보지는 않았다. 같은 `is_neutral_game()`을 쓰므로 목록의 두 경기는 그 경로에서도 true가 된다(P-025 테스트가 2023-24로 고정한 동작).
