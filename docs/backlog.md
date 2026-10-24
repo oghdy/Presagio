@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 같은 날 P-024·P-025·P-029·P-030·P-031·P-032·**P-026** DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. P-033 REVIEW: PR #41 작성자 수정 `7aec0cb` → 재리뷰 "수락 가능" → **PM 수락, 사람 머지 대기**(머지되면 P-040도 DONE). D-055, Q-025 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040** DONE(기준선 3종 + 저장 경로, 클라우드 환경). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. **P-033 DONE(#41 `625edfa`, 10-24 13:12)·P-040 DONE(기준 4 = P-033 클라우드 세션 증거).** 개발 DB에 기준선 예측 5,288행 저장. 다음: P-041·P-042 브리핑(클라우드, Opus), P-028(로컬). Q-025 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -434,12 +434,12 @@
 | P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | DONE (PR #34 `4f0d9af`) | P-031 DONE ✓ |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
-| P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | REVIEW (PR #31 머지 `24abf4b`, 기준 4는 첫 클라우드 세션. 환경 생성 Q-023) | P-024 DONE |
+| P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | DONE (PR #31 `24abf4b`, 기준 4 = P-033 세션 증거) | P-024 DONE |
 | P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | TODO | P-040 DONE |
 | P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | TODO (상세 확정, Q-022 → D-054. 브리핑 대기) | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
-| P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | REVIEW (PR #41 PM 수락, 사람 머지 대기) | P-031·P-032 DONE ✓ |
+| P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | DONE (PR #41 `625edfa`) | P-031·P-032 DONE ✓ |
 | P-034 | Elo 레이팅(홈 어드밴티지, 시즌 간 평균 회귀, 중립 경기 처리) + 총점 기준선(최근 N경기 평균) | ml-engineer | TODO | P-033 |
 | P-035 | as_of 피처 모듈 v1 (최근 5/10/20 공격·수비 효율·순득실·페이스, 휴식일·백투백, 홈/원정, 시즌 누적) + 누수 테스트 | ml-engineer | TODO | P-031 |
 | P-036 | 누수 감사 1차 (P-032~P-035 대상: as_of 강제, 시간 여행 테스트, 미래 주입 테스트) | leakage-auditor | TODO | P-035 |
@@ -526,7 +526,7 @@
   - 2026-10-23 PM 18:2x: 작성자 수정 `81fca24`("score-free prediction context, pin every runner guard": `PredictionContext`를 R1·R2 결과 튜플 + 점수 없는 일정 뷰 `ScheduledGame`(cup_final 포함) + 읽기 전용 시장만 담는 frozen dataclass로, 전체 경기 목록은 실행기 내부 `_History`로, 가드 3곳 전용 테스트, 실행기 수준 배당 시간 여행 테스트, 테스트 121→133). **재리뷰 "수락 가능" + [누수 감사] "누수 없음"**(`P-032-review-2.md`): 1차 재현 코드가 `AttributeError`/`FrozenInstanceError`로 중단, gc 수준 객체 그래프 검사 위반 0(하루 최대 26,495객체), 1차 생존 변이 3개 전부 잡힘, 610 passed(네트워크 0), CLI 출력 1차와 바이트 동일·SQL 424개 전부 SELECT, 복제본 시간 여행·미래 주입·배당 시간 여행 불변(일정 뷰 포함 해시로도). 새 [낮음] 2: cup_final 제외 조건 변이가 살아남음(픽스처 cup final에 스탯 없어서 R2가 대신 막음 → P-033에서 픽스처 스탯 2행), PR 본문 옛 문구(작성자가 본문만 정리). 참고: 의도적 스택 프레임 우회(`sys._getframe`)는 파이썬 한계 → P-033/P-036 AST 금지 테스트, `ScheduledGame`에 상태 없음(P-035 설계 문제), `GameMarket` 내부 dict 가변(P-033 저장 시 복사). **PM 수락.** 사람 머지 대기 → 머지 후 P-033 브리핑(P-031도 머지돼야 함).
 
 ### P-033 승패 기준선 3종(B0·B1·B3) + 결과 저장 경로
-- **상태:** REVIEW (2026-10-24 02:3x **PM 수락**(`P-033-acceptance.md`): 1차 리뷰 "수정 후 재리뷰" → 작성자(클라우드 세션)가 main의 backlog에 적힌 리뷰 결과·D-055를 스스로 읽고 필수 4건을 `7aec0cb`로 수정 → 재리뷰(`P-033-review-2.md`) **"수락 가능"**, 누수 없음 유지, 775 passed·skipped 0, CI 초록. **사람 머지 대기**(머지 전 main 어긋나면 `gh pr update-branch 41`). 머지 뒤 PM: 로컬 개발 DB `--store`(기준 6) → P-033·P-040 DONE)
+- **상태:** DONE (2026-10-24 13:12 KST PR #41 squash merge `625edfa`, 사람 지시("머지해줘")로 PM 머지(update-branch → CI → squash). 기준 6 실데이터 실행 완료(아래 메모). 개발 DB: `model_versions` 3, `predictions` 5,288, `evaluations` 5,276)
 - **담당 역할:** ml-engineer (Opus 5.5 높음)
 - **단계:** 2
 - **의존:** P-031 DONE, P-032 DONE (둘 다 2026-10-23 머지, 개발 DB 0002 적용)
@@ -544,6 +544,7 @@
   7. `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과, 네트워크 0, 새 의존성은 numpy 명시만.
 - **확인 방법:** CLI 명령 + `SELECT mv.model_family, count(p.*) FROM predictions p JOIN model_versions mv USING (model_version_id) GROUP BY 1`, 두 번 실행 전후 count, 테스트.
 - **메모:**
+  - 2026-10-24 PM 13:13: **기준 6 실데이터 실행(로컬 개발 DB, main `625edfa`, launchd 시각 밖):** B0·B1 `--seasons 2023-24,2024-25 --store` 각 2회, B3 `--seasons 2026-27 --store` 2회, 전부 exit 0. 1회차: B0 predictions +2,638 / evaluations +2,638, B1 +2,638 / +2,638, B3 predictions +12 / evaluations 0(10-23 ET 경기 결과가 아직 DB에 없음 — 16:00 수집 뒤 채점 가능). 2회차: 전부 inserted 0·already stored 2,638(B3 12)·differing 0·not written for differing 0. 6-1 (a) 전체 줄(n 2,158, 2024-01-01 이후, 부트스트랩 90%): B0 `| all | all | (a) all games | 2158 | 0.537 | 0.6915 [0.6875, 0.6958] | 0.2492 [0.2472, 0.2513] | 0.0184 | - | - |  |` / B1 `| all | all | (a) all games | 2158 | 0.633 | 0.6389 [0.6311, 0.6475] | 0.2234 [0.2199, 0.2272] | 0.0655 | - | - |  |` / B3 2026-27 표 없음(12 예측, 결과 미도착으로 채점 0). (b) 시장 있음 줄은 2023-24·2024-25 전부 n=0(`no_odds_season` 2,158) — 과거 배당 없음 그대로. 성능 숫자는 참고(가설 판정은 P-037). `quality-check` 17개: 15 pass·1 warn(14 `recent_failed_runs`: 오늘 launchd run 119/120 partial, P-028 메모)·1 skip(`feature_drift`)·fail 0, `predictions_after_tipoff` 5,288 pass. 로그 scratchpad `p033-store-1313.log`. **DONE.**
   - 2026-10-24 PM 02:3x: **재리뷰 "수락 가능"**(`P-033-review-2.md`): 1차 필수 4건(발견 1·2·4·6) 전부 해결, 새 발견 0. 범위 = 8파일(+219/−37)뿐, 의존성·마이그레이션 0. 775 passed·skipped 0(루프백 밖 0)·ruff·CI 통과. 복제본 재현 A1·A2·B에서 불일치 예측의 평가 미삽입 + 보고서 줄 `… evaluations inserted 0, already stored 2637, differing 0, not written for differing predictions 1 …`, 기존 평가 불변, exit 4. R1 `<`→`<=` 변이 잡힘, 미고정 3건 변이 잡힘, B0 자르기(4-0 → 0.95, 0-4 → 0.05, `hyperparameters.clip` 기록, 기존 값 불변·실데이터 경계값 0). 회귀 변이 34/34 잡힘. 미래 주입(300-0) 재실행에서 B0 더 이상 멈추지 않음. 참고: 일정이 바뀐 2026-27 경기는 재저장 때마다 exit 4 + 평가 비어 있음(D-055 2항 결과) → P-037 자동화에서 "일정 변경" vs "결정성 위반" 구분 필요(D-055 보완). AST 우회 4종은 P-035/P-036. **PM 수락**(`P-033-acceptance.md`), 사람 머지 대기.
   - 2026-10-24 PM 01:5x: **리뷰(Opus, 누수 감사 겸임) "수정 후 재리뷰"**. 직접 실행: 768 passed ×2(루프백 밖 0)·ruff·CI 통과, 불안정 테스트 13회+ 재현 안 됨, 개발 DB `--dry-run`(SQL 전수 로깅: 쓰기 0), **복제본(pg_dump)에서 `--store`** B0·B1 각 +2,638/+2,638 → 재실행 inserted 0·differing 0, B3 2023-24·2024-25 0행(no_odds_season 2,638)·2026-27 +12, 값 변경 → exit 4, StoreError exit 1, 보류 64, 해제 +1,321·사유 기록·다른 사유 거부, exit 3 확인. **누수: 복제본 시간 여행(기준일 2024-02-15 뒤 3,160경기 뒤집기·300-0·50경기 삭제)에서 기준일까지 예측 820개 불변·이후 B0 1,756/B1 1,730 변함(검정력), 당일 결과 뒤집기 불변, B3 배당 시간 여행(724행 극단값 + as_of+1µs 120행) 불변, 저장 `market_reference.captured_at > as_of` 0행 → 누수 없음.** 손계산: B0·B1 합성 리그 345/345 독립 SQL 일치, B3 중앙값 일치. 변이 54 중 44 잡힘. 실데이터 복제본 참고 수치(all/all, n 2,158): B0 acc 0.537·LL 0.6915·Brier 0.2492, B1 acc 0.633·LL 0.6389·Brier 0.2234(가설 판정은 P-037). **[중간] 1:** `store.py:434-440` 저장값과 다른(differing) 예측에 이번 실행 기준 평가가 붙어 삽입됨(저장 p 0.1234 vs 이번 p 0.5582로 계산한 log_loss 삽입; 같은 날짜 2시간 지연 재저장이면 `rescheduled=false`로 삽입) → 불일치 예측의 평가 미삽입 + 건수 보고(필수 1). **[낮음] 5:** 가드 전용 테스트가 교차 대조에 가려 R1 `<`→`<=` 변이 생존(필수 2), 테스트 미고정 3(NO_ODDS 2022-23·READ ONLY·StoreError 로그, 필수 3), B0 확률 자르기 없음 → 홈 승률 0/1이면 실행 중단(필수 4), B0 정확도 ≠ 항상 홈 승 정확도(2024-11-06 p=0.4907, 0.5373 vs 0.5410 → P-037 별도 줄), AST 우회 4종(→ P-035/P-036). 참고: 평가 log_loss는 자르기·양자화 전 p로 계산(최대 2.6e-4 차), **B3 2026-27 백테스트에서 A0 캡처(07:00:09.7)가 as_of 07:00:00보다 늦어 18시간 전 캡처를 씀(누수 아님, Q-025)**, `--seasons`는 DB에 안 남음(실행 범위는 predictions의 경기 시즌으로 복원), B0 분모에 중립 경기 포함. **P-040 기준 4 증거 검증:** 훅 줄 형식 일치, 684 = `a09f5ae` collect-only 일치, 0002 head 일치(VM 안 사실은 작성자 보고). PM 결정 D-055(제안 1~6 + 리뷰 항목), 필수 4건 `P-033-fix-request.md`.
   - 2026-10-24 PM 01:0x: PR #41 도착 확인(클라우드 세션은 완료 알림이 없어 `git branch -r`·`gh pr list`로 발견. 커밋 시각 10-23 15:47Z = 00:47 KST). CI: secret-scan 통과, lint-and-test 진행 중, main 대비 BEHIND(머지 전 update-branch 필요). 작성자 PR 본문의 결정 제안 6건(학습 창 하한 vs `context.results()` 상태 입력 분리(5(b) 해석), 불일치 exit 4, model_versions 설정 충돌 거부, 워밍업 예측 행 저장, `experiment_id`·`metric_version`·`seed` 규칙, 예측 시점 market_status 뜻)은 리뷰 뒤 PM이 판단해 D-054로 정리 예정. 알려진 한계: 학습 창 = 요청 시즌만이라 단계 3의 "2025-26 학습만·2026-27 예측"은 `--train-from` 옵션 필요(단계 3 티켓 후보), `test_odds_time_travel_at_runner_level[B3]` 1회 ERROR 미재현(리뷰어가 재현 시도).
@@ -600,7 +601,9 @@
 - **목표:** 토·일 14:45·16:45 ET에 `ingest-daily --odds-only` 캡처 2회를 더해 낮 경기(12:00~18:00 ET 시작) 마감 배당 커버리지를 87.6% → 97.0%로 올린다. 평일은 4회 그대로. 월 최대 425크레딧.
 - **범위:** `scripts/launchd/`(래퍼 슬롯 규칙·plist 깨어남), `tests/scripts/`, README 운영 소절, `docs/team/risks.md` B2 숫자(PM이 같은 PR에서 또는 별도). 설정값이 필요하면(`ODDS_WEEKEND_CLOSING_TIMES_ET` 등) `src/presagio/config.py` 변경은 data-engineer 영역이므로 PM이 범위를 정한다.
 - **완료 기준(초안, P-024 머지 후 확정):** 토·일 6회·평일 4회를 7개월 모의로 증명, 중복 없음, 월 크레딧 계산 표(≤ 425), 실제 주말 1회 결과. 함께: P-024 리뷰 3회차 [낮음] 1(23h 정지라 19:45 차단 뒤 다음 날 18:45부터 재개 — 주석·README 문구 정정 또는 "같은 슬롯 벽시계 −10분"으로 변경 + 19:45 차단 테스트).
-- **메모:** 2026-10-23 PM: D-049 M-9로 생성.
+- **메모:**
+  - 2026-10-23 PM: D-049 M-9로 생성.
+  - 2026-10-24 PM 13:2x(운영 관찰 4건, 이 티켓 범위에 넣을 것): ① **07:45 KST 슬롯(odds-2026-10-23-1845) 누락** — 로그에 08:00:02 "skip: no slot now"만 있음(맥이 잠들어 launchd가 08:00에 깨운 것으로 보임; 1845 캡처 결손 = 정직한 결손이지만 B2 커버리지 손실). 맥 잠자기 중 깨우기(`pmset repeat wake`/`caffeinate`) 또는 슬롯 허용폭 검토. ② **10:45 슬롯(2145)이 exit 1 FAILED** — 실제로는 262행 저장 성공, FanDuel h2h Boston Celtics 가격 1.0(`bad_price`) 1건 거부로 단위 partial → 부모 failed → launchd FAILED. 거부 1건은 품질 이슈이지 실패가 아님 → partial 판정 기준(거부 outcome 비율 임계) 또는 warn/fail 분리(P-017 리뷰 후속)와 함께. ③ **Docker VM 시계 지연** — run 119 `started_at`(DB `now()`) 10:29 KST vs 실제 10:46(호스트·`captured_at`). 맥 잠자기 뒤 Docker Desktop VM 시계가 17분 늦었다가 13:14에는 재동기화됨. `captured_at`·`fetched_at`은 파이썬(호스트) 시계라 as_of 영향 없음, DB `now()` 기본값 컬럼(`ingestion_runs.started_at`, 각 표 `created_at`)만 어긋남 → `started_at`을 파이썬 시계로(단계 6 또는 이 티켓). ④ 09:45·11:48 KST에도 launchd가 깨어나 "no slot" skip(서머타임 양쪽 시각 등록, 정상).
 
 ### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
 - **상태:** TODO (2026-10-24 Q-022 답(D-054)으로 완료 기준 확정. P-033 머지 뒤 브리핑 → 클라우드 세션. P-042와 파일 안 겹침 → 병렬 가능)
@@ -623,7 +626,7 @@
   - 2026-10-23 PM: P-026 리뷰 [낮음] 3건을 문서 정정으로 추가(위 추가 범위).
 
 ### P-040 🧑 Claude Code 클라우드 세션 환경 셋업
-- **상태:** REVIEW → **머지됨** (2026-10-23 PR #31 https://github.com/oghdy/Presagio/pull/31 squash merge `24abf4b`, 사람 지시("머지해줘")로 PM 머지. 리뷰 "수락 가능(기준 4는 머지 후 확인)" → PM 수락(`P-040-acceptance.md`). 기준 1·2·3·5 O. **기준 4 대기:** `presagio-dev` 환경 생성(**Q-023** 누가 만드나) → 첫 환경 세션 = P-033 클라우드 세션이 증거를 PR에 남기면 DONE)
+- **상태:** DONE (2026-10-24. PR #31 `24abf4b` 머지 + 기준 4 = `presagio-dev` 첫 세션(P-033 2차)의 PR #41 증거: 훅 줄 정상, main 684 passed·skipped 0, `alembic current` 0002 head, 셋업 단계에서 uv sync 완료. 리뷰어가 검증 가능한 3개 일치. 환경은 Q-023·Q-024로 PM이 생성·수정. README 보정은 P-042)
 - **담당 역할:** platform-engineer (Opus 5.5 높음). 환경 생성(claude.ai/code 입력)은 사람.
 - **단계:** 2 (단계 6 선행). **시간 민감:** 클라우드 크레딧 US$250이 2026-11-05 16:59 KST에 만료된다.
 - **의존:** P-024 DONE. Q-021 승인.
