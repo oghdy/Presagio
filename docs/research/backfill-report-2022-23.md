@@ -262,7 +262,7 @@ uv run pytest tests/ingestion/sources/test_nba_api_schedule.py -q
 
 ## 9. 못 한 것 / 한계
 
-- **`docs/design/schema-v1.md` 6-1과 13장은 아직 "2023-24 보완 목록, 5경기"라고 적혀 있다.** 이 티켓 범위(브리핑의 건드릴 파일)에 없어서 고치지 않았다. 지금 목록은 2022-23 2경기를 더한 7경기다. PR 본문 결정 제안 2.
+- **`docs/design/schema-v1.md` 6-1과 13장은 아직 "2023-24 보완 목록, 5경기"라고 적혀 있다.** 이 티켓 범위(브리핑의 건드릴 파일)에 없어서 고치지 않았다. 지금 목록은 2022-23 2경기를 더한 7경기다. PR 본문 결정 제안 2. (P-041에서 정정)
 - 2022-23 홈 승률(0.580)이 다른 시즌보다 높은 것은 외부 수치와 직접 대조하지 않았다(알려진 시즌 특성으로 판단).
 - 픽스처는 DB의 `jsonb`에서 꺼내 잘랐기 때문에 원본 바이트와 키 순서가 다르다(값은 같다. `jsonb`는 객체 키를 길이·이름 순으로 정렬한다). 파서는 키 순서를 쓰지 않는다.
 - **2022-23 플레이인·플레이오프 90경기의 `games.source`가 `scheduleleaguev2`다**(정규 1,230은 `leaguegamelog`). 일정 재수집(C) 뒤 그 유형의 게임로그를 다시 받지 않았기 때문이다. 점수·상태는 게임로그 값과 같고(근거: 리뷰어가 플레이인·플레이오프 raw 게임로그 응답과 90/90 대조, `points_match_score` 1,320 pass. 팀 스탯은 `team_game_stats.source = leaguegamelog`로 `primary_stats_source` pass. D-053 2항), 바뀐 것은 "마지막으로 이 행을 쓴 엔드포인트" 표시뿐이다. **이 90경기는 `gamelog_vs_schedule_score`(`source = 'leaguegamelog'` 행만 검사) 대상 밖이라, 그 체크의 pass는 이 90경기의 근거가 아니다.** 맞추려면 `--season 2022-23 --season-type playin --season-type playoffs --force`(teams·일정 포함 4호출)가 필요한데, 합계 11호출로 완료 기준 1의 8을 넘어서 하지 않았다. 다음 일정 재수집 때 함께 맞추면 된다(PR 결정 제안 3).
