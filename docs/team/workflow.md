@@ -103,6 +103,7 @@
 - **비밀값:** `ODDS_API_KEY`는 클라우드 환경변수에 두지 않는다(환경 사용자 모두 읽음, 공개 레포). 필요하면 network secret으로만.
 - **클라우드에서 `gh pr`은 막힌다**(GitHub GraphQL 403, D-052 보완 2). 작업자는 `gh api -X POST repos/oghdy/Presagio/pulls -f title=... -f head=... -f base=main -F body=@body.md`(REST) 또는 플랫폼 내장 PR 도구로 PR을 열고, 브리핑 전문은 프롬프트에 넣는다(로컬 파일·공유 노트·개발 DB 접근 불가). 환경은 `presagio-dev`(README "클라우드 세션" 절). 세션 시작 줄에 `[presagio cloud] DB ready ... PRESAGIO_REQUIRE_DB=1`이 보여야 한다.
 
+- **환경·브랜치(D-057):** 환경 `presagio-dev`의 칸 값·설정 스크립트 래퍼·클론 경로·`/remote-env`·`gh api` REST 예시는 README "운영: Claude Code 클라우드 세션" 절이 원본이다. 클라우드 세션의 브랜치는 플랫폼이 고정한 `claude/<이름>`일 수 있다 → PR 제목 `[P-NNN]`으로 식별하고, PM은 `gh pr list`(브랜치 무관)로 찾는다. 머지 뒤 자동 브랜치는 PM이 지운다.
 - **작업자 세션에 후속 요청 보내기(D-052 보완 3):** 리뷰 결과·수정 요청·재리뷰 요청은 `claude -p "<메시지 전문>" --cloud <세션 id>`로 보낸다(세션 id는 PR 본문 꼬리의 `claude.ai/code/session_…`). 사전 조건: 이 맥의 `claude` CLI가 claude.ai 계정으로 로그인(`claude auth login`). 같은 내용을 PR 댓글로도 남기되 댓글은 기록용이다(세션은 댓글로 깨어나지 않는다). 메시지에는 "같은 브랜치에 커밋, 새 PR·새 브랜치·main 머지 커밋 금지, 끝나면 커밋 해시를 마지막 메시지에"를 넣는다. 브리핑에는 `/effort high` 지시도 적는다(D-043; `/model`만으로는 노력이 medium).
 ## PM 세션 시작 프롬프트 (사람이 복사해서 쓴다)
 
