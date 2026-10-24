@@ -100,7 +100,7 @@ erDiagram
 ## 1. 공통 규칙
 
 ### 1-1. 타입
-- PostgreSQL 17 타입만 쓴다(D-019): `text`, `integer`, `bigint`, `boolean`, `numeric(p,s)`, `date`, `timestamptz`, `jsonb`.
+- PostgreSQL 17 타입만 쓴다(D-019): `text`, `integer`, `bigint`, `boolean`, `numeric(p,s)`, `date`, `timestamptz`, `jsonb`. 모델링 레이어(9장)는 여기에 `interval`, `text[]`, `smallint`를 더해 쓴다(9-1 7번).
 - 문자열은 `varchar(n)` 대신 `text`를 쓴다(PG에서 성능 차이가 없고, 길이 제한을 바꾸는 마이그레이션이 필요 없다). 형식이 정해진 값은 `CHECK`로 막는다(예: 경기 ID 정규식).
 - 대리키가 필요한 표는 `bigint GENERATED ALWAYS AS IDENTITY`를 쓴다(`serial`보다 표준이고, 실수로 값을 직접 넣는 것을 막는다).
 
@@ -159,7 +159,7 @@ erDiagram
 | Q4 | 단계 2 피처: 그 경기들의 팀 스탯 | `team_game_stats_primary`를 `game_id, team_id`로 조인 | PK `(game_id, team_id, source)` |
 | Q5 | 단계 2 학습 데이터: 시즌·유형별 경기 | `WHERE season = :s AND game_type IN (...)` | `games (season, game_type)` |
 | Q6 | 매일 2단계: 전날 경기의 마감 배당 | 경기별·북메이커별·마켓별로 `captured_at < commence_time`인 마지막 스냅숏 (`odds_closing_lines` 뷰) | 유니크 `(odds_event_id, market_key, bookmaker_key, outcome_side, captured_at)` |
-| Q7 | 예측 저장 시: 예측 시점 배당 | 위와 같되 `captured_at <= :predicted_at` | 같은 유니크 인덱스 |
+| Q7 | 예측 저장 시: 예측 시점 배당(modeling-v1 R3) | 위와 같되 `captured_at <= :as_of`(`predictions.as_of`, 9-4. 초안의 `predicted_at`은 `as_of`로 바뀌었다) | 같은 유니크 인덱스 |
 | Q8 | 배당 매핑: 아직 `game_id`가 없는 배당 경기 | `WHERE game_id IS NULL` | 부분 인덱스 `odds_events (commence_time) WHERE game_id IS NULL` |
 | Q9 | 백필·증분 재개 | 요청 범위 단위 중 `status = 'succeeded'`인 기록이 없는 것(성공 기준은 4장) | 부분 인덱스 `ingestion_runs (job_type, scope_key) WHERE status = 'succeeded'` |
 | Q10 | 수집 레이어: 같은 요청의 최신 원본 | `WHERE request_hash = :h ORDER BY last_fetched_at DESC LIMIT 1` | `raw_api_responses (request_hash, last_fetched_at DESC)` |
@@ -302,7 +302,7 @@ erDiagram
 | `away_team_id` | `integer` | NULL, FK → `teams` | `awayTeam.teamId`. 같은 규칙 |
 | `home_score` | `integer` | NULL | `homeTeam.score`. **`status_code = 3`일 때만 채운다.** 예정 경기는 소스가 `0`을 주지만 NULL로 저장(0점과 "아직 없음"을 구분) |
 | `away_score` | `integer` | NULL | 같은 규칙 |
-| `is_neutral` | `boolean` | NOT NULL | `isNeutral`. 중립 경기장(NBA컵 결승, 해외 경기). v1.3: 일정과 스코어보드 모두 `isNeutral` **또는** 2023-24 보완 목록(`UNFLAGGED_NEUTRAL_GAME_IDS`, 5경기)이면 true. 2023-24 응답은 전 경기 `isNeutral=false`라서다(D-046, P-025). 2024-25부터는 플래그만 쓴다 |
+| `is_neutral` | `boolean` | NOT NULL | `isNeutral`. 중립 경기장(NBA컵 결승, 해외 경기). v1.3·v1.5: 일정과 스코어보드 모두 `isNeutral` **또는** 보완 목록(`UNFLAGGED_NEUTRAL_GAME_IDS`: 2022-23 2 + 2023-24 5 = 7경기)이면 true. 2022-23·2023-24 응답은 전 경기 `isNeutral=false`라서다(D-046, D-053, P-025·P-026). 2024-25부터는 플래그만 쓴다 |
 | `if_necessary` | `boolean` | NOT NULL | `ifNecessary`. 일정에서는 문자열 `"false"`, 스코어보드에서는 불리언으로 와서 어댑터가 불리언으로 통일 |
 | `source` | `text` | NOT NULL | 현재 값을 준 엔드포인트(`scheduleleaguev2`, `scoreboardv3`, `live_scoreboard`, `leaguegamelog`) |
 | `fetched_at` | `timestamptz` | NOT NULL | 1-3 참고 |
@@ -326,7 +326,7 @@ erDiagram
 | `postponed_status` | 넣기·갱신 | **소스에 없음 → 갱신 안 함(기존 값 유지).** 스코어보드가 처음 넣은 경기는 NULL로 시작해 다음 일정 재수집 때 채워진다 | 갱신 안 함 |
 | `home_team_id`, `away_team_id` | 넣기·갱신 (0이면 NULL) | 넣기·갱신 (0이면 NULL) | 갱신 안 함 (팀이 일정과 다르면 품질 이슈, 그 경기는 갱신 안 함) |
 | `home_score`, `away_score` | 넣기·갱신 (종료일 때만) | 넣기·갱신 (종료일 때만) | 갱신 (`PTS`를 **팀 ID 기준**으로. 이미 종료인데 점수가 다르면 품질 이슈, 갱신 안 함) |
-| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언. `is_neutral` = `isNeutral` OR `game_id`가 2023-24 보완 목록, v1.3) | 넣기·갱신 (불리언. `is_neutral` = `isNeutral` OR `game_id`가 2023-24 보완 목록, 일정과 같은 규칙, v1.3) | 갱신 안 함 |
+| `is_neutral`, `if_necessary` | 넣기·갱신 (`ifNecessary` 문자열 → 불리언. `is_neutral` = `isNeutral` OR `game_id`가 보완 목록(2022-23 2 + 2023-24 5 = 7경기), v1.3) | 넣기·갱신 (불리언. `is_neutral` = `isNeutral` OR `game_id`가 보완 목록(2022-23 2 + 2023-24 5 = 7경기), 일정과 같은 규칙, v1.3) | 갱신 안 함 |
 | `source`, `fetched_at`, `raw_response_id` | 넣기·갱신 | 넣기·갱신 | 갱신 |
 
 - 두 소스 모두 `WHERE games.fetched_at <= EXCLUDED.fetched_at` 가드를 쓴다. 그래서 "스코어보드가 더 최근이면 상태·점수를 스코어보드 값으로", "주기적 일정 재수집이 더 최근이면 일정 값으로" 맞춰진다.
@@ -465,7 +465,7 @@ erDiagram
   - **연기 예:** 12-05 00:30 경기가 12-07 00:30으로 연기되고 스냅숏이 12-04 23:00(그 당시 `commence_time` 12-05 00:30) 하나뿐이면, 조건 2에서 빠져서 그 경기는 **마감 배당 없음**이 된다. 옛 배당을 마감으로 내주지 않는다. 연기 후 새 스냅숏이 들어오면 그것이 마감 후보가 된다(부록 A 컨테이너에서 두 경우 모두 확인, 12장).
   - 뷰는 스냅숏 컬럼에 더해 `event_commence_time`(이벤트 최신 시작 시각), `game_id`, `lead_time`(= `event_commence_time - captured_at`, 마감 배당이 시작 몇 시간 전 것인지)을 내보낸다. 간격 판단은 스냅숏의 `commence_time`이 아니라 **`lead_time`**으로 한다.
   - 1시간 허용 이유: 연기가 아닌 작은 시각 조정(몇 분)에서 그전 스냅숏이 전부 빠지지 않게 하려는 것이다. 값은 P-019에서 실제 데이터를 보고 바꿀 수 있다(뷰 정의만 바뀐다).
-  - **예측 시점 배당** = 예측 하나(`predictions.predicted_at`)에 대해 `captured_at <= predicted_at`인 스냅숏 중 가장 늦은 것. 예측 표가 단계 3에 생기므로 그때 뷰나 함수로 만든다(같은 유니크 인덱스를 쓴다).
+  - **예측 시점 배당** = 예측 하나(`predictions.as_of`, 9-4)에 대해 `captured_at <= as_of`인 스냅숏 중 가장 늦은 것(modeling-v1 R3). 예측 표는 마이그레이션 0002(9장)에 있고, 이 조회는 뷰가 아니라 평가 모듈(P-032, `src/presagio/evaluation/market.py`)이 함수로 한다(같은 유니크 인덱스를 쓴다).
 - 이유: 딱지는 수집 작업의 "의도"일 뿐이라 틀릴 수 있다. 마감 수집 작업이 늦게 돌았거나, 경기가 연기되었거나, 나중에 더 늦은 스냅숏이 들어오면 딱지가 거짓이 된다. 과거 API로 백필한 스냅숏에는 의도라는 것이 아예 없다. 시각으로 정의하면 언제나 같은 규칙으로 다시 계산된다.
 - `capture_label`은 사람이 운영 기록을 볼 때 편하라고 남기는 참고값이다.
 - "마감이 너무 오래전"인 경우(예: 마지막 스냅숏이 경기 6시간 전)는 단계 4에서 허용 간격을 정하고 "마감 배당 없음"으로 처리한다. 스키마는 그 판단에 필요한 `lead_time`을 뷰에서 준다.
@@ -498,6 +498,7 @@ erDiagram
 - **요구:** `docs/design/modeling-v1.md`(v1.2) 8장. 사람이 D-049로 승인했다. 이 장은 그 요구를 DDL로 옮긴 것이다.
 - **승인:** 🧑 사람이 이 장을 읽고 P-031 PR을 머지하는 것이 DDL 승인이다(P-031 목표). 개발 DB 적용(`alembic upgrade head`)은 머지 뒤 PM이 한다.
 - **구현:** `src/presagio/db/models/modeling.py`(SQLAlchemy 모델), `alembic/versions/0002_modeling_layer.py`(마이그레이션). 9-7의 DDL과 마이그레이션의 일치는 `tests/db/test_migrations.py`가 임시 DB 두 개를 카탈로그로 비교해 고정한다(D-030 4항).
+- **원본(v1.5 메모):** 확정 DDL의 원본은 `alembic/versions/0002_modeling_layer.py`와 `src/presagio/db/models/modeling.py`다. 9-7은 읽기 편하게 옮긴 사본이고, 둘이 어긋나면 코드가 맞고 이 문서를 고친다. 어긋남은 `tests/db/test_migrations.py`가 잡는다(카탈로그 비교 + 부분 유니크 인덱스의 이름·컬럼·WHERE 절 비교, P-041 M5).
 - **v1.3까지의 초안과 바뀐 점(변경 표시):** (1) `model_versions` 한 행 = "학습된 모델 1개" → **"모델 설정 1개"**. 주간 재학습은 버전을 늘리지 않고 `predictions.train_cutoff`로 구분한다(modeling-v1 8-2, 리뷰 발견 13). (2) `predictions`의 키 `predicted_at` → **`as_of`**(정보 경계가 기준, 실제 계산 시각은 `computed_at`). (3) "컬럼은 ML Engineer가 다시 낸다" → 설계안 8장이 그 역할을 했고, 이 장이 DDL이다.
 
 ```mermaid
@@ -552,12 +553,12 @@ erDiagram
    | 컬럼 | 값 | 어디서 막나 | 이유 |
    | --- | --- | --- | --- |
    | `origin` | `live`, `backtest` | **DB CHECK** | 정의상 두 값뿐(실시간이냐 아니냐). 늘 일이 없다 |
-   | `market_status` | 4-6의 6값 | **DB CHECK** | 사람이 승인한 고정 집합(M-8). 값을 바꾸면 보고 규칙(두 줄 표)이 바뀌므로 마이그레이션 + 승인이 맞다 |
+   | `market_status` | 4-6의 6값 | **DB CHECK** | 사람이 승인한 고정 집합(M-8). 값을 바꾸면 보고 규칙(두 줄 표)이 바뀌므로 마이그레이션 + 승인이 맞다. 뜻은 표별로 다르다: 예측 행은 4값만, 평가 행은 6값(9-4·9-5, D-054 2항). 예측 행의 4값 규칙은 로더와 품질 체크 `predictions_market_status`가 지킨다 |
    | `snapshot_kind` | `daily`, `pre_tip_1845`, `pre_tip_1945`, `pre_tip_2145` | **형식만 DB CHECK**(`^(daily\|pre_tip_[0-9]{4})$`), 목록은 파이썬(`SNAPSHOT_KINDS`) | 캡처 시각이 늘 예정이다(P-028 주말 14:45·16:45 ET). 형식 CHECK가 오타는 막고, 새 시각은 마이그레이션 없이 파이썬 목록만 고친다 |
    | `model_family` | 8-2의 10값 | **형식만 DB CHECK**(`^[a-z][a-z0-9_]*$`), 목록은 파이썬(`MODEL_FAMILIES`) | 가설이 늘면 모델 종류도 는다(단계 3) |
 
    파이썬 목록은 `presagio.db.models.modeling`에 있고 로더(P-033·P-035)가 쓴다.
-5. **표를 넘는 시점 조건.** `features.as_of < games.start_time_utc`, `predictions.as_of < games.start_time_utc`는 다른 표의 값이라 CHECK로 걸 수 없다. 로더가 넣기 전에 검사하고, 품질 체크 `features_after_tipoff`·`predictions_after_tipoff`(행 수 = 0, fail)가 뒤에서 확인한다. `predictions`는 예측 당시 시작 시각 `scheduled_start_utc`를 행에 갖고 있으므로 `as_of < scheduled_start_utc`는 CHECK로도 막는다. `input_fingerprint.max_stats_fetched_at <= as_of`(`daily` live 행, 8-1)는 이 티켓의 체크 3개 밖이라 후속이다.
+5. **표를 넘는 시점 조건.** `features.as_of < games.start_time_utc`, `predictions.as_of < games.start_time_utc`는 다른 표의 값이라 CHECK로 걸 수 없다. 로더가 넣기 전에 검사하고, 품질 체크 `features_after_tipoff`·`predictions_after_tipoff`(행 수 = 0, fail)가 뒤에서 확인한다. `predictions`는 예측 당시 시작 시각 `scheduled_start_utc`를 행에 갖고 있으므로 `as_of < scheduled_start_utc`는 CHECK로도 막는다. `predictions.feature_id`가 가리키는 피처 행이 **같은 `game_id`**이고 `features.as_of <= predictions.as_of`인 것도 표를 넘는 조건이라 품질 체크 `prediction_feature_link`(fail. `feature_id`가 NULL인 행은 대상 밖)가 본다(P-041). `input_fingerprint.max_stats_fetched_at <= as_of`(`daily` live 행, 8-1)는 이 티켓의 체크 3개 밖이라 후속이다.
 6. **`code_version`은 네 표 모두 NOT NULL.** 어느 코드가 만든 행인지 모르면 재현할 수 없다(원칙 2). 값은 `ingestion_runs`와 같은 함수(`current_code_version()`, git 커밋 → 패키지 버전)로 채운다. 그 함수가 `None`을 돌려주는 환경에서는 저장이 실패한다(의도).
 7. **새로 쓰는 타입.** 1-1의 목록에 세 가지를 더한다: `interval`(`closing_lead_time`, 8-4가 지정), `text[]`(`holdout_seasons`, 8-2가 지정), `smallint`(`over_outcome`, 8-4가 지정).
 8. **확률 열은 열린 구간 (0, 1).** `p_home`, `over_prob`, `market_p_home_*`는 `numeric(6,4)`이고 CHECK가 0과 1을 거부한다. 반올림하면 0.99996이 1.0000이 되므로 **로더는 저장 전에 [0.0001, 0.9999]로 자른다**(지표 계산의 `[1e-6, 1 − 1e-6]` 자르기(6-1)와는 별개).
@@ -604,7 +605,7 @@ erDiagram
 | `experiment_id` | `text` | NULL 허용 | | `H-01` 등. 실험에 속하지 않는 설정이면 NULL |
 | `holdout_seasons` | `text[]` | NOT NULL | `'{2025-26}'` | 선언한 보류 시즌(M-2) |
 | `holdout_unlocked_reason` | `text` | NULL 허용 | | `--unlock-holdout "<사유>"`의 사유. **NULL이면 보류 시즌 미접촉**. 빈 문자열은 거부 |
-| `artifact_path` | `text` | NULL 허용 | | 재학습 산출물(계수·트리) 경로. 추천 기준 모델은 필수(CHECK), 실시간 예측에 쓴 모델도 필수(로더 규칙, 표를 넘음) |
+| `artifact_path` | `text` | NULL 허용 | | 재학습 산출물(계수·트리) 경로. 규칙: **디렉터리**를 적고, 재학습마다 생기는 산출물 파일은 그 안에 `train_cutoff` 기준 파일명으로 둔다(설정 행 1개에 재학습 여러 번, 머리말 (1)). 추천 기준 모델은 필수(CHECK), 실시간 예측에 쓴 모델도 필수(로더 규칙, 표를 넘음) |
 | `is_recommendation_model` | `boolean` | NOT NULL | `false` | 단계 4 추천의 기준 모델 표시 |
 | `retired_at` | `timestamptz` | NULL 허용 | | 더 이상 쓰지 않게 된 시각 |
 | `created_at` | `timestamptz` | NOT NULL | `now()` | 등록 시각 |
@@ -635,13 +636,13 @@ erDiagram
 | `reference_bookmaker` | `text` | NULL 허용 | | 기준 북메이커(`draftkings` → `fanduel` → `betmgm`). 라인이 있으면 필수 |
 | `reference_spread` | `numeric(6,2)` | NULL 허용 | | 기준 북메이커 홈 스프레드 `point`. 단계 4용(지금은 비워 둔다) |
 | `market_reference` | `jsonb` (객체) | NULL 허용 | | `{bookmaker, captured_at, snapshot_ids: [...], method: proportional, n_books}`(8-3). 시장을 안 썼으면 NULL |
-| `market_status` | `text` | NOT NULL | | 4-6의 6값(9-1 4번). 예측 시점에 알 수 있는 사유를 적고, 마감에 기대는 값(`pred_only`, `rescheduled`)은 평가가 `evaluations`에 정한다 |
-| `is_recommendation_basis` | `boolean` | NOT NULL | `false` | 그 경기·모델에서 추천의 기준이 된 스냅숏 1개만 true(단계 2는 `daily`, D-033) |
+| `market_status` | `text` | NOT NULL | | **"예측 시점에 시장이 있었나"**: 예측 행은 4값만 쓴다. `available`, `no_snapshot_at_as_of`, `no_odds_season`, `unmatched_event`(D-054 2항). DB CHECK는 `evaluations`와 같은 6값을 허용하지만, 마감에 기대는 `pred_only`·`rescheduled`는 경기 뒤에만 알 수 있어 평가 행(9-5)에만 쓴다. 로더(P-033 `evaluation/store.py`)가 4값만 쓰고 품질 체크 `predictions_market_status`가 4값 밖을 fail로 잡는다 |
+| `is_recommendation_basis` | `boolean` | NOT NULL | `false` | 그 경기·모델에서 추천의 기준이 된 스냅숏 1개만 true(단계 2는 `daily`, D-033). 규칙은 **origin별 하나**(`live`·`backtest` 각각 최대 1개, D-054 1항)인데 지금 부분 유니크 키는 origin을 포함하지 않는다. 단계 4 `recommendations` 설계 티켓의 마이그레이션에서 키에 `origin`을 더한다. 그때까지 basis는 전부 false다(P-033) |
 | `code_version` | `text` | NOT NULL | | 예측한 코드의 git 커밋 |
 | `created_at` | `timestamptz` | NOT NULL | `now()` | DB에 생긴 시각 |
 
 - 키: `uq_predictions_game_id_model_version_id_as_of UNIQUE (game_id, model_version_id, as_of)`.
-- 부분 유니크: `uq_predictions_one_recommendation_basis ON (game_id, model_version_id) WHERE is_recommendation_basis`.
+- 부분 유니크: `uq_predictions_one_recommendation_basis ON (game_id, model_version_id) WHERE is_recommendation_basis`. 단계 4에서 `(game_id, model_version_id, origin)`으로 바뀔 예정(D-054 1항). 이름·컬럼·WHERE 절은 `tests/db/test_migrations.py`(M5)가 9-7과 대조한다.
 - CHECK: `ck_predictions_snapshot_kind_format`, `_origin_valid`, `_market_status_valid`, `_p_home_range`, `_over_prob_range`, `_total_mean_positive`, `_total_sd_positive`, `_market_reference_is_object`, `_has_output`(`num_nonnulls(p_home, total_mean) >= 1`), `_train_cutoff_before_as_of`(`train_cutoff <= as_of`), `_as_of_before_computed`, `_as_of_before_start`(`as_of < scheduled_start_utc`), `_sd_needs_mean`, `_over_needs_line`, `_line_has_bookmaker`(이름 앞부분 `ck_predictions` 생략).
 - 인덱스: 키 인덱스(`game_id`로 시작), `ix_predictions_as_of (as_of)`, `ix_predictions_model_as_of (model_version_id, as_of)`. 8-3의 `(game_id)` 인덱스는 키 인덱스가 같은 일을 해서 따로 만들지 않았다(9-9 4번).
 - 보류 시즌(2025-26) 경기의 예측 행은 해제 전에 쓰지 않는다(M-2). 경기 시즌과 설정의 `holdout_seasons`를 비교해야 해서 표를 넘으므로, 평가 실행기(P-032)가 막는다.
@@ -666,7 +667,7 @@ erDiagram
 | `over_outcome` | `smallint` | NULL 허용 | | 1 오버 / 0 언더 / NULL push 또는 라인 없음 |
 | `over_log_loss` | `numeric(9,6)` | NULL 허용 | | 오버 확률의 log loss. push면 NULL |
 | `over_brier` | `numeric(7,6)` | NULL 허용 | | 오버 확률의 Brier |
-| `market_status` | `text` | NOT NULL | | 4-6의 6값. 시장 비교 불가면 시장 열 전부 NULL(CHECK) |
+| `market_status` | `text` | NOT NULL | | **"마감까지 비교 가능한가"**: 4-6의 6값 전부(예측 행의 4값 + 경기 뒤에만 알 수 있는 `pred_only`·`rescheduled`, D-054 2항). 시장 비교 불가면 시장 열 전부 NULL(CHECK) |
 | `market_p_home_pred` | `numeric(6,4)` | NULL 허용 | | 예측 시점 마진 제거 홈 확률 |
 | `market_p_home_close` | `numeric(6,4)` | NULL 허용 | | 마감 마진 제거 홈 확률 |
 | `market_log_loss_pred` / `_close` | `numeric(9,6)` | NULL 허용 | | 시장 확률의 log loss |
@@ -947,7 +948,7 @@ WHERE p.is_recommendation_basis;
 | `scheduled_start_utc`(예측 당시 일정 시각) | `scheduled_start_utc timestamptz NOT NULL` (+ `ck_predictions_as_of_before_start`) |
 | `feature_id` FK | `feature_id bigint REFERENCES features`(NULL 허용, 9-9 1번) |
 | `market_reference jsonb`(`{bookmaker, captured_at, snapshot_ids, method, n_books}`) | `market_reference jsonb` + `_market_reference_is_object` |
-| `market_status text`(4-6 값) | `market_status text NOT NULL` + `ck_predictions_market_status_valid`(6값) |
+| `market_status text`(4-6 값) | `market_status text NOT NULL` + `ck_predictions_market_status_valid`(6값). 예측 행은 4값만 쓴다(9-4, D-054 2항, 품질 체크 `predictions_market_status`) |
 | `is_recommendation_basis boolean` + 부분 유니크 `(game_id, model_version_id) WHERE is_recommendation_basis` | `is_recommendation_basis boolean NOT NULL DEFAULT false` + `uq_predictions_one_recommendation_basis` |
 | 덮어쓰기 없음, 같은 키 재실행은 값이 같아야 함 | 9-1 2번(로더 규칙) |
 | 로더 `as_of < games.start_time_utc`, 품질 체크 `predictions_after_tipoff = 0` | 9-1 5번 + 품질 체크 `predictions_after_tipoff`(fail) + 표 안 CHECK `_as_of_before_start` |
@@ -976,7 +977,7 @@ WHERE p.is_recommendation_basis;
 | --- | --- |
 | 마이그레이션 `0002`에 4표 + 인덱스·CHECK만, `is_neutral` 추가 없음 | `alembic/versions/0002_modeling_layer.py`: 표 4개 + 인덱스 5개(부분 유니크 포함) + CHECK 48개 + 뷰 1개. 기존 표 변경 없음 |
 | 설계 DDL 일치 테스트 확장(D-030 4항) | `tests/db/test_migrations.py::test_head_matches_design_ddl`(부록 A + 9-7 = head) |
-| 품질 체크 3개 | `features_after_tipoff`, `predictions_after_tipoff`(fail), `feature_drift`(warn, 비교 대상 없으면 skip) |
+| 품질 체크 3개 | `features_after_tipoff`, `predictions_after_tipoff`(fail), `feature_drift`(warn, 비교 대상 없으면 skip). P-041이 `prediction_feature_link`(fail)·`predictions_market_status`(fail)를 더했다 |
 | 뷰 `predictions_recommendation_basis` | 9-6 |
 
 ### 9-9. 설계안 8장과 다르게 하거나 8장이 정하지 않아 정한 것
@@ -986,11 +987,11 @@ WHERE p.is_recommendation_basis;
 3. **`pred_only`에서 `closing_lead_time`·`closing_bookmaker`는 남길 수 있다.** 4-4의 "평가 행은 남기고 사유만 적음"과 "`closing_lead_time`을 저장해 구간별로 보고"를 함께 만족시키려고, 마감 **가격**에서 나오는 값(마감 확률·지표·라인·`line_move`·CLV)만 NULL을 강제했다. 시장 비교가 아예 불가한 4값(`no_*`, `unmatched_event`, `rescheduled`)은 lead time까지 전부 NULL이다.
 4. **`predictions (game_id)` 인덱스를 따로 만들지 않았다.** 키 `UNIQUE (game_id, model_version_id, as_of)`의 인덱스가 `game_id`로 시작해서 `game_id` 조회에 그대로 쓰인다. 같은 일을 하는 인덱스를 하나 더 두면 쓰기만 느려진다. 필요하면 새 마이그레이션으로 더한다.
 5. **8장에 없는 CHECK를 더했다(전부 표 안의 조건).** `predictions`의 `as_of <= computed_at`(features와 같은 R4 규칙), `as_of < scheduled_start_utc`(R4의 `as_of < start_time_utc`를 예측 당시 시각으로 표 안에서 막음), 출력 열 사이 관계(`sd_needs_mean`, `over_needs_line`, `line_has_bookmaker`), `evaluations`의 결과 관계(`home_won = (actual_margin > 0)` 등), 지표가 함께 있거나 함께 없게 하는 CHECK, `model_versions`의 `recommendation_has_artifact`(8-2 "추천 기준 모델의 산출물 필수"), `unlock_reason_not_blank`. 전부 로더 버그를 DB에서 잡으려는 것이고, 정상 데이터를 막지 않는다(9-11 테스트).
-6. **`feature_drift`의 "비교 대상".** 재계산은 피처 모듈(P-035)의 일이라 지금은 비교할 대상이 없다. 체크는 재계산 함수를 `CheckSettings.feature_recompute`로 받는 틀이고, 함수가 없거나 표가 비었으면 skip, 있으면 저장 행마다 다시 계산해 `values`가 다른 행을 warn으로 보고한다(덮어쓰지 않는다, T11). CLI(`presagio quality-check`)는 아직 함수를 넘기지 않으므로 항상 skip이다. P-035가 함수를 만들면 연결한다.
+6. **`feature_drift`의 "비교 대상".** 재계산은 피처 모듈(P-035)의 일이라 지금은 비교할 대상이 없다. 체크는 재계산 함수를 `CheckSettings.feature_recompute`로 받는 틀이고, 함수가 없거나 표가 비었거나 **비교한 행이 0이면 skip**(P-041 (b)), 있으면 저장 행마다 다시 계산해 `values`가 다른 행을 warn으로 보고한다(덮어쓰지 않는다, T11). CLI(`presagio quality-check`)는 아직 함수를 넘기지 않으므로 항상 skip이다. P-035가 함수를 만들면 연결한다.
 7. **`reference_spread`를 지금 만들었다.** 8-3에 "(단계 4)"로 적혀 있다. 단계 4에서 컬럼 하나 때문에 마이그레이션을 하는 것보다 NULL 컬럼 하나가 싸다고 봤다. 원하면 빼고 단계 4에서 더해도 된다.
 8. **타입을 정했다.** 8-4는 지표 컬럼 타입을 정하지 않았다. 1-1의 원칙(정해진 정밀도의 `numeric`)대로 확률 `numeric(6,4)`, log loss `numeric(9,6)`, Brier `numeric(7,6)`, 점수 오차 `numeric(6,2)`/`numeric(10,2)`, CLV 수익률 `numeric(8,4)`로 했다. `double precision`(파이썬 float 그대로)도 가능했지만 1-1 목록 밖이고, 경기 단위 값은 6자리면 집계 오차가 무시할 만하다.
 9. **`seed`와 `code_version`을 NOT NULL로 했다.** 8-2는 NULL 여부를 말하지 않았다. 재현 정보가 빠진 행을 DB가 거부하는 쪽을 골랐다(9-1 6번).
-10. **모델링 품질 체크 3개는 표가 없으면 skip한다.** 이 PR이 머지된 뒤 PM이 개발 DB에 0002를 적용하기 전까지, launchd의 `ingest-daily`(P-024)는 새 코드로 품질 체크를 돌리는데 표가 아직 없다. 그때 `error`(종료 코드 1)가 아니라 `skip`(사유: "table ... does not exist (migration 0002)")이 되게 했다. 적용 뒤에는 빈 표에서 `features_after_tipoff`·`predictions_after_tipoff`는 pass(0행), `feature_drift`는 skip이다.
+10. **모델링 품질 체크는 표가 없을 때 `alembic_version`을 본다(P-041 (c)).** 이 PR이 머지된 뒤 PM이 개발 DB에 0002를 적용하기 전까지, launchd의 `ingest-daily`(P-024)는 새 코드로 품질 체크를 돌리는데 표가 아직 없다. 그때 `error`(종료 코드 1)가 아니라 `skip`이 되게 했다. P-041이 규칙을 좁혔다: `alembic_version`이 0002 전(또는 없음)이면 skip(사유: "table ... does not exist (migration 0002 not applied, alembic_version 0001)"), **0002 이후인데 표가 없으면 error**(있어야 할 표가 사라진 것). 적용 뒤에는 빈 표에서 `features_after_tipoff`·`predictions_after_tipoff`·`prediction_feature_link`·`predictions_market_status`는 pass(0행), `feature_drift`는 skip이다.
 
 ### 9-10. 단계 4에서 추가될 표 (자리만, 승인 대상 아님)
 
@@ -1079,11 +1080,14 @@ WHERE p.is_recommendation_basis;
 
 ## 13. 변경 기록
 
+### v1.5 (2026-10-24, P-041)
+문서 정정만이고 DDL·마이그레이션 변경은 없다. 9장 머리말에 원본 메모(확정 DDL의 원본은 마이그레이션 0002와 `models/modeling.py`, 9-7은 사본). 9-4·9-5에 `market_status`의 표별 뜻(예측 행 4값 = "예측 시점에 시장이 있었나", 평가 행 6값 = "마감까지 비교 가능한가", D-054 2항)과 추천 기준 행의 origin 규칙(origin별 하나, 단계 4 마이그레이션에서 키에 `origin` 추가, D-054 1항). 9-3 `artifact_path` 경로 규칙(디렉터리 + `train_cutoff` 기준 파일명). 2장 Q7과 7-2의 `predicted_at` → `as_of`(초안 잔존). 1-1에 9-1 7번 포인터(v1.4 기록의 오기 정정). 6-1과 v1.3 기록의 중립 보완 목록 "5경기" → "2022-23 2 + 2023-24 5 = 7경기"(D-053). 품질 체크 2개 추가(`prediction_feature_link`, `predictions_market_status`)와 표 없음 규칙(0002 전 skip, 이후 error), `feature_drift` compared=0 skip을 9-1 5번·9-8·9-9 6·10번에 반영.
+
 ### v1.4 (2026-10-23, P-031)
-9장을 초안에서 **확정 DDL**로 바꿨다(마이그레이션 `0002`). 요구는 `docs/design/modeling-v1.md` 8장(D-049). 표 4개(`features`, `model_versions`, `predictions`, `evaluations`) + 인덱스 5개 + CHECK 48개 + 뷰 `predictions_recommendation_basis`. 초안과 다른 점: `model_versions` 한 행 = 설정 1개(주간 재학습은 `predictions.train_cutoff`), `predictions`의 키 `predicted_at` → `as_of`. 1-1 타입 목록에 `interval`·`text[]`·`smallint`를 더했다(9-1 7번). 대응표 9-8, 8장과 다르게 한 점 9-9. 머리말·부록 A 설명 갱신. 기존 표(0001)와 `games.is_neutral`은 바뀌지 않았다.
+9장을 초안에서 **확정 DDL**로 바꿨다(마이그레이션 `0002`). 요구는 `docs/design/modeling-v1.md` 8장(D-049). 표 4개(`features`, `model_versions`, `predictions`, `evaluations`) + 인덱스 5개 + CHECK 48개 + 뷰 `predictions_recommendation_basis`. 초안과 다른 점: `model_versions` 한 행 = 설정 1개(주간 재학습은 `predictions.train_cutoff`), `predictions`의 키 `predicted_at` → `as_of`. `interval`·`text[]`·`smallint` 세 타입을 1-1 목록에 더하는 규칙은 9-1 7번에 적었다(1-1 본문의 포인터는 v1.5에서 추가. v1.4 원문 "1-1 타입 목록에 더했다"는 오기). 대응표 9-8, 8장과 다르게 한 점 9-9. 머리말·부록 A 설명 갱신. 기존 표(0001)와 `games.is_neutral`은 바뀌지 않았다.
 
 ### v1.3 (2026-10-23, P-025)
-6-1 `is_neutral` 설명과 소스별 갱신 컬럼 표의 `scheduleleaguev2` 칸에 2023-24 보완 규칙 추가. 2023-24 일정 응답은 1,396경기 전부 `isNeutral=false`라 중립 경기 5개(멕시코시티 `0022300172`, 파리 `0022300527`, 라스베이거스 NBA컵 준결승 `0022301229`·`0022301230`, 결승 `0062300001`)를 raw `arenaCity`·`gameLabel`로 확인해 **game_id 고정 목록**으로 true로 만든다(`sources/nba_api/schedule.py`의 `UNFLAGGED_NEUTRAL_GAME_IDS`). `isNeutral=true`는 그대로 true. 스코어보드(`scoreboardv3`)도 `is_neutral`을 넣기·갱신하므로 같은 목록을 적용한다(응답에 `gameId`가 있다). 그러지 않으면 과거 2023-24 날짜로 매일 수집을 돌렸을 때 true가 false로 되돌아간다. 개최지 도시 목록 규칙은 쓰지 않았다: 중립 경기가 NBA 연고 도시에서도 열리고(2026-27 컵 결승 Indianapolis), 라스베이거스 프리시즌 경기는 소스가 중립이 아니라고 하며, 스코어보드 응답에는 `arenaCity`가 없어 도시 규칙을 두 경로에 똑같이 적용할 수 없다. 2024-25부터는 플래그가 모든 중립 경기(해외 경기, 컵 준결승·결승)를 표시하므로 새 개최지는 플래그가 잡는다. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
+6-1 `is_neutral` 설명과 소스별 갱신 컬럼 표의 `scheduleleaguev2` 칸에 2023-24 보완 규칙 추가. 2023-24 일정 응답은 1,396경기 전부 `isNeutral=false`라 중립 경기 5개(멕시코시티 `0022300172`, 파리 `0022300527`, 라스베이거스 NBA컵 준결승 `0022301229`·`0022301230`, 결승 `0062300001`)를 raw `arenaCity`·`gameLabel`로 확인해 **game_id 고정 목록**으로 true로 만든다(`sources/nba_api/schedule.py`의 `UNFLAGGED_NEUTRAL_GAME_IDS`. v1.5: P-026이 2022-23 멕시코시티 `0022200439`·파리 `0022200678`을 더해 목록은 2022-23 2 + 2023-24 5 = 7경기다, D-053). `isNeutral=true`는 그대로 true. 스코어보드(`scoreboardv3`)도 `is_neutral`을 넣기·갱신하므로 같은 목록을 적용한다(응답에 `gameId`가 있다). 그러지 않으면 과거 2023-24 날짜로 매일 수집을 돌렸을 때 true가 false로 되돌아간다. 개최지 도시 목록 규칙은 쓰지 않았다: 중립 경기가 NBA 연고 도시에서도 열리고(2026-27 컵 결승 Indianapolis), 라스베이거스 프리시즌 경기는 소스가 중립이 아니라고 하며, 스코어보드 응답에는 `arenaCity`가 없어 도시 규칙을 두 경로에 똑같이 적용할 수 없다. 2024-25부터는 플래그가 모든 중립 경기(해외 경기, 컵 준결승·결승)를 표시하므로 새 개최지는 플래그가 잡는다. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
 
 ### v1.2 (2026-10-22, P-014 PR #12 리뷰 반영)
 6-1 "소스별 갱신 컬럼 표"에 `leaguegamelog` 열 추가(상태·점수·`source`·`fetched_at`·`raw_response_id`만 갱신, INSERT 없음), `games.source` 값 목록에 `leaguegamelog` 추가. 적재 규칙만 바뀌었고 DDL·마이그레이션 변경 없음.
