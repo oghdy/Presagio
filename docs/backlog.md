@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040** DONE(기준선 3종 + 저장 경로, 클라우드 환경). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. **P-033 DONE(#41 `625edfa`, 10-24 13:12)·P-040 DONE(기준 4 = P-033 클라우드 세션 증거).** 개발 DB에 기준선 예측 5,288행 저장. **P-041·P-042 IN PROGRESS(클라우드 세션 2개, 10-24 13:5x 시작 요청).** 다음: P-028(로컬). Q-025 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040** DONE(기준선 3종 + 저장 경로, 클라우드 환경). **P-040 PR #31 머지 `24abf4b`, `presagio-dev` 환경 생성 완료(Q-023 (a), PM이 크롬으로), 기준 4는 P-033 클라우드 세션이 증명. **P-033 DONE(#41 `625edfa`, 10-24 13:12)·P-040 DONE(기준 4 = P-033 클라우드 세션 증거).** 개발 DB에 기준선 예측 5,288행 저장. **P-041(PR #49)·P-042(PR #48) REVIEW — 클라우드 세션 둘 다 약 40분 만에 PR, 리뷰어 2명 동시 투입(14:4x).** 다음: P-028(로컬). Q-025 대기.** 다음: P-033(클라우드, `presagio-dev` 환경 생성 뒤)·P-041·P-042·P-028. **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -435,8 +435,8 @@
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | DONE (PR #31 `24abf4b`, 기준 4 = P-033 세션 증거) | P-024 DONE |
-| P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | IN PROGRESS (클라우드 세션 p-042-cloud-followups) | P-040 DONE |
-| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | IN PROGRESS (클라우드 세션 p-041-quality) | P-031 DONE, Q-022 |
+| P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | REVIEW (PR #48, 리뷰 중) | P-040 DONE |
+| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | REVIEW (PR #49, 리뷰 중) | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
 | P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | DONE (PR #41 `625edfa`) | P-031·P-032 DONE ✓ |
@@ -554,12 +554,13 @@
   - 2026-10-23 PM: P-031·P-032 머지 뒤 상세 확정. P-032 리뷰(1·2회차)의 P-033 후속을 기준 5에 전부 넣음. 브랜치 `feat/P-033-baselines-store`.
 
 ### P-042 클라우드 셋업 후속 (P-040 리뷰 [낮음] 5건)
-- **상태:** IN PROGRESS (2026-10-24 13:5x 사람 지시 → platform-engineer **클라우드 세션** `p-042-cloud-followups`(환경 `presagio-dev`, 브랜치 `feat/P-042-cloud-setup-followups`, task_8cce9431). 브리핑 `P-042-briefing.md`(P-040 리뷰 [낮음] 5건 + 실측 사실 + 완료 기준 1~6을 PM이 확정) 전문을 프롬프트로. 완료 확인은 `gh pr list --head feat/P-042-cloud-setup-followups`)
+- **상태:** REVIEW (2026-10-24 14:4x **PR #48** https://github.com/oghdy/Presagio/pull/48 `3a5da04`, 브랜치 `claude/sweet-lovelace-vpl75t`(플랫폼 고정, 브리핑 이름과 다름), 파일 4 +469/−91, CI 초록, BEHIND. 작성자 보고: README 클라우드 절 실측 반영, 셋업 머리말, 훅 캐시 낡음 경고·한 줄 출력·`in_project`, 셋업 성공 경로 스텁 테스트, 782 passed·skipped 0, 클라우드 실측(downgrade/upgrade로 경고 재현, `CLAUDE_PROJECT_DIR`는 세션 셸에서 빈 값이지만 훅 시점엔 주어짐). reviewer(Opus) 서브에이전트가 `~/.claude/worktrees/presagio-review-p-042`에서 리뷰 중 → `P-042-review.md`)
 - **담당 역할:** platform-engineer (Opus 5.5 높음). D-052상 클라우드에서 수행 가능.
 - **단계:** 2 (단계 6 선행)
 - **의존:** P-040 DONE(머지 + 첫 환경 세션 확인)
 - **목표:** P-040 리뷰(`P-040-review.md`)의 [낮음] 5건을 한 PR로. (1) README 셋업 칸 안내: 플랫폼이 레포 루트에서 셋업을 돈다는 보장이 없으면 rc 127 → 셋업 칸을 `bash scripts/cloud-setup.sh || true` 또는 절대 경로 폴백으로, 실패 시 세션 안 수동 실행 안내. (2) 훅: `alembic current`가 head와 다르면 "캐시가 낡음, `bash scripts/cloud-setup.sh` 실행" 경고 + README에 "셋업 칸 주석을 바꿔 캐시 재생성". (3) README에 `claude --cloud` 전 `/remote-env`로 `presagio-dev` 선택 안내, Default 환경으로 뜬 경우의 훅 메시지. (4) 셋업 성공 경로 테스트(스텁 `runuser`·`psql`·`uv`로 CREATEDB·alembic·`--locked` 단언, 변이 5 생존 해소). (5) 훅 실패 출력 한 줄로. 함께: README 예시 수치 683/0002로 갱신, 클라우드에서 `gh pr` 불가(GraphQL 403) 안내와 `gh api` REST 예시.
 - **메모:**
+  - 2026-10-24 PM 14:4x: PR #48 도착(세션 시작 약 40분 뒤). 작성자 결정 제안 4건(래퍼 확정·절대 경로 단순화 안 함, 캐시 경고는 stdout만, 클라우드 브랜치명은 플랫폼 고정 허용 + PR 제목으로 식별, 환경 설정 변경 없음). 셋업 단계의 실제 작업 디렉터리 값은 여전히 미확인(래퍼 첫 줄 출력을 사람이 세션 시작 화면에서 볼 수 있으면 README에 추가).
   - 2026-10-24 PM 13:5x: 완료 기준 1~6 확정(브리핑에 전문): README 클라우드 절(UI 칸 이름·네트워크 표기·래퍼·클론 경로·/remote-env·모델 상속·gh api REST·수치), `cloud-setup.sh` 머리말, 훅 캐시 낡음 경고 한 줄 + 실패 한 줄 + 로컬 무동작, 셋업 성공 경로 스텁 테스트, 범위 밖 0, 클라우드 실측(훅 직접 실행·downgrade/upgrade로 경고 재현). `docs/team/workflow.md` 클라우드 절은 PM이 PR 뒤 갱신.
   - 2026-10-24 PM 01:0x: 클론 경로 실측 `/home/user/Presagio`(P-033 PR #41). 셋업 칸은 지금 래퍼(Q-024)가 동작 확인됨 → README에 (a) 래퍼 그대로 적거나 (b) `bash /home/user/Presagio/scripts/cloud-setup.sh` 절대 경로로 단순화. PM 추천 (a): 경로가 플랫폼 내부 규칙이라 바뀔 수 있고 래퍼는 `CLAUDE_PROJECT_DIR`가 생기면 그것을 우선 쓴다. 훅 쪽은 `$CLAUDE_PROJECT_DIR` 빈 값일 때 `$BASH_SOURCE` 폴백이 실제로 쓰였음을 README에 적기.
   - 2026-10-23 PM 21:5x(Q-024): README 셋업 스크립트 칸 문구를 경로 무관 래퍼(아래 Q-024 본문)로 교체하고, `scripts/cloud-setup.sh` 5~7행 주석("Paste one line … `bash scripts/cloud-setup.sh`")도 같이. P-033 클라우드 세션 PR의 "P-040 기준 4 증거" 절에서 실제 `pwd`·클론 경로·`CLAUDE_PROJECT_DIR` 값을 받아 README에 적는다(그 뒤 래퍼를 절대 경로로 단순화할지 결정).
@@ -607,7 +608,7 @@
   - 2026-10-24 PM 13:2x(운영 관찰 4건, 이 티켓 범위에 넣을 것): ① **07:45 KST 슬롯(odds-2026-10-23-1845) 누락** — 로그에 08:00:02 "skip: no slot now"만 있음(맥이 잠들어 launchd가 08:00에 깨운 것으로 보임; 1845 캡처 결손 = 정직한 결손이지만 B2 커버리지 손실). 맥 잠자기 중 깨우기(`pmset repeat wake`/`caffeinate`) 또는 슬롯 허용폭 검토. ② **10:45 슬롯(2145)이 exit 1 FAILED** — 실제로는 262행 저장 성공, FanDuel h2h Boston Celtics 가격 1.0(`bad_price`) 1건 거부로 단위 partial → 부모 failed → launchd FAILED. 거부 1건은 품질 이슈이지 실패가 아님 → partial 판정 기준(거부 outcome 비율 임계) 또는 warn/fail 분리(P-017 리뷰 후속)와 함께. ③ **Docker VM 시계 지연** — run 119 `started_at`(DB `now()`) 10:29 KST vs 실제 10:46(호스트·`captured_at`). 맥 잠자기 뒤 Docker Desktop VM 시계가 17분 늦었다가 13:14에는 재동기화됨. `captured_at`·`fetched_at`은 파이썬(호스트) 시계라 as_of 영향 없음, DB `now()` 기본값 컬럼(`ingestion_runs.started_at`, 각 표 `created_at`)만 어긋남 → `started_at`을 파이썬 시계로(단계 6 또는 이 티켓). ④ 09:45·11:48 KST에도 launchd가 깨어나 "no slot" skip(서머타임 양쪽 시각 등록, 정상).
 
 ### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
-- **상태:** IN PROGRESS (2026-10-24 13:5x 사람 지시 → data-engineer **클라우드 세션** `p-041-quality`(환경 `presagio-dev`, 브랜치 `feat/P-041-modeling-followups`, task_ac086c0d). 브리핑 `P-041-briefing.md` 전문을 프롬프트로. 기준 5(실데이터 quality-check)는 머지 후 PM. 완료 확인은 `gh pr list --head feat/P-041-modeling-followups`)
+- **상태:** REVIEW (2026-10-24 14:4x **PR #49** https://github.com/oghdy/Presagio/pull/49 `427f0d9`, 파일 7 +383/−61, CI 초록, CLEAN. 작성자 보고: 체크 18 `prediction_feature_link`·19 `predictions_market_status` 추가, feature_drift compared=0 skip, 표 없음 skip/error 규칙, M5 인덱스 테스트, 문서 정정 전부, 779 passed·skipped 0. reviewer(Opus) 서브에이전트가 `~/.claude/worktrees/presagio-review-p-041`에서 리뷰 중(개발 DB 읽기 전용 quality-check 실측 포함) → `P-041-review.md`)
 - **담당 역할:** data-engineer (Opus 5.5 높음). D-052상 클라우드 후보(mock 테스트로 완결).
 - **단계:** 2
 - **의존:** P-031 DONE(머지), Q-022.
@@ -622,6 +623,7 @@
 - **확인 방법:** 기준 4의 diff, 기준 5의 명령, 새 체크의 임시 DB 테스트(fail·skip·error 각 1회 재현).
 - **추가 범위(P-026 리뷰, 2026-10-23, D-053):** 소형 문서 정정 3건 — (e) `docs/design/schema-v1.md` 6-1·13장 "2023-24 보완 목록 5경기" → "2022-23 2 + 2023-24 5 = 7경기"(305·329·1086행 근처), (f) `docs/research/backfill-report-2022-23.md` 198·268행: 포스트시즌 90경기 점수 근거를 `gamelog_vs_schedule_score`(대상 밖)에서 `points_match_score`·raw 게임로그 대조로 바꾸고 "이 90경기는 `gamelog_vs_schedule_score` 대상 밖" 한 줄, (g) 같은 파일 199행 오타("1행 는 것은" → "1행 늘어난 것은"). 코드 변경 없음.
 - **메모:**
+  - 2026-10-24 PM 14:4x: PR #49 도착(세션 시작 약 40분 뒤). 작성자 결정 제안 5건(표 없음 규칙 D-040 보완, 4값 상수 독립 정의, FK 소실 시 fail, README 체크 수 표기, 13장 v1.5 기록)과 해석 2곳(2장 Q7 행, 13장 1-1 오기)은 리뷰 뒤 PM 판단. 클라우드에서 pre-commit 훅 다운로드가 이번엔 됐다고 함(네트워크 허용 범위 변동 가능성 메모).
   - 2026-10-24 PM 13:5x: 클라우드 세션 시작. P-042와 동시 진행(README는 9절 vs 클라우드 절로 분리, 나중 머지 쪽은 PM이 `gh pr update-branch`).
   - 2026-10-24 PM 01:2x: 사람 "Q-022는 추천대로" → D-054. 완료 기준 1~5 확정. P-033 PR #41의 저장 경로가 이미 예측 행 4값 규칙을 지키므로 (d) 체크는 그 뒤에 자연스럽게 pass.
   - 2026-10-23 PM: P-031 리뷰로 생성. PR #25 머지를 막지 않음.
