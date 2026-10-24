@@ -98,15 +98,22 @@ check_out="$(one_line "$check_out")"
 
 # 4. Snapshot database at the repository's migration head? `alembic current` prints
 #    "<revision> (head)" only when the database revision is the newest one in alembic/versions;
-#    "<revision>" alone means behind, nothing means no alembic_version table. Only stdout is
-#    read (alembic logs to stderr). Skipped when the connection check already failed.
+#    "<revision>" alone means behind, nothing means no alembic_version table. stdout carries the
+#    revision; stderr (alembic's INFO logging, and the traceback when it fails) goes to a temp
+#    file so a failure's reason can be kept. Skipped when the connection check already failed.
 migration_note=""
 if [ "$check_rc" -eq 0 ]; then
-  alembic_out="$(in_project alembic current 2> /dev/null)"
+  alembic_err="$(mktemp)"
+  alembic_out="$(in_project alembic current 2> "$alembic_err")"
   alembic_rc=$?
   alembic_out="$(one_line "$alembic_out")"
+  # The last informative stderr line: not alembic's logging, not SQLAlchemy's "(Background on
+  # this error at: ...)" link that ends every one of its errors.
+  alembic_reason="$(grep -v -e '^INFO ' -e '^(Background on this error' "$alembic_err" | tail -n 1)"
+  rm -f "$alembic_err"
   if [ "$alembic_rc" -ne 0 ]; then
-    migration_note=" alembic current failed (exit ${alembic_rc}); ${FIX}"
+    alembic_reason="$(one_line "${alembic_reason:-no message on stderr}")"
+    migration_note=" alembic current failed (exit ${alembic_rc}: ${alembic_reason}); ${FIX}"
   else
     case "$alembic_out" in
       *"(head)"*) ;;

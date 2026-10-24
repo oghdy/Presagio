@@ -323,15 +323,20 @@ def test_hook_warns_when_the_snapshot_database_is_behind_the_repo(
 
 
 def test_hook_reports_an_alembic_failure_in_the_same_line(cloud: CloudStubs) -> None:
-    """A crashing `alembic current` (traceback on stderr) is one clause, not a traceback."""
+    """A crashing `alembic current` (traceback on stderr) becomes one clause with the reason."""
     cloud.alembic_fail_marker.touch()
     result = run(HOOK, cloud.env())
     assert result.returncode == 0
     assert result.stderr == ""
     (line,) = result.stdout.splitlines()
     assert line.startswith(f"{TAG} DB ready")
-    assert line.endswith(f" alembic current failed (exit 1); {FIX}")
+    # The last informative stderr line survives; the traceback header and INFO logging do not.
+    assert line.endswith(
+        " alembic current failed"
+        f" (exit 1: sqlalchemy.exc.ProgrammingError: stub: relation alembic_version); {FIX}"
+    )
     assert "Traceback" not in line
+    assert "INFO" not in line
 
 
 def test_hook_reports_a_failed_check_in_one_line_without_blocking_the_session(
