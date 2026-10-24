@@ -4,15 +4,16 @@ Contents: 30 teams (nba_api and the_odds_api aliases), teams A, B, C, D
 playing on every other ET date (A-B 19:30 ET, C-D 20:00 ET, home side alternating):
 
 - 2023-24: 85 regular dates from 2023-10-24, plus the T4 pair (2024-01-10 C-D moved to
-  23:00 ET and an extra 2024-01-11 A-C game), a Cup final without stats on 2023-12-10, a
-  play-in and two playoff games.
+  23:00 ET and an extra 2024-01-11 A-C game), a Cup final on 2023-12-10 (final, with stat
+  rows, so only the game-type rule of D-049 M-3 keeps it out of results()), a play-in and
+  two playoff games.
 - 2024-25: 85 regular dates from 2024-10-22 and one playoff game.
 - 2025-26 (holdout): 10 regular dates from 2025-10-21.
 - 2026-27: 10-20 A-B (unmatched odds event), 10-21 C-D (market available: three books at
   10-20 21:45 ET, closes 45 min before tip-off), 10-22 A-C (one book, last quote 21 h before
   tip-off: pred_only), 10-23 B-D not final.
 
-Every final game except the Cup final has two leaguegamelog stat rows.
+Every final game, the Cup final included, has two leaguegamelog stat rows.
 """
 
 from __future__ import annotations
@@ -296,7 +297,7 @@ def load_league(engine: Engine) -> League:
         raw = insert_raw(conn, "nba_api", "leaguegamelog", {"Season": "all"}, {"rows": []})
         insert_games(conn, rows, raw)
         for row in rows:
-            if row["status_code"] == 3 and row["game_id"] != CUP_FINAL:
+            if row["status_code"] == 3:
                 insert_stats(conn, row, raw)
         odds_raw = insert_raw(conn, "the_odds_api", "odds", {"markets": "h2h,totals"}, [])
         by_id = {r["game_id"]: r for r in rows}

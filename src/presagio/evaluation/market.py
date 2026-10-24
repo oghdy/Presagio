@@ -63,9 +63,10 @@ MARKET_STATUSES = (
 # Comparison sets (design 4-6): prediction-time market (B3) vs closing market and CLV (B4).
 B3_STATUSES = frozenset({AVAILABLE, PRED_ONLY})
 B4_STATUSES = frozenset({AVAILABLE})
-# Seasons without odds before the paid history backfill (D-026, DR-7). A game of these seasons
-# that has a prediction-time market anyway (after DR-7) is classified by its data, not by this.
-NO_ODDS_SEASONS = ("2023-24", "2024-25", "2025-26")
+# Seasons without odds before the paid history backfill (D-026, DR-7; 2022-23 is the M-11
+# warm-up season, P-026). A game of these seasons that has a prediction-time market anyway
+# (after DR-7) is classified by its data, not by this.
+NO_ODDS_SEASONS = ("2022-23", "2023-24", "2024-25", "2025-26")
 
 _SOLVER_ITERATIONS = 200
 

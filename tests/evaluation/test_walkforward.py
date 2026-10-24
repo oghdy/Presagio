@@ -1,9 +1,12 @@
 """The walk-forward runner on the temp league DB: time rules and leakage tests at runner level
-(design 9-3 T1, T2, T4, T8, T10, T12, T14 interface part)."""
+(design 9-3 T1, T2, T4, T8, T10, T12, T14 interface part), T1/T2 for every registered
+experiment (P-033 criterion 2), the training cross-check and the season lower bound of the
+training window (P-032 review (a), (b))."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -13,12 +16,15 @@ from sqlalchemy import Connection, text
 from presagio.evaluation import walkforward
 from presagio.evaluation.data import load_games, load_prediction_quotes
 from presagio.evaluation.dummy import ConstantPredictor, HomeRateLearner
+from presagio.evaluation.experiments import EXPERIMENTS
 from presagio.evaluation.holdout import HoldoutLockedError
 from presagio.evaluation.market import prediction_market
+from presagio.evaluation.scoring import score_run
 from presagio.evaluation.timing import backtest_as_of, et_date
 from presagio.evaluation.walkforward import (
     SKIP_AFTER_NOW,
     SKIP_MIN_TRAINING,
+    SKIP_NOT_PREDICTED,
     SKIP_STARTED,
     LeakageGuardError,
     Prediction,
@@ -31,14 +37,17 @@ from presagio.evaluation.walkforward import (
     WalkForwardConfig,
     WalkForwardResult,
     _check_prediction_times,
+    _check_training,
     run_walk_forward,
 )
+from presagio.models.baselines import MarketBaseline
 
 from .league import (
     CUP_FINAL,
     LIVE_AVAILABLE,
     LIVE_NOT_FINAL,
     LIVE_PRED_ONLY,
+    LIVE_UNMATCHED,
     T4_LATE_GAME,
     T4_NEXT_DAY_GAME,
     League,
@@ -51,6 +60,11 @@ from .league import (
 DEV = ("2023-24",)
 PIVOT = date(2024, 2, 15)  # a game date in the middle of 2023-24
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
+# Predictors whose output depends on the visible results (T1/T2 power check); B3 reads only
+# the market, and 2023-24 has none (D-026), so it predicts nothing there.
+PROBE = "probe"
+RESULT_USERS = (PROBE, "H-00", "B0", "B1")
+ALL_PREDICTORS = (PROBE, *sorted(EXPERIMENTS))
 
 
 class Probe:
@@ -96,10 +110,17 @@ class Probe:
         return out
 
 
+def make(name: str) -> Any:
+    """A fresh predictor: the probe or a registered experiment's."""
+    return Probe() if name == PROBE else EXPERIMENTS[name].make()
+
+
 def run(conn: Connection, predictor: Any = None, **config: Any) -> WalkForwardResult:
-    """run_walk_forward with defaults for the tests."""
+    """run_walk_forward with defaults for the tests (a predictor name is accepted too)."""
     seasons = config.pop("seasons", DEV)
     now = config.pop("now", NOW)
+    if isinstance(predictor, str):
+        predictor = make(predictor)
     return run_walk_forward(
         conn,
         predictor if predictor is not None else Probe(),
@@ -201,14 +222,23 @@ def make_extreme(conn: Connection, where: str, params: dict) -> int:
     return changed
 
 
+def assert_no_odds_season_run(result: WalkForwardResult, n: int) -> None:
+    """B3 over 2023-24: nothing predicted, every one of the n targets recorded as
+    no_odds_season."""
+    assert result.predictions == [] and result.skipped[SKIP_NOT_PREDICTED] == n
+    assert {m.market_status for m in result.not_predicted} == {"no_odds_season"}
+    assert len(result.not_predicted) == n
+
+
+@pytest.mark.parametrize("name", ALL_PREDICTORS)
 def test_t1_time_travel_changes_after_as_of_leave_predictions_unchanged(
-    conn: Connection, league: League
+    conn: Connection, league: League, name: str
 ) -> None:
-    """T1 at runner level. After predicting, (i) add ten extreme games after the pivot date,
-    (ii) change the pivot games' own scores and stats (the target g and the same-date other
-    game). Predictions up to the pivot date stay identical; later ones change (the probe is
-    sensitive, so the test has power)."""
-    before = run(conn)
+    """T1 at runner level, for the probe and every registered experiment. After predicting,
+    (i) add ten extreme games after the pivot date, (ii) change the pivot games' own scores
+    and stats (the target g and the same-date other game). Predictions up to the pivot date
+    stay identical; later ones change for every predictor that reads results (power)."""
+    before = run(conn, name)
     a, b, c, d = league.teams
     raw = conn.execute(text("SELECT min(raw_response_id) FROM raw_api_responses")).scalar_one()
     added = [
@@ -220,23 +250,119 @@ def test_t1_time_travel_changes_after_as_of_leave_predictions_unchanged(
         insert_stats(conn, game, raw)
     pivot_window = {"lo": et(PIVOT, 0), "hi": et(PIVOT + timedelta(days=1), 0)}
     assert make_extreme(conn, "start_time_utc >= :lo AND start_time_utc < :hi", pivot_window) == 2
-    after = run(conn)
+    after = run(conn, name)
     assert outputs(after, PIVOT) == outputs(before, PIVOT)
-    assert outputs(after) != outputs(before)
+    if name in RESULT_USERS:
+        assert outputs(after) != outputs(before)
+    else:
+        assert_no_odds_season_run(before, 174)
+        assert_no_odds_season_run(after, 184)  # the ten added games are targets too
 
 
+@pytest.mark.parametrize("name", ALL_PREDICTORS)
 def test_t2_future_injection_leaves_past_predictions_unchanged(
-    conn: Connection, league: League
+    conn: Connection, league: League, name: str
 ) -> None:
-    """T2 at runner level: every game from the pivot date on (the target included) becomes
-    300-0 with absurd stats; predictions up to the pivot date are identical."""
-    before = run(conn)
+    """T2 at runner level, for the probe and every registered experiment: every game from
+    the pivot date on (the target included) becomes 300-0 with absurd stats; predictions up
+    to the pivot date are identical."""
+    before = run(conn, name)
     changed = make_extreme(conn, "status_code = 3 AND start_time_utc >= :lo", {"lo": et(PIVOT, 0)})
     assert changed > 50
-    after = run(conn)
+    after = run(conn, name)
     assert outputs(after, PIVOT) == outputs(before, PIVOT)
+    if name not in RESULT_USERS:
+        assert_no_odds_season_run(after, 174)
+        return
     later = [o for o in outputs(after) if o not in outputs(before)]
     assert later and all(league.games[o[0]]["start_time_utc"] > et(PIVOT, 23, 59) for o in later)
+
+
+def flip_to_away_wins(conn: Connection, where: str, params: dict) -> int:
+    """Home 0 / away 300 (and stats to match) on the games matching `where`."""
+    changed = conn.execute(
+        text(f"UPDATE games SET home_score = 0, away_score = 300 WHERE {where}"), params
+    ).rowcount
+    conn.execute(
+        text(
+            f"""
+            UPDATE team_game_stats SET pts = CASE WHEN is_home THEN 0 ELSE 300 END
+            WHERE game_id IN (SELECT game_id FROM games WHERE {where})
+            """
+        ),
+        params,
+    )
+    return changed
+
+
+def day_outputs(result: WalkForwardResult, day: date) -> list[tuple[str, float, datetime]]:
+    """(game_id, p_home, train_cutoff) of one ET date's predictions."""
+    return [
+        (p.game.game_id, p.p_home, p.train_cutoff)
+        for p in result.predictions
+        if p.game.et_date == day
+    ]
+
+
+@pytest.mark.parametrize("name", ["B0", "B1"])
+def test_same_day_results_never_enter_that_days_baseline(
+    conn: Connection, league: League, name: str
+) -> None:
+    """Criterion 2 off-by-one for the season-cumulative baselines: the pivot day's two games
+    (the target and the other game of the same ET date) were home wins; flipping both to
+    away wins leaves the pivot day's predictions unchanged, while the next game date's
+    predictions change (so the day-d results are in by d + 1: the test has power)."""
+    before = run(conn, name)
+    for gid, _, _ in day_outputs(before, PIVOT):
+        game = league.games[gid]
+        assert game["home_score"] > game["away_score"]
+    window = {"lo": et(PIVOT, 0), "hi": et(PIVOT + timedelta(days=1), 0)}
+    assert flip_to_away_wins(conn, "start_time_utc >= :lo AND start_time_utc < :hi", window) == 2
+    after = run(conn, name)
+    assert len(day_outputs(before, PIVOT)) == 2
+    assert day_outputs(after, PIVOT) == day_outputs(before, PIVOT)
+    next_day = PIVOT + timedelta(days=2)
+    assert day_outputs(after, next_day) != day_outputs(before, next_day)
+    assert outputs(after, PIVOT) == outputs(before, PIVOT)
+
+
+def test_train_cutoff_is_the_last_visible_result_or_as_of(conn: Connection) -> None:
+    """Non-learning baselines: train_cutoff = latest available_at of the visible results
+    (as_of on the first day, before any result); B3 reads no result, so always as_of."""
+    b0 = run(conn, "B0")
+    first = b0.predictions[0]
+    assert first.train_cutoff == first.as_of
+    for p in b0.predictions:
+        assert p.train_cutoff <= p.as_of < p.game.start_time_utc
+    seen = {p.game.game_id: p for p in run(conn, Probe()).predictions}
+    assert any(p.train_cutoff < p.as_of for p in b0.predictions)
+    assert all(seen[p.game.game_id].train_cutoff == p.train_cutoff for p in b0.predictions)
+    b3 = run(conn, "B3", seasons=("2026-27",))
+    assert b3.predictions and all(p.train_cutoff == p.as_of for p in b3.predictions)
+
+
+def test_b3_predicts_only_games_with_a_market_and_records_the_reason(conn: Connection) -> None:
+    """B3 over 2026-27: the two games with a prediction-time market are predicted with the
+    market probability and prediction-time status `available`; the unmatched and the
+    quote-less game are not predicted, with unmatched_event / no_snapshot_at_as_of."""
+    result = run(conn, "B3", seasons=("2026-27",))
+    by_id = {p.game.game_id: p for p in result.predictions}
+    assert set(by_id) == {LIVE_AVAILABLE, LIVE_PRED_ONLY}
+    for p in by_id.values():
+        assert p.market.home is not None and p.p_home == p.market.home.p_home
+        assert p.market_status == "available"
+    reasons = {n.game.game_id: n.market_status for n in result.not_predicted}
+    assert reasons == {LIVE_UNMATCHED: "unmatched_event", LIVE_NOT_FINAL: "no_snapshot_at_as_of"}
+    assert result.skipped[SKIP_NOT_PREDICTED] == 2
+    probe = run(conn, Probe(), seasons=("2026-27",))
+    statuses = {p.game.game_id: p.market_status for p in probe.predictions}
+    assert statuses == {
+        LIVE_UNMATCHED: "unmatched_event",
+        LIVE_AVAILABLE: "available",
+        LIVE_PRED_ONLY: "available",  # pred_only is the evaluation's verdict, not as_of's
+        LIVE_NOT_FINAL: "no_snapshot_at_as_of",
+    }
+    assert {p.market_status for p in run(conn, Probe()).predictions} == {"no_odds_season"}
 
 
 @pytest.mark.parametrize(
@@ -339,9 +465,12 @@ def test_r3_sql_boundary_includes_as_of_and_excludes_later(
     assert market.home.captured_at == as_of
 
 
-def test_t12_same_run_twice_gives_identical_predictions(conn: Connection) -> None:
-    """T12 (in memory until P-033 stores predictions): two runs, identical values."""
-    assert outputs(run(conn)) == outputs(run(conn))
+@pytest.mark.parametrize("name", ALL_PREDICTORS)
+def test_t12_same_run_twice_gives_identical_predictions(conn: Connection, name: str) -> None:
+    """T12 in memory (the store checks it against the database): two runs, identical values."""
+    seasons = ("2026-27",) if name == "B3" else DEV
+    first, second = run(conn, name, seasons=seasons), run(conn, name, seasons=seasons)
+    assert outputs(first) == outputs(second) and (first.predictions or name == "B3")
 
 
 def test_t8_learning_predictor_refits_weekly_on_earlier_games(
@@ -403,7 +532,7 @@ class BadSource:
         cutoff date) or 'same_day' (a game of the cutoff date whose only broken rule is
         D(h) < fit_cutoff: features as of its own date, before its tip-off, and a reported
         available_at at the refit as_of)."""
-        self.inner = ScheduleOnlyTrainingSource(load_games(conn))
+        self.inner = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
         self.mode = mode
 
     def training_matrix(self, feature_version: str, fit_cutoff: date) -> TrainingMatrix:
@@ -430,13 +559,27 @@ class BadSource:
 
 
 @pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
+def test_training_guard_rules_hold_without_the_cross_check(conn: Connection, mode: str) -> None:
+    """Each 6-2 rule pinned on its own (P-033 review: the games cross-check must not be the
+    only thing catching these): called without `games`, the guard still refuses features at
+    the refit date, D(h) moved to the cutoff date, and the same-day row whose only broken
+    rule is the strict R1 `D(h) < fit_cutoff`."""
+    cutoff = date(2024, 11, 20)
+    matrix = BadSource(conn, mode).training_matrix("dummy-fv0", cutoff)
+    with pytest.raises(LeakageGuardError):
+        _check_training(matrix, cutoff, backtest_as_of(cutoff))
+    honest = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
+    _check_training(honest.training_matrix("dummy-fv0", cutoff), cutoff, backtest_as_of(cutoff))
+
+
+@pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
 def test_runner_guard_rejects_training_rows_that_break_6_2(conn: Connection, mode: str) -> None:
     """Features recomputed at the refit date, or a game not before the cutoff -> error."""
     with pytest.raises(LeakageGuardError):
         run_walk_forward(
             conn,
             HomeRateLearner(),
-            WalkForwardConfig(seasons=("2024-25",)),
+            WalkForwardConfig(seasons=("2023-24", "2024-25")),
             training_source=BadSource(conn, mode),
             now=NOW,
         )
@@ -518,12 +661,104 @@ def test_prediction_time_guard(
             _check_prediction_times("g", cutoff, as_of, start)
 
 
+class LyingSource:
+    """Honest rows except one self-reported value that disagrees with the games table while
+    every other training rule still holds (so only the cross-check can catch it)."""
+
+    def __init__(self, conn: Connection, lie: str) -> None:
+        """lie: 'available_at' (a day earlier), 'start_time_utc' (an hour earlier), 'et_date'
+        (a day earlier, features as of that date), 'season' (another season label) or
+        'game_id' (a game that is not in the games table)."""
+        self.inner = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
+        self.lie = lie
+
+    def training_matrix(self, feature_version: str, fit_cutoff: date) -> TrainingMatrix:
+        """The honest matrix with the first row's self-report altered."""
+        good = self.inner.training_matrix(feature_version, fit_cutoff)
+        row = good.rows[0]
+        day = timedelta(days=1)
+        bad = {
+            "available_at": replace(row, available_at=row.available_at - day),
+            "start_time_utc": replace(row, start_time_utc=row.start_time_utc - timedelta(hours=1)),
+            "et_date": replace(
+                row, et_date=row.et_date - day, feature_as_of=backtest_as_of(row.et_date - day)
+            ),
+            "season": replace(row, season="2099-00"),
+            "game_id": replace(row, game_id="0029999999"),
+        }[self.lie]
+        return TrainingMatrix(
+            good.feature_version, good.fit_cutoff, good.fit_as_of, (bad, *good.rows[1:])
+        )
+
+
+@pytest.mark.parametrize("lie", ["available_at", "start_time_utc", "et_date", "season", "game_id"])
+def test_runner_cross_checks_self_reported_training_values(conn: Connection, lie: str) -> None:
+    """P-032 review (a): a training row's own et_date, start_time_utc, available_at and
+    season must match the games table by game_id. Each lie passes every other rule (the
+    guard without the games table accepts it) and the cross-check refuses it."""
+    source = LyingSource(conn, lie)
+    cutoff = date(2024, 11, 20)
+    matrix = source.training_matrix("dummy-fv0", cutoff)
+    _check_training(matrix, cutoff, backtest_as_of(cutoff))  # every other rule holds
+    with pytest.raises(LeakageGuardError, match="self-reports|not a loaded game"):
+        run_walk_forward(
+            conn,
+            HomeRateLearner(),
+            WalkForwardConfig(seasons=("2023-24", "2024-25")),
+            training_source=source,
+            now=NOW,
+        )
+
+
+def older_season_games(league: League) -> list[dict]:
+    """Five final 2022-23 games (A-B, January 2023) that are not in the fixture."""
+    a, b, _, _ = league.teams
+    return [
+        extreme_game(f"00222{n:05d}", "2022-23", et(date(2023, 1, 10) + timedelta(2 * n), 20), a, b)
+        for n in range(5)
+    ]
+
+
+def test_training_window_starts_at_the_first_requested_season(
+    conn: Connection, league: League
+) -> None:
+    """P-032 review (b), M-6/M-11: with 2022-23 games in the database (P-026), a learner over
+    2023-24 and 2024-25 trains on no 2022-23 game, predicts none and scores none, while a
+    non-learning predictor still sees them as state inputs (Elo warm-up, 6-3 item 2); a
+    source that hands the runner a 2022-23 row is a guard error."""
+    raw = conn.execute(text("SELECT min(raw_response_id) FROM raw_api_responses")).scalar_one()
+    older = older_season_games(league)
+    insert_games(conn, older, raw)
+    for game in older:
+        insert_stats(conn, game, raw)
+    older_ids = {g["game_id"] for g in older}
+    learner = HomeRateLearner()
+    result = run(conn, learner, seasons=("2023-24", "2024-25"))
+    assert result.config.train_start_season == "2023-24"
+    assert result.refits[0].n_rows == 174  # the whole of 2023-24 and nothing older
+    assert not any(r.season < "2023-24" for fit in learner.fits for r in fit.rows)
+    assert {p.game.season for p in result.predictions} == {"2024-25"}
+    scoring = score_run(conn, result)
+    assert not any(r.prediction.game.game_id in older_ids for r in scoring.records)
+    probe = Probe()
+    run(conn, probe, seasons=("2023-24",))
+    assert older_ids <= set(probe.seen[min(probe.seen)])
+    with pytest.raises(LeakageGuardError, match="before the training window"):
+        run_walk_forward(
+            conn,
+            HomeRateLearner(),
+            WalkForwardConfig(seasons=("2023-24", "2024-25")),
+            training_source=ScheduleOnlyTrainingSource(load_games(conn)),
+            now=NOW,
+        )
+
+
 class LateSource:
     """Training rows reported available after the prediction as_of."""
 
     def __init__(self, conn: Connection) -> None:
         """Wrap the honest source."""
-        self.inner = ScheduleOnlyTrainingSource(load_games(conn))
+        self.inner = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
 
     def training_matrix(self, feature_version: str, fit_cutoff: date) -> TrainingMatrix:
         """Every row's available_at a day after the refit as_of."""
@@ -538,12 +773,12 @@ def test_prediction_time_guard_is_wired_into_the_runner(
 ) -> None:
     """With the training guard switched off, the per-prediction guard alone still stops a
     train_cutoff after as_of."""
-    monkeypatch.setattr(walkforward, "_check_training", lambda *args: None)
+    monkeypatch.setattr(walkforward, "_check_training", lambda *args, **kwargs: None)
     with pytest.raises(LeakageGuardError, match="train_cutoff/as_of/tip-off order"):
         run_walk_forward(
             conn,
             HomeRateLearner(),
-            WalkForwardConfig(seasons=("2024-25",)),
+            WalkForwardConfig(seasons=("2023-24", "2024-25")),
             training_source=LateSource(conn),
             now=NOW,
         )
@@ -564,14 +799,16 @@ def change_odds_after(conn: Connection, moment: datetime) -> int:
     ).rowcount
 
 
-def test_odds_time_travel_at_runner_level(conn: Connection, league: League) -> None:
+@pytest.mark.parametrize("name", [PROBE, "B3"])
+def test_odds_time_travel_at_runner_level(conn: Connection, league: League, name: str) -> None:
     """Odds rows after the 2026-10-21 as_of are changed (the 10-21 closing quotes and the
     10-22 game's quote) and new quotes at as_of + 1 microsecond are added: predictions and
-    market_reference up to 10-21 are identical. Power: the 10-22 prediction changes, and a
-    quote exactly at as_of (equality, T6) changes the 10-21 prediction."""
+    market_reference up to 10-21 are identical (probe and market baseline B3). Power: the
+    10-22 prediction changes, and a quote exactly at as_of (equality, T6) changes the 10-21
+    prediction."""
     pivot = date(2026, 10, 21)
     as_of = backtest_as_of(pivot)
-    before = run(conn, seasons=("2026-27",))
+    before = run(conn, name, seasons=("2026-27",))
     game = league.games[LIVE_AVAILABLE]
     event = conn.execute(
         text("SELECT odds_event_id FROM odds_events WHERE game_id = :g"), {"g": LIVE_AVAILABLE}
@@ -584,7 +821,7 @@ def test_odds_time_travel_at_runner_level(conn: Connection, league: League) -> N
             insert_snapshot(
                 conn, event, game["start_time_utc"], later, book, "h2h", side, price, raw
             )
-    after = run(conn, seasons=("2026-27",))
+    after = run(conn, name, seasons=("2026-27",))
     assert outputs(after, pivot) == outputs(before, pivot)
     changed = [o for o in outputs(after) if o not in outputs(before)]
     assert [o[0] for o in changed] == [LIVE_PRED_ONLY]
@@ -592,5 +829,7 @@ def test_odds_time_travel_at_runner_level(conn: Connection, league: League) -> N
         insert_snapshot(
             conn, event, game["start_time_utc"], as_of, "draftkings", "h2h", side, price, raw
         )
-    equal = run(conn, seasons=("2026-27",))
+    equal = run(conn, name, seasons=("2026-27",))
     assert outputs(equal, pivot) != outputs(before, pivot)
+    if name == "B3":
+        assert isinstance(make(name), MarketBaseline)

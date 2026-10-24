@@ -1,12 +1,15 @@
 """The `presagio backtest run` subcommand (D-043: one command runs an experiment).
 
 presagio.cli registers it; this module never imports presagio.cli (no import cycle). The
-command reads the database in a READ ONLY transaction and prints the markdown report on
-stdout. Storage of predictions and evaluations arrives with P-033; until then --dry-run and a
-normal run differ only in the report's last header line.
+command runs the walk-forward and the scoring in a READ ONLY transaction, then, with --store,
+writes model_versions, predictions and evaluations in a second transaction
+(presagio.evaluation.store: append only, differences reported and never overwritten), and
+prints the markdown report on stdout. Without --store (or with --dry-run) nothing is written.
 
-Exit codes: 0 report printed, 1 failure (e.g. database unreachable), 64 bad arguments or a
-locked holdout season (design 6-3, T10).
+Exit codes: 0 report printed, 1 failure (e.g. database unreachable, configuration conflict),
+3 a leakage guard fired (LeakageGuardError: a bug in a predictor or training source, logged
+at ERROR), 4 stored and the report was printed but some stored rows differ from this run
+(determinism check, design 8-3), 64 bad arguments or a locked holdout season (6-3, T10).
 """
 
 from __future__ import annotations
@@ -15,21 +18,21 @@ import argparse
 import logging
 import re
 import sys
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Engine, text
 
 from presagio.evaluation.clv import CLOSING_TOLERANCE
-from presagio.evaluation.dummy import ConstantPredictor
+from presagio.evaluation.experiments import EXPERIMENTS, model_spec
 from presagio.evaluation.holdout import HoldoutLockedError, check_holdout
 from presagio.evaluation.report import ReportSettings, render_report
 from presagio.evaluation.scoring import score_run
+from presagio.evaluation.store import StoreError, store_run
 from presagio.evaluation.timing import DEFAULT_AVAILABILITY_LAG
 from presagio.evaluation.walkforward import (
     DEFAULT_REFIT_EVERY_DAYS,
-    Predictor,
+    LeakageGuardError,
     WalkForwardConfig,
     run_walk_forward,
 )
@@ -40,10 +43,10 @@ logger = logging.getLogger("presagio.evaluation")
 COMMAND = "backtest"
 EXIT_OK = 0
 EXIT_FAILED = 1
+EXIT_LEAKAGE = 3
+EXIT_MISMATCH = 4
 EXIT_USAGE = 64
 SEASON_RE = re.compile(r"^(\d{4})-(\d{2})$")
-# Experiment id -> predictor factory. P-033 adds the baselines (H-01 ...).
-EXPERIMENTS: dict[str, Callable[[], Predictor]] = {"H-00": ConstantPredictor}
 
 
 def seasons_arg(value: str) -> tuple[str, ...]:
@@ -101,7 +104,11 @@ def add_backtest_parser(commands: Any) -> None:
         ),
     )
     run.add_argument(
-        "--experiment", required=True, choices=sorted(EXPERIMENTS), help="experiment id"
+        "--experiment",
+        required=True,
+        choices=sorted(EXPERIMENTS),
+        help="experiment id: "
+        + "; ".join(f"{e.id} = {e.description}" for e in EXPERIMENTS.values()),
     )
     run.add_argument(
         "--seasons", required=True, type=seasons_arg, metavar="S1,S2", help="e.g. 2023-24,2024-25"
@@ -111,8 +118,17 @@ def add_backtest_parser(commands: Any) -> None:
         metavar="REASON",
         help='open the holdout season once: "<hypothesis> <reason>", e.g. "H-08 final model"',
     )
-    run.add_argument(
-        "--dry-run", action="store_true", help="compute and print; never write (always true now)"
+    writing = run.add_mutually_exclusive_group()
+    writing.add_argument(
+        "--store",
+        action="store_true",
+        help=(
+            "write model_versions, predictions and evaluations (append only: existing rows "
+            "are compared and never overwritten; locked holdout seasons are never written)"
+        ),
+    )
+    writing.add_argument(
+        "--dry-run", action="store_true", help="compute and print; write nothing (the default)"
     )
     run.add_argument(
         "--availability-lag-hours",
@@ -155,7 +171,7 @@ def cmd_backtest_run(
     sources: Any = None,
     now: datetime | None = None,
 ) -> int:
-    """presagio backtest run: holdout guard, walk-forward, scoring, markdown report."""
+    """presagio backtest run: holdout guard, walk-forward, scoring, optional store, report."""
     del sources  # the backtest calls no external source
     try:
         holdout = check_holdout(args.seasons, args.unlock_holdout)
@@ -169,7 +185,15 @@ def cmd_backtest_run(
         closing_tolerance=args.closing_tolerance,
         unlock_holdout=holdout.unlocked_reason,
     )
-    predictor = EXPERIMENTS[args.experiment]()
+    predictor = EXPERIMENTS[args.experiment].make()
+    if args.store and model_spec(predictor) is None:
+        print(
+            f"presagio backtest: experiment {args.experiment} is not a storable model "
+            "(no ModelSpec); run it without --store",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    clock = now or datetime.now(UTC)
     try:
         if engine is None:
             from presagio.db.session import get_engine
@@ -177,9 +201,29 @@ def cmd_backtest_run(
             engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("SET TRANSACTION READ ONLY"))
-            run = run_walk_forward(conn, predictor, config, now=now or datetime.now(UTC))
+            run = run_walk_forward(conn, predictor, config, now=clock)
             scoring = score_run(conn, run)
             conn.rollback()
+        store = None
+        if args.store:
+            with engine.begin() as conn:
+                store = store_run(
+                    conn,
+                    run,
+                    scoring,
+                    predictor,
+                    experiment_id=args.experiment,
+                    seed=args.seed,
+                    now=clock,
+                )
+    except LeakageGuardError as exc:  # a time-rule violation is a bug, never data to keep
+        logger.error("leakage guard stopped the backtest: %s", exc)
+        print(f"presagio backtest: leakage guard: {error_line(exc)}", file=sys.stderr)
+        return EXIT_LEAKAGE
+    except StoreError as exc:
+        logger.error("store refused the run: %s", exc)
+        print(f"presagio backtest: {error_line(exc)}", file=sys.stderr)
+        return EXIT_FAILED
     except Exception as exc:  # e.g. database unreachable: one line, no traceback
         logger.debug("backtest failed", exc_info=True)
         print(f"presagio backtest: {error_line(exc)}", file=sys.stderr)
@@ -190,6 +234,9 @@ def cmd_backtest_run(
         experiment=args.experiment,
         settings=ReportSettings(n_boot=args.bootstrap, seed=args.seed),
         dry_run=args.dry_run,
+        store=store,
     )
     sys.stdout.write(report)
+    if store is not None and store.mismatches:
+        return EXIT_MISMATCH
     return EXIT_OK
