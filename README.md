@@ -347,7 +347,7 @@ uv run python scripts/launchd/presagio_launchd.py run --dry-run --now 2026-11-02
 | 칸 | 값 |
 | --- | --- |
 | 이름 | `presagio-dev` |
-| 네트워크 액세스 | **제한됨** + 허용된 도메인 **비움** + "패키지 관리자 허용" **켬**. 선택지는 없음 / 제한됨 / 전체 셋이고, 공식 문서의 **Trusted**(패키지 저장소·GitHub만) 라벨은 UI에 없다. 이 조합이 Trusted와 같은 뜻이고, 저장 뒤 요약 줄은 "제한됨 · 도메인 없음 · 패키지 관리자 켜짐"으로 보인다. PyPI·GitHub(git)·code.claude.com은 열리고(Docker Hub도 공식 문서상 포함), **astral.sh·stats.nba.com·api.the-odds-api.com은 막힌다**(프록시가 CONNECT에 403, 2026-10-23 실측). 그래서 클라우드에서는 실제 수집·배당 호출이 불가능하고 mock 테스트만 돈다. 도메인을 더 열지 않는다(D-052) |
+| 네트워크 액세스 | **제한됨** + 허용된 도메인 **비움** + "패키지 관리자 허용" **켬**. 선택지는 없음 / 제한됨 / 전체 셋이고, 공식 문서의 **Trusted**(패키지 저장소·GitHub·클라우드 SDK) 라벨은 UI에 없다. 이 조합이 Trusted와 같은 뜻이고, 저장 뒤 요약 줄은 "제한됨 · 도메인 없음 · 패키지 관리자 켜짐"으로 보인다. PyPI·GitHub(git)·code.claude.com은 열리고(Docker Hub도 공식 문서상 포함), **astral.sh·stats.nba.com·api.the-odds-api.com은 막힌다**(프록시가 CONNECT에 403, 2026-10-23 실측). 그래서 클라우드에서는 실제 수집·배당 호출이 불가능하고 mock 테스트만 돈다. 도메인을 더 열지 않는다(D-052) |
 | 네트워크 시크릿 | 없음. `ODDS_API_KEY`가 필요해지면 환경 변수가 아니라 여기에(아래 규칙) |
 | 설정 스크립트 | 아래 래퍼 **전문**. 한 줄 `bash scripts/cloud-setup.sh`가 **아니다**(이유는 아래) |
 | 환경 변수 | 아래 두 줄 |
@@ -382,7 +382,7 @@ bash "$f"
 - 브라우저: [claude.ai/code](https://claude.ai/code) → 레포 `oghdy/Presagio`와 환경 `presagio-dev` 선택 → 브리핑 붙여넣기.
 - 데스크탑 앱: 세션을 시작할 때 Local 대신 **Cloud**를 고르고 환경 선택기에서 `presagio-dev`.
 
-PM이 띄울 때는 `start_session target: "cloud"`([docs/team/workflow.md](docs/team/workflow.md)). **이렇게 띄운 세션은 띄운 세션(PM)의 모델을 물려받는다**(2026-10-24 실측: PM의 Fable 5.1 xhigh로 떴다). D-043대로 구현·리뷰 세션은 Opus 5.5 높음이어야 하므로, 사람이 세션 UI의 모델 선택기에서 바꾸거나 세션 안에 `/model claude-opus-5-5`를 보낸다(`/model <모델 id>`는 즉시 바뀐다, 공식 문서 model-config). 작업자 세션이 스스로 바꿀 수는 없다.
+PM이 띄울 때는 `start_session target: "cloud"`([docs/team/workflow.md](docs/team/workflow.md)). **이렇게 띄운 세션은 띄운 세션(PM)의 모델을 물려받는다**(2026-10-24 실측: PM의 Fable 5.1 xhigh로 떴다). D-043대로 구현·리뷰 세션은 **Opus 5.5 높음**이어야 하므로, 사람이 세션 UI의 모델 선택기에서 모델과 노력을 함께 고르거나 세션 안에 `/model claude-opus-5-5`와 `/effort high`를 **둘 다** 보낸다. 모델만 바꾸면 Opus 5.5는 기본 노력 `medium`(또는 넘어온 값)으로 돌아 "높음"이 보장되지 않는다(공식 문서 model-config "Adjust effort level": Opus 5.5·Sonnet 5.5·Haiku 5.5의 기본은 `medium`, `/effort` 뒤에 수준 이름을 치면 즉시 적용되고 기본값으로 저장된다). 확인은 `/effort status`(지금 적용 중인 수준을 보여 준다). 작업자 세션이 스스로 바꿀 수는 없다.
 
 **세션이 시작되면.** 훅이 돌고, 첫 응답 전에 Claude가 다음과 같은 **한 줄**을 본다(사람에게는 보이지 않는다. 실패했을 때만 stderr에도 같은 한 줄이 나온다). 2026-10-24 `presagio-dev` 세션의 실제 줄:
 
@@ -400,7 +400,7 @@ PM이 띄울 때는 `start_session target: "cloud"`([docs/team/workflow.md](docs
 
 **규칙(D-052).**
 
-- **완료 알림이 없다.** 클라우드 세션은 끝나도 앱에 알림을 보내지 않는다(공식 문서에도 알림 기능이 없다). PM은 `gh pr list`로 PR이 열렸는지 확인한다(필요하면 30분 간격 일회성 예약). 그래서 클라우드 세션의 보고서는 **PR 본문**이다. 세션은 끝난 뒤에도 GitHub 이벤트(PR 리뷰·CI)로 깨어나 레포의 최신 main을 읽을 수 있다.
+- **완료 알림이 없다.** 클라우드 세션은 끝나도 앱에 알림을 보내지 않는다(공식 문서에도 알림 기능이 없다). PM은 `gh pr list`로 PR이 열렸는지 확인한다(필요하면 30분 간격 일회성 예약). 그래서 클라우드 세션의 보고서는 **PR 본문**이다. 관찰(2026-10-24, P-033 세션): PR을 연 세션은 CI 이벤트 구독·자체 예약 점검으로 깨어나 최신 main을 읽었다. 문서가 보장하는 것은 **Auto-fix를 켠 PR**의 이벤트(리뷰 댓글·CI 실패)만이다(공식 문서 claude-code-on-the-web "Auto-fix pull requests").
 - **클라우드 DB는 비어 있다.** 셋업은 표만 만든다(`alembic upgrade head`). 실제 3시즌 데이터가 필요한 티켓(수집, 실데이터 검증, 실험 1차)과 launchd·개발 DB 마이그레이션 적용·외부 API 실제 호출은 로컬에서 한다.
 - **`ODDS_API_KEY`는 환경 변수에 절대 넣지 않는다.** 환경 변수는 그 환경을 쓰는 모두가 읽고 레포는 공개다. 필요해지면 환경의 **네트워크 시크릿**으로만(프록시가 요청에 붙이고 VM 안에서는 보이지 않는다). 지금은 필요 없다(api.the-odds-api.com이 허용 목록 밖이라 호출 자체가 안 된다).
 - **캐시 수명 약 7일.** 만료되거나 설정 스크립트·허용 도메인을 바꾸면 다음 새 세션에서 셋업이 다시 돈다. 세션 VM은 몇 분 쉬면 파일을 보존한 채 멈추고 다음 메시지에 재개되며, 오래 쉬면 회수된다(대화만 복원되고 새 VM은 스냅숏부터 시작, 돌던 명령은 사라진다).
