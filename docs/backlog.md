@@ -436,7 +436,7 @@
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | DONE (PR #31 `24abf4b`, 기준 4 = P-033 세션 증거) | P-024 DONE |
 | P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | REVIEW (PR #48, 리뷰 중) | P-040 DONE |
-| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | REVIEW (PR #49, 리뷰 중) | P-031 DONE, Q-022 |
+| P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | REVIEW (PR #49 리뷰 "수락 가능", 문구 2곳 수정 요청) | P-031 DONE, Q-022 |
 | P-031 | 🧑 모델링 레이어 스키마 v1 (설계안 8장 → DDL) → 마이그레이션 0002 + 품질 체크 3개 + 뷰 1개 | data-engineer | DONE | P-030 DONE |
 | P-032 | walk-forward 평가 틀 + 지표 + 시장 확률(비례·Shin·power, 합의) + CLV + 보류 시즌 가드 + 누수 테스트 틀 | ml-engineer | DONE | P-030 DONE |
 | P-033 | 승패 기준선 3종(B0 항상 홈, B1 시즌 승률, B3 시장) + 결과 저장 경로(model_versions·predictions·evaluations, 덮어쓰기 금지) | ml-engineer | DONE (PR #41 `625edfa`) | P-031·P-032 DONE ✓ |
@@ -608,7 +608,7 @@
   - 2026-10-24 PM 13:2x(운영 관찰 4건, 이 티켓 범위에 넣을 것): ① **07:45 KST 슬롯(odds-2026-10-23-1845) 누락** — 로그에 08:00:02 "skip: no slot now"만 있음(맥이 잠들어 launchd가 08:00에 깨운 것으로 보임; 1845 캡처 결손 = 정직한 결손이지만 B2 커버리지 손실). 맥 잠자기 중 깨우기(`pmset repeat wake`/`caffeinate`) 또는 슬롯 허용폭 검토. ② **10:45 슬롯(2145)이 exit 1 FAILED** — 실제로는 262행 저장 성공, FanDuel h2h Boston Celtics 가격 1.0(`bad_price`) 1건 거부로 단위 partial → 부모 failed → launchd FAILED. 거부 1건은 품질 이슈이지 실패가 아님 → partial 판정 기준(거부 outcome 비율 임계) 또는 warn/fail 분리(P-017 리뷰 후속)와 함께. ③ **Docker VM 시계 지연** — run 119 `started_at`(DB `now()`) 10:29 KST vs 실제 10:46(호스트·`captured_at`). 맥 잠자기 뒤 Docker Desktop VM 시계가 17분 늦었다가 13:14에는 재동기화됨. `captured_at`·`fetched_at`은 파이썬(호스트) 시계라 as_of 영향 없음, DB `now()` 기본값 컬럼(`ingestion_runs.started_at`, 각 표 `created_at`)만 어긋남 → `started_at`을 파이썬 시계로(단계 6 또는 이 티켓). ④ 09:45·11:48 KST에도 launchd가 깨어나 "no slot" skip(서머타임 양쪽 시각 등록, 정상).
 
 ### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
-- **상태:** REVIEW (2026-10-24 14:4x **PR #49** https://github.com/oghdy/Presagio/pull/49 `427f0d9`, 파일 7 +383/−61, CI 초록, CLEAN. 작성자 보고: 체크 18 `prediction_feature_link`·19 `predictions_market_status` 추가, feature_drift compared=0 skip, 표 없음 skip/error 규칙, M5 인덱스 테스트, 문서 정정 전부, 779 passed·skipped 0. reviewer(Opus) 서브에이전트가 `~/.claude/worktrees/presagio-review-p-041`에서 리뷰 중(개발 DB 읽기 전용 quality-check 실측 포함) → `P-041-review.md`)
+- **상태:** REVIEW (2026-10-24 15:0x 리뷰 **"수락 가능"**(`P-041-review.md`): 기준 1~5 전부 O(5는 리뷰어가 개발 DB 읽기 전용 실측: 19개 중 17 pass·1 warn·1 skip·fail 0, 1~17행 main과 동일), 코드·테스트 발견 0, [낮음] 문구 2곳 → PR #49 댓글로 작성자에게 수정 요청(머지 전). 수정 커밋 오면 PM 대조 → 수락 → 사람 머지(`gh pr update-branch 49` 필요, main보다 1커밋 뒤))
 - **담당 역할:** data-engineer (Opus 5.5 높음). D-052상 클라우드 후보(mock 테스트로 완결).
 - **단계:** 2
 - **의존:** P-031 DONE(머지), Q-022.
@@ -623,6 +623,7 @@
 - **확인 방법:** 기준 4의 diff, 기준 5의 명령, 새 체크의 임시 DB 테스트(fail·skip·error 각 1회 재현).
 - **추가 범위(P-026 리뷰, 2026-10-23, D-053):** 소형 문서 정정 3건 — (e) `docs/design/schema-v1.md` 6-1·13장 "2023-24 보완 목록 5경기" → "2022-23 2 + 2023-24 5 = 7경기"(305·329·1086행 근처), (f) `docs/research/backfill-report-2022-23.md` 198·268행: 포스트시즌 90경기 점수 근거를 `gamelog_vs_schedule_score`(대상 밖)에서 `points_match_score`·raw 게임로그 대조로 바꾸고 "이 90경기는 `gamelog_vs_schedule_score` 대상 밖" 한 줄, (g) 같은 파일 199행 오타("1행 는 것은" → "1행 늘어난 것은"). 코드 변경 없음.
 - **메모:**
+  - 2026-10-24 PM 15:0x: **리뷰(Opus) "수락 가능"**: 779 passed·skipped 0(루프백 밖 0), ruff·CI 통과, `alembic`·`db`·`evaluation`·`models`·`scripts`·의존성 diff 0, main·P-042 head와 충돌 없음(`git merge-tree`). 변이 20종(요청 (i)~(v), M5a~f, 추가 9) 중 결과가 사실상 같은 1개만 생존. 체크 1~16 함수 본문 불변(`inspect.getsource` 대조), 바뀐 건 feature_drift·`_rows_after_tipoff` 표 없음 분기뿐. 문서 11항목 전부 들어감(Q7은 2장에만 있어 작성자 해석 합리, 13장 1-1은 P-031 리뷰 원문과 같은 뜻). 개발 DB 실측: 18 `prediction_feature_link` PASS checked 0, 19 `predictions_market_status` PASS 5,288, `--season 2024-25`도 fail 0. **[낮음] 2:** `schema-v1.md:561` "이 티켓의 체크 3개"가 P-041로 읽힘(→ "P-031의"), `backfill-report-2022-23.md:265` "아직 5경기라고 적혀 있다"가 PR 뒤 거짓(→ "(P-041에서 정정)"). 참고: `alembic_version` 없음/빈 DB → skip(D-040 보완에 한 줄), 리비전 문자열 비교(0001·0002 0채움 전제), 4값 ⊂ 6값 고정 테스트 없음, M5 정규식은 단계 4 origin 추가 때 손질, `schema-v1.md:3` 버전 나열 v1.4에서 멈춤, 자동 브랜치 `claude/happy-hypatia-o2xt9a` 머지 뒤 정리. 작성자 결정 제안 1~5 → PM이 D-056으로.
   - 2026-10-24 PM 14:4x: PR #49 도착(세션 시작 약 40분 뒤). 작성자 결정 제안 5건(표 없음 규칙 D-040 보완, 4값 상수 독립 정의, FK 소실 시 fail, README 체크 수 표기, 13장 v1.5 기록)과 해석 2곳(2장 Q7 행, 13장 1-1 오기)은 리뷰 뒤 PM 판단. 클라우드에서 pre-commit 훅 다운로드가 이번엔 됐다고 함(네트워크 허용 범위 변동 가능성 메모).
   - 2026-10-24 PM 13:5x: 클라우드 세션 시작. P-042와 동시 진행(README는 9절 vs 클라우드 절로 분리, 나중 머지 쪽은 PM이 `gh pr update-branch`).
   - 2026-10-24 PM 01:2x: 사람 "Q-022는 추천대로" → D-054. 완료 기준 1~5 확정. P-033 PR #41의 저장 경로가 이미 예측 행 4값 규칙을 지키므로 (d) 체크는 그 뒤에 자연스럽게 pass.
