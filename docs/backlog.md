@@ -5,7 +5,7 @@
 > 상태: `TODO` → `IN PROGRESS` → `REVIEW` → `DONE`. 막히면 `BLOCKED(이유)`.
 > 🧑 표시는 "사람 승인 게이트"가 있는 티켓이다. 승인 전에는 구현을 시작하지 않는다.
 
-## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040·P-041·P-042** DONE(기준선 3종 + 저장 경로 #41 `625edfa`, 클라우드 환경 #31 `24abf4b` + `presagio-dev` 생성(Q-023 (a), PM이 크롬으로; 기준 4는 P-033 클라우드 세션이 증명), 모델링 품질 체크 #49 `d7a0e01`, 클라우드 셋업 후속 #48 `b2d0ec1`). 개발 DB에 기준선 예측 5,288행 저장. 열린 PR 0. **다음: P-028(로컬, launchd 보강 — 운영 관찰 ①~⑥ 포함) → P-027 → P-034(Elo, 클라우드) → P-035 → P-036 → P-037 → P-038. Q-025 대기.** **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
+## 현재 단계: 2 (피처 생성 + 베이스라인 모델). 2026-10-23 D-045 승인 → 10-23 P-024·P-025·P-029·P-030·P-031·P-032·P-026 DONE(설계안 D-049, launchd 가동, 마이그레이션 0002 적용, 평가 틀, 2022-23 시즌 적재), 10-24 **P-033·P-040·P-041·P-042** DONE(기준선 3종 + 저장 경로 #41 `625edfa`, 클라우드 환경 #31 `24abf4b` + `presagio-dev` 생성(Q-023 (a), PM이 크롬으로; 기준 4는 P-033 클라우드 세션이 증명), 모델링 품질 체크 #49 `d7a0e01`, 클라우드 셋업 후속 #48 `b2d0ec1`). 개발 DB에 기준선 예측 5,288행 저장. 열린 PR 0. **다음: P-028(로컬, launchd 보강 — 운영 관찰 ①~⑥ 포함) → P-027 → P-034(Elo, 클라우드) → P-035 → P-036 → P-037 → P-038. Q-025·Q-026(상시 수집 기기) 대기.** **main 브랜치 보호 적용(D-047): 모든 변경은 PR, 브랜치 최신화 필수.**
 
 ### 보드 한눈에 보기
 
@@ -434,6 +434,7 @@
 | P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | DONE (PR #34 `4f0d9af`) | P-031 DONE ✓ |
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
+| P-043 | odds 단위 partial 판정·종료 코드 분리(거부 가격 비율 임계, warn/fail) + `ingestion_runs.started_at` 호스트 시계 기록 (P-028 운영 관찰 ②③) | data-engineer | TODO | P-028 관찰 |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | DONE (PR #31 `24abf4b`, 기준 4 = P-033 세션 증거) | P-024 DONE |
 | P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | DONE (PR #48 `b2d0ec1`) | P-040 DONE |
 | P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | DONE (PR #49 `d7a0e01`) | P-031 DONE, Q-022 |
@@ -611,6 +612,18 @@
   - 2026-10-23 PM: D-049 M-9로 생성.
   - 2026-10-24 PM 13:2x(운영 관찰 4건, 이 티켓 범위에 넣을 것): ① **07:45 KST 슬롯(odds-2026-10-23-1845) 누락** — 로그에 08:00:02 "skip: no slot now"만 있음(맥이 잠들어 launchd가 08:00에 깨운 것으로 보임; 1845 캡처 결손 = 정직한 결손이지만 B2 커버리지 손실). 맥 잠자기 중 깨우기(`pmset repeat wake`/`caffeinate`) 또는 슬롯 허용폭 검토. ② **10:45 슬롯(2145)이 exit 1 FAILED** — 실제로는 262행 저장 성공, FanDuel h2h Boston Celtics 가격 1.0(`bad_price`) 1건 거부로 단위 partial → 부모 failed → launchd FAILED. 거부 1건은 품질 이슈이지 실패가 아님 → partial 판정 기준(거부 outcome 비율 임계) 또는 warn/fail 분리(P-017 리뷰 후속)와 함께. ③ **Docker VM 시계 지연** — run 119 `started_at`(DB `now()`) 10:29 KST vs 실제 10:46(호스트·`captured_at`). 맥 잠자기 뒤 Docker Desktop VM 시계가 17분 늦었다가 13:14에는 재동기화됨. `captured_at`·`fetched_at`은 파이썬(호스트) 시계라 as_of 영향 없음, DB `now()` 기본값 컬럼(`ingestion_runs.started_at`, 각 표 `created_at`)만 어긋남 → `started_at`을 파이썬 시계로(단계 6 또는 이 티켓). ④ 09:45·11:48 KST에도 launchd가 깨어나 "no slot" skip(서머타임 양쪽 시각 등록, 정상).
   - 2026-10-26 PM 18:0x(운영 관찰 2건 추가, 이 티켓 범위에 넣을 것. 10-25·10-26 실측): ⑤ **재부팅 뒤 Docker Desktop이 자동 시작되지 않아 개발 DB가 내려가 있음** — 10-25 16:00 본 실행(맥 11:01 종료 → 14:17 재부팅)과 10-26 10:45 odds(09:15 재부팅)가 `connection refused 127.0.0.1:5433`으로 run 행도 없이 FAILED. Docker Desktop 설정 `AutoStart: false`, 로그인 항목에도 없음(10-26 확인). 두 번 모두 PM이 `open -a Docker`로 기동(데몬 약 5초, DB healthy). 대응 후보: 사람이 Docker Desktop 설정 "Start Docker Desktop when you sign in"을 켠다(사람 설정) + 래퍼가 DB 연결 실패를 감지하면 `open -a Docker` 뒤 최대 N초 대기 후 1회 재시도(한 번 더 실패하면 지금처럼 FAILED). ⑥ **맥이 꺼져 있던 슬롯은 재부팅 뒤 보충 실행되지 않는다** — plist `RunAtLoad=false`. 10-26에 07:45·08:45 KST(09:15 부팅 전)와 16:00 본 실행(11:25 종료 ~ 17:42 부팅)이 로그 한 줄 없이 빠졌다. 잠자기 중 놓친 슬롯은 깨어나면 한 번 실행되지만(launchd.plist 문서; 10-23~10-25 08:00 wake 실측 = 관찰 ①), 전원이 꺼진 동안의 슬롯은 보충이 없다(10-26 17:42 부팅 뒤 실행 없음 실측). 결과: 10-25 ET 경기 7개의 마감 배당 3회분은 영구 결손(정직한 결손), 10-26 본 실행(10-25 결과·10-26 일정·예측 시점 배당)은 사람 지시로 수동 재실행해야 함. 대응 후보: `RunAtLoad=true` + 래퍼가 부팅/로드 시 "오늘 16:00 KST가 지났는데 오늘 본 실행 run이 없으면" 본 실행을 돈다(멱등이라 중복 무해). 놓친 odds 슬롯은 보충하지 않는다(마감 뒤 캡처는 뜻이 달라 `pre_tip`으로 기록하면 안 됨). 참고: 10-26 09:45 KST wake는 관찰 ④(DST 양쪽 시각)대로 정상 skip.
+  - 2026-10-26 PM 19:4x: **브리핑 작성** `P-028-briefing.md`(공유 노트, B 양식; 사람 "써줘" 지시). PM 범위 결정: ②③은 수집 코드(data-engineer)라 **P-043**으로 분리; ①(잠자기)은 README 문서·검토만(근본 해법은 **Q-026** 상시 기기/서버); 이 티켓 = 주말 2회(래퍼 상수, `config.py` 변경 없음) + ⑤ DB 다운 시 `open -a Docker` 기동·최대 90초 대기 + ⑥ `RunAtLoad=true`(로그인 시 그날 본 실행만 보충, 마감 슬롯은 보충 안 함) + 23h **문구** 정정(동작 유지) + README 8절. 완료 기준 1~7 확정안은 브리핑에(크레딧 표: 최악의 달 PM 계산 432 < 500, 작업자 검증). 초안 기준 "실제 주말 1회 결과"는 **머지 뒤 PM이 `install.sh`로 설치한 다음 첫 주말(ET 10-31·11-01, 가을 DST 전환일)**에 확인해 여기에 기록. 작업자는 이 맥의 launchd·Docker·`.env`를 건드리지 않는다. 세션은 사람 "띄워" 뒤(로컬, Opus 5.5 높음).
+
+### P-043 odds 단위 partial 판정·종료 코드 분리 + `ingestion_runs.started_at` 호스트 시계 (P-028 운영 관찰 ②③)
+- **상태:** TODO (상세 완료 기준은 브리핑 때 확정)
+- **담당 역할:** data-engineer (Opus 5.5 높음, 클라우드 — mock으로 완결, D-052)
+- **단계:** 2 (운영 품질)
+- **의존:** 없음 (P-028과 파일이 겹치지 않음: `src/presagio/ingestion/` vs `scripts/launchd/`)
+- **목표:** ② 10-24 10:46 odds 캡처가 262행을 저장했는데 FanDuel h2h 가격 1.0(`bad_price`) 1건 거부로 단위 partial → 부모 failed → exit 1 → launchd FAILED가 된 것을 고친다: 거부 outcome이 소수(임계 비율·건수)면 단위는 `succeeded` + 보고(warn), 임계를 넘으면 partial. 종료 코드는 "데이터는 들어갔고 품질 경고만"과 "실패"를 구분한다(P-017 리뷰 후속 warn/fail 분리와 함께). ③ `ingestion_runs.started_at`(DB `now()` 기본값)이 Docker VM 시계 지연(잠자기 뒤 17분)으로 어긋난 것을 파이썬(호스트) 시계로 기록하도록 바꾼다(`captured_at`·`fetched_at`과 같은 시계). 스키마 변경은 없다(기본값만 코드에서 채움).
+- **범위:** `src/presagio/ingestion/`(odds 단위 판정, run 기록), `tests/ingestion/`, README 8절 결과 표의 exit 뜻(필요 시). 임계값은 설정으로 두면 `src/presagio/config.py`(같은 역할 소유).
+- **범위 밖:** 래퍼·plist(P-028), 알림 채널(단계 6), 스키마.
+- **메모:**
+  - 2026-10-26 PM: P-028 브리핑에서 분리해 생성(관찰 ②③ 원문은 P-028 메모 10-24). 우선순위 중간 — 지금은 FAILED 표시만 틀리고 데이터는 들어간다.
 
 ### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
 - **상태:** DONE (2026-10-24 16:4x PR #49 squash merge `d7a0e01`, 사람 지시("둘 다 머지해줘")로 PM 머지(update-branch → CI → squash). 기준 5 실데이터: 머지 뒤 개발 DB `quality-check` 19개 중 17 pass·1 warn(14번, run 119/120)·1 skip(17번)·fail 0·error 0, 18 PASS checked 0·19 PASS 5,288. D-056)
