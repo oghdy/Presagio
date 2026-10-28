@@ -6,9 +6,14 @@ moves by an hour against Korea twice a year. So the job wakes at every Korean ti
 fall on (summer and winter), and this wrapper decides from the real clock whether "now" is a
 slot. It is not one on half of the odds wake-ups, which end quietly with a "skip" log line.
 
-A day therefore has exactly four `presagio ingest-daily` invocations: the full run at
-INGEST_DAILY_TIME_KST and one `--odds-only` run per ODDS_CLOSING_TIMES_ET entry. A marker file
-per slot makes a second wake-up for the same slot (manual kickstart, coalesced wake) a no-op.
+A weekday therefore has exactly four `presagio ingest-daily` invocations: the full run at
+INGEST_DAILY_TIME_KST and one `--odds-only` run per ODDS_CLOSING_TIMES_ET entry. Saturdays and
+Sundays (the slot's ET date) add the two WEEKEND_CLOSING_ET captures: six (P-028, D-027 as
+amended by D-049 M-9). A marker file per slot makes a second wake-up for the same slot (manual
+kickstart, coalesced wake, the RunAtLoad wake at login) a no-op.
+
+Before a slot's run the wrapper checks that the database port of DATABASE_URL accepts TCP
+connections; if not, it starts Docker Desktop once and waits up to DB_WAIT (P-028).
 
 Subcommands (run from the repository with `uv run python <this file> ...`):
   run       what launchd calls: decide, run ingest-daily, append everything to the day's log
@@ -26,9 +31,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import subprocess
 import sys
 import time as monotonic_time
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -46,12 +53,20 @@ ODDS = "odds"
 # fires on the minute while the Mac is awake; a wake-up after sleep comes late (coalesced), and
 # a capture much later than 15 min before tip-off is no longer a pre-tip price, so it is skipped.
 SLOT_TOLERANCE = timedelta(minutes=10)
-# After exit code 2 (blocked, D-037) every slot scheduled less than this after the blocked slot is
-# skipped: the next day's same slot runs again, the (up to three) slots in between do not. Slot
-# times are compared, not wall clocks, so seconds of start-up jitter never decide it. 23 h, not
-# 24 h: an ET slot on the day after the spring change comes 23 h after the same slot the day
-# before (and 25 h in autumn, when the pause ends one slot early instead). Delete the file to
-# resume earlier.
+# D-027 as amended (D-049 M-9): on Saturdays and Sundays (the slot's ET date) two more closing
+# captures for the afternoon games, whose tip-off is before the first ODDS_CLOSING_TIMES_ET slot.
+# They extend the closing captures: an empty ODDS_CLOSING_TIMES_ET turns these off too.
+WEEKEND_CLOSING_ET = (time(14, 45), time(16, 45))
+WEEKEND = (5, 6)  # date.weekday() of Saturday and Sunday
+# After exit code 2 (blocked, D-037) every slot scheduled less than this after the blocked slot's
+# scheduled time is skipped. Slot times are compared, not wall clocks, so seconds of start-up
+# jitter never decide it. The pause ends 1 h 10 min before the next day's same slot (on a 24 h
+# day), so a slot in that gap runs again first: a block at 19:45 ET resumes at 18:45 ET the next
+# day, and across the autumn change (a 25 h day) a block at 21:45 ET resumes at 19:45 ET. Nothing
+# is lost; that day only gets one more closing snapshot. The other slots (the full run, 14:45,
+# 16:45, 18:45 and 21:45 ET) have no slot in that gap and resume at the next day's same slot.
+# 23 h, not 24 h: across the spring change (a 23 h day) the next day's same ET slot comes 23 h
+# later and still runs. Delete the file to resume earlier.
 BLOCK_PAUSE = timedelta(hours=23) - SLOT_TOLERANCE
 BLOCKED_FILE = "blocked"
 SLOTS_DIR = "slots"
@@ -62,11 +77,20 @@ SAMPLE_DAYS = (date(2027, 1, 15), date(2027, 7, 15))
 # A normal run takes about a minute; one this long is stuck (e.g. waiting on a database lock) and
 # would make launchd drop every later wake-up while it runs.
 RUN_TIMEOUT = timedelta(minutes=30)
+# Docker Desktop does not start by itself after a reboot unless its "Start Docker Desktop when you
+# sign in" setting is on (2026-10-25/26: the daemon answered about 5 s after `open -a Docker`, the
+# database a few seconds later). The wait comes before the run and is separate from RUN_TIMEOUT.
+DOCKER_START = ("/usr/bin/open", "-a", "Docker")
+DB_WAIT = timedelta(seconds=90)
+DB_POLL = timedelta(seconds=2)
+DB_PROBE_TIMEOUT = 1.0  # seconds per TCP connect attempt
+# The Odds API cost of one capture: 3 markets x 1 region (measured 10-25 479 -> 476, 10-26 -> 473).
+CREDITS_PER_CAPTURE = 3
 EXIT_OK, EXIT_FAILED, EXIT_BLOCKED, EXIT_USAGE, EXIT_TIMEOUT = 0, 1, 2, 64, 124
 EXIT_MEANING = {
     EXIT_OK: "OK",
     EXIT_FAILED: "FAILED (a unit failed or ended partial; see the report above)",
-    EXIT_BLOCKED: "BLOCKED (HTTP 403/429): tell a human. Runs pause until the same slot tomorrow",
+    EXIT_BLOCKED: "BLOCKED (HTTP 403/429): tell a human. Slots of the next 22 h 50 min skip",
     EXIT_USAGE: "USAGE (bad arguments: a wrapper bug)",
     EXIT_TIMEOUT: f"TIMEOUT (killed after {RUN_TIMEOUT.seconds // 60} min)",
 }
@@ -124,15 +148,26 @@ def full_slot_for(now: datetime, full_kst: time) -> Slot | None:
     return None
 
 
+def closing_times_on(day: date, closing_et: Sequence[time]) -> tuple[time, ...]:
+    """Closing captures of an ET date: closing_et, plus WEEKEND_CLOSING_ET on Saturday and Sunday.
+
+    The weekend ones are added only when closing_et is not empty (no closing captures at all).
+    """
+    if closing_et and day.weekday() in WEEKEND:
+        return tuple(sorted({*closing_et, *WEEKEND_CLOSING_ET}))
+    return tuple(closing_et)
+
+
 def odds_slot_for(now: datetime, closing_et: Sequence[time]) -> Slot | None:
     """The closing capture whose Eastern time is within SLOT_TOLERANCE of now, if any.
 
     The base date is the slot's ET date: ingest-daily plans the closing captures of base date D
-    on ET date D (presagio.ingestion.incremental.capture_times).
+    on ET date D (presagio.ingestion.incremental.capture_times). Whether the weekend captures
+    apply is decided by that ET date, not by the Korean date of the wake-up.
     """
     et_today = now.astimezone(EASTERN).date()
     for day in (et_today - timedelta(days=1), et_today, et_today + timedelta(days=1)):
-        for clock in closing_et:
+        for clock in closing_times_on(day, closing_et):
             at = wall_time(day, clock, EASTERN)
             if abs(now - at) <= SLOT_TOLERANCE:
                 return Slot(ODDS, day, at)
@@ -147,9 +182,14 @@ def decide(now: datetime, full_kst: time, closing_et: Sequence[time]) -> Slot | 
 
 
 def calendar_entries(full_kst: time, closing_et: Sequence[time]) -> list[tuple[int, int]]:
-    """Korean (hour, minute) wake-ups covering every slot in both EST and EDT, sorted."""
+    """Korean (hour, minute) wake-ups covering every slot in both EST and EDT, sorted.
+
+    The weekend captures' wake-ups are on every day (one plist entry each); on weekdays the
+    wrapper skips them.
+    """
     entries = {(full_kst.hour, full_kst.minute)}
-    for clock in closing_et:
+    weekend = WEEKEND_CLOSING_ET if closing_et else ()
+    for clock in {*closing_et, *weekend}:
         for day in SAMPLE_DAYS:
             local = wall_time(day, clock, EASTERN).astimezone(SEOUL)
             entries.add((local.hour, local.minute))
@@ -221,6 +261,73 @@ def record_block(state_dir: Path, now: datetime, slot: Slot) -> None:
     (state_dir / BLOCKED_FILE).write_text(f"{slot.at.isoformat()} {slot.key} {now.isoformat()}\n")
 
 
+# --- database: wait for it, start Docker Desktop once ---------------------------------------------
+
+
+def port_open(host: str, port: int) -> bool:
+    """True if a TCP connection to host:port succeeds within DB_PROBE_TIMEOUT."""
+    try:
+        with socket.create_connection((host, port), timeout=DB_PROBE_TIMEOUT):
+            return True
+    except OSError:
+        return False
+
+
+def start_docker_desktop() -> None:
+    """Run DOCKER_START (macOS `open -a Docker`); OSError if it cannot run or exits non-zero."""
+    try:
+        result = subprocess.run(DOCKER_START, capture_output=True, timeout=30, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise OSError(f"{DOCKER_START[0]} did not return within 30 s") from exc
+    if result.returncode != 0:
+        raise OSError(f"{' '.join(DOCKER_START)} exited {result.returncode}")
+
+
+@dataclass(frozen=True)
+class DbCheck:
+    """How run() checks the database before a slot's run (every part injectable for tests)."""
+
+    address: tuple[str, int] | None  # host and port of DATABASE_URL; None if not readable
+    probe: Callable[[str, int], bool] = port_open
+    start: Callable[[], None] | None = start_docker_desktop  # None: --no-start-docker
+    sleep: Callable[[float], None] = monotonic_time.sleep
+    clock: Callable[[], float] = monotonic_time.monotonic
+    wait: timedelta = DB_WAIT
+
+
+def wait_for_db(check: DbCheck, say: Callable[[str], None]) -> None:
+    """If the database port is closed, start Docker Desktop once and wait for it; one log line.
+
+    Nothing is logged when the port is open. The run goes ahead either way: a database that is
+    still down fails it as before (connection refused, exit 1). No host, port or URL is logged.
+    """
+    if check.address is None:
+        say("db: no host/port readable from DATABASE_URL; not checked")
+        return
+    host, port = check.address
+    if check.probe(host, port):
+        return
+    if check.start is None:
+        action = "not starting Docker Desktop (--no-start-docker)"
+    else:
+        try:
+            check.start()
+            action = "launched Docker Desktop"
+        except OSError as exc:
+            action = f"could not launch Docker Desktop ({type(exc).__name__}: {exc})"
+    started = check.clock()
+    limit = check.wait.total_seconds()
+    while check.clock() - started < limit:
+        check.sleep(DB_POLL.total_seconds())
+        if check.probe(host, port):
+            say(f"db: down at start; {action}; up after {check.clock() - started:.0f} s")
+            return
+    say(
+        f"db: still down after {limit:.0f} s (Docker Desktop not running?); {action}; "
+        "running anyway"
+    )
+
+
 # --- run ----------------------------------------------------------------------------------------
 
 
@@ -243,6 +350,20 @@ def read_times() -> tuple[time, tuple[time, ...]]:
     return parse_clock(settings.ingest_daily_time_kst), closing
 
 
+def read_db_address() -> tuple[str, int] | None:
+    """Host and port of DATABASE_URL (never the URL itself); None without a readable TCP host."""
+    from sqlalchemy.engine import make_url
+
+    from presagio.config import get_settings
+
+    try:
+        url = make_url(get_settings().database_url)
+        port = url.port or 5432
+    except Exception:  # sqlalchemy's ArgumentError or a bad port; the message is not logged
+        return None
+    return (url.host, port) if url.host else None
+
+
 def settings_error(exc: Exception) -> str:
     """Error type and failing setting names only: messages could echo values from .env."""
     errors = getattr(exc, "errors", None)
@@ -261,8 +382,12 @@ def run(
     state_dir: Path,
     dry_run: bool = False,
     runner: Runner = subprocess.run,
+    db: DbCheck | None = None,
 ) -> int:
-    """Decide the slot for now and, if it is one, run ingest-daily once into the day's log."""
+    """Decide the slot for now and, if it is one, run ingest-daily once into the day's log.
+
+    With db, a real (not dry) run first waits for the database (wait_for_db).
+    """
     log_dir.mkdir(parents=True, exist_ok=True)
     with log_path(log_dir, now).open("a", encoding="utf-8") as log:
 
@@ -290,6 +415,8 @@ def run(
             if not claim_slot(state_dir, slot):
                 say(f"skip {slot.describe()}: this slot already ran (marker {slot.key})")
                 return EXIT_OK
+            if db is not None:
+                wait_for_db(db, say)
         cmd = command_for(slot, presagio, dry_run)
         say(f"start {slot.describe()}: presagio {' '.join(cmd[1:])} (in {repo})")
         return execute(cmd, slot, now, repo, log, say, state_dir, dry_run, runner)
@@ -397,19 +524,60 @@ def render_plist(
     return out.replace("@CALENDAR@", calendar)
 
 
-def print_plan(start: date, days: int, full_kst: time, closing_et: Sequence[time]) -> None:
-    """Every Korean wake-up from start for N days and what the wrapper would do."""
+def wakeups(
+    start: date, days: int, full_kst: time, closing_et: Sequence[time]
+) -> list[tuple[datetime, Slot | None]]:
+    """Every Korean wake-up of N days from start and the slot it stands for (None: skip)."""
     entries = calendar_entries(full_kst, closing_et)
+    out = []
     for n in range(days):
         day = start + timedelta(days=n)
         for hour, minute in entries:
             now = wall_time(day, time(hour, minute), SEOUL)
-            slot = decide(now, full_kst, closing_et)
-            what = slot.describe() if slot else "skip"
-            print(
-                f"{now.astimezone(SEOUL):%Y-%m-%d %H:%M} KST = "
-                f"{now.astimezone(EASTERN):%m-%d %H:%M %Z}  ->  {what}"
-            )
+            out.append((now, decide(now, full_kst, closing_et)))
+    return out
+
+
+def print_plan(start: date, days: int, full_kst: time, closing_et: Sequence[time]) -> None:
+    """Every Korean wake-up from start for N days and what the wrapper would do."""
+    for now, slot in wakeups(start, days, full_kst, closing_et):
+        what = slot.describe() if slot else "skip"
+        print(
+            f"{now.astimezone(SEOUL):%Y-%m-%d %H:%M} KST = "
+            f"{now.astimezone(EASTERN):%m-%d %H:%M %Z}  ->  {what}"
+        )
+
+
+def month_totals(
+    start: date, days: int, full_kst: time, closing_et: Sequence[time]
+) -> dict[str, Counter[str]]:
+    """Per month of the base date: days, weekend days, full runs and closing captures.
+
+    Base dates start .. start+days-1; one more Korean day is simulated because the last ET
+    date's closing captures fall on the next Korean morning.
+    """
+    end = start + timedelta(days=days)
+    months: dict[str, Counter[str]] = {}
+    for n in range(days):
+        day = start + timedelta(days=n)
+        month = months.setdefault(f"{day:%Y-%m}", Counter())
+        month["days"] += 1
+        month["weekend_days"] += day.weekday() in WEEKEND
+    for _, slot in wakeups(start, days + 1, full_kst, closing_et):
+        if slot is not None and start <= slot.base_date < end:
+            months[f"{slot.base_date:%Y-%m}"][slot.kind] += 1
+    return months
+
+
+def print_summary(start: date, days: int, full_kst: time, closing_et: Sequence[time]) -> None:
+    """month_totals as a table, with the most credits the captures can cost."""
+    print("month    days  sat+sun  full  closing  captures  credits(max)")
+    for month, n in month_totals(start, days, full_kst, closing_et).items():
+        captures = n[FULL] + n[ODDS]  # the full run captures odds once ('prediction')
+        print(
+            f"{month}  {n['days']:4d}  {n['weekend_days']:7d}  {n[FULL]:4d}  {n[ODDS]:7d}  "
+            f"{captures:8d}  {captures * CREDITS_PER_CAPTURE:12d}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -429,6 +597,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.add_argument(
         "--dry-run", action="store_true", help="pass --dry-run to ingest-daily, keep no markers"
     )
+    run_cmd.add_argument(
+        "--no-start-docker",
+        action="store_true",
+        help="if the database is down, wait for it but do not run `open -a Docker` (not macOS)",
+    )
     commands.add_parser("calendar", help="print the Korean wake-up times")
     render = commands.add_parser("render", help="print the plist")
     render.add_argument("--template", type=Path, required=True)
@@ -440,6 +613,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan", help="print the decision for each wake-up")
     plan.add_argument("--from", dest="start", type=date.fromisoformat, required=True)
     plan.add_argument("--days", type=int, default=3)
+    plan.add_argument(
+        "--summary", action="store_true", help="per-month captures and credits, not each wake-up"
+    )
     return parser
 
 
@@ -472,6 +648,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             log_dir=args.log_dir,
             state_dir=args.state_dir,
             dry_run=args.dry_run,
+            db=DbCheck(
+                read_db_address(), start=None if args.no_start_docker else start_docker_desktop
+            ),
         )
     full_kst, closing_et = read_times()
     if args.command == "calendar":
@@ -492,7 +671,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             end="",
         )
         return EXIT_OK
-    print_plan(args.start, args.days, full_kst, closing_et)
+    if args.summary:
+        print_summary(args.start, args.days, full_kst, closing_et)
+    else:
+        print_plan(args.start, args.days, full_kst, closing_et)
     return EXIT_OK
 
 
