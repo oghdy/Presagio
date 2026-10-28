@@ -4,8 +4,12 @@
   Presagio interim schedule (P-024, D-048). Template: scripts/launchd/install.sh fills every
   placeholder and writes the result to ~/Library/LaunchAgents/com.presagio.ingest-daily.plist. Do not edit paths here.
   StartCalendarInterval is the Mac's local time (Asia/Seoul). The wrapper decides on each wake-up
-  whether it is a D-038 slot (16:00 KST full run, 18:45/19:45/21:45 ET odds-only) and otherwise
-  exits quietly, so the day has exactly four ingest-daily runs in summer and in winter.
+  whether it is a D-038 slot (16:00 KST full run, 18:45/19:45/21:45 ET odds-only, plus 14:45/16:45
+  ET on Saturdays and Sundays, D-027 as amended) and otherwise exits quietly, so a weekday has
+  exactly four ingest-daily runs and a weekend day six, in summer and in winter.
+  RunAtLoad wakes the job once when it is loaded (install.sh, and at login after a reboot): the
+  wrapper decides that wake-up like any other, so it runs the day's full run if it is due and has
+  not run yet, and never a missed closing capture (P-028).
 -->
 <plist version="1.0">
 <dict>
@@ -44,7 +48,7 @@
 @CALENDAR@
     </array>
     <key>RunAtLoad</key>
-    <false/>
+    <true/>
     <!-- Only output of the wrapper itself (e.g. uv failing to start); runs log to ingest-<date>.log. -->
     <key>StandardOutPath</key>
     <string>@LOG_DIR@/launchd.out.log</string>

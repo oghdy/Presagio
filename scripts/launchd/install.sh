@@ -58,12 +58,18 @@ echo "  uv:       $UV"
 echo "  logs:     $LOG_DIR/ingest-<KST date>.log"
 echo "  wake-ups (KST):"
 (cd "$REPO" && "$UV" run --project "$REPO" python "$WRAPPER" calendar) | sed 's/^/    /'
+echo
+echo "The job has just run once (RunAtLoad; at login too, if launchd loads it then: see"
+echo "  man launchd.plist, not yet measured on this Mac): it skips unless now is a"
+echo "  slot, or today's full run is due (after INGEST_DAILY_TIME_KST) and has not run yet;"
+echo "  then that full run starts now. See $LOG_DIR/ingest-$(date +%F).log"
 case "$REPO" in
   "$HOME"/Desktop/* | "$HOME"/Documents/* | "$HOME"/Downloads/*)
     echo
-    echo "NOTE: $REPO is in a privacy-protected folder. The first run asks for permission"
+    echo "NOTE: $REPO is in a privacy-protected folder. That first run asks for permission"
     echo "  (\"uv\" wants to access the Desktop/Documents/Downloads folder) and waits until"
-    echo "  someone clicks Allow. Wake the job now and answer the prompt:"
+    echo "  someone clicks Allow: answer the prompt now. If none appeared and today's log has"
+    echo "  no line from just now, wake the job again:"
     echo "    launchctl kickstart gui/$(id -u)/$LABEL"
     ;;
 esac
