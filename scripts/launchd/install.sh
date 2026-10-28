@@ -59,7 +59,8 @@ echo "  logs:     $LOG_DIR/ingest-<KST date>.log"
 echo "  wake-ups (KST):"
 (cd "$REPO" && "$UV" run --project "$REPO" python "$WRAPPER" calendar) | sed 's/^/    /'
 echo
-echo "The job has just run once (RunAtLoad, also at every login): it skips unless now is a"
+echo "The job has just run once (RunAtLoad; at login too, if launchd loads it then: see"
+echo "  man launchd.plist, not yet measured on this Mac): it skips unless now is a"
 echo "  slot, or today's full run is due (after INGEST_DAILY_TIME_KST) and has not run yet;"
 echo "  then that full run starts now. See $LOG_DIR/ingest-$(date +%F).log"
 case "$REPO" in

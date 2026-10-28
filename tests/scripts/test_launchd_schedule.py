@@ -11,6 +11,7 @@ import sys
 from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from time import monotonic
 from types import ModuleType, SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -405,6 +406,28 @@ def test_block_at_saturday_1445_resumes_at_sunday_1445(tmp_path: Path) -> None:
     assert slots_after_block(tmp_path, "2026-11-08 04:45", wakeups + later) == later
 
 
+def test_block_at_sunday_1445_resumes_at_monday_1845(tmp_path: Path) -> None:
+    """Monday has no 14:45 ET slot: the rest of Sunday and Monday's full run skip, 18:45 runs."""
+    wakeups = [
+        "2026-11-09 06:45",  # Sun 16:45 EST
+        "2026-11-09 08:45",
+        "2026-11-09 09:45",
+        "2026-11-09 11:45",
+        "2026-11-09 16:00",  # Monday's full run (Mon 02:00 EST), inside the 22 h 50 min
+    ]
+    later = ["2026-11-10 08:45", "2026-11-10 09:45"]  # Mon 18:45, 19:45 EST
+    assert slots_after_block(tmp_path, "2026-11-09 04:45", wakeups + later) == later
+
+
+def test_block_at_saturday_1645_before_the_autumn_change_resumes_one_slot_early(
+    tmp_path: Path,
+) -> None:
+    """Blocked at 16:45 EDT on Sat 10-31: Sunday is 25 h long, so 14:45 EST already runs."""
+    wakeups = ["2026-11-01 07:45", "2026-11-01 08:45", "2026-11-01 10:45", "2026-11-01 16:00"]
+    later = ["2026-11-02 04:45", "2026-11-02 06:45"]  # Sun 14:45, 16:45 EST
+    assert slots_after_block(tmp_path, "2026-11-01 05:45", wakeups + later) == later
+
+
 def test_block_pause_length_is_fixed() -> None:
     """23 h minus the slot tolerance: the next same slot is past it even on a 23 h day."""
     assert timedelta(hours=23) - pl.SLOT_TOLERANCE == pl.BLOCK_PAUSE
@@ -638,26 +661,33 @@ def test_plan_summary_prints_the_month_table(tmp_path: Path, monkeypatch, capsys
 
 # --- database check before a run (observation 5) ------------------------------------------------
 
-DB_ADDRESS = ("127.0.0.1", 5433)
-
 
 class FakeDb:
-    """A database port on a fake clock: open from the start, or some seconds after the launch."""
+    """A database on a fake clock: answers from the start, some seconds after the launch, or as
+    a scripted sequence of probe results."""
 
     def __init__(
-        self, up: bool = False, opens_after: float | None = None, start_error: OSError | None = None
+        self,
+        up: bool = False,
+        opens_after: float | None = None,
+        start_error: OSError | None = None,
+        answers: list[bool] | None = None,
     ) -> None:
         self.up = up
         self.opens_after = opens_after
         self.start_error = start_error
+        self.answers = answers
         self.now = 1000.0
         self.launched_at: float | None = None
         self.starts = 0
+        self.probes = 0
         self.sleeps: list[float] = []
 
-    def probe(self, host: str, port: int) -> bool:
-        """Open, or opened `opens_after` s after the launch."""
-        assert (host, port) == DB_ADDRESS
+    def probe(self) -> bool:
+        """Answers SELECT 1: scripted, up, or `opens_after` s after the launch."""
+        self.probes += 1
+        if self.answers is not None:
+            return self.answers.pop(0)
         if self.up:
             return True
         if self.opens_after is None or self.launched_at is None:
@@ -680,11 +710,11 @@ class FakeDb:
         """The fake monotonic clock."""
         return self.now
 
-    def check(self, start: bool = True) -> object:
+    def check(self, start: bool = True, local: bool = True) -> object:
         """A DbCheck wired to this fake."""
         return pl.DbCheck(
-            DB_ADDRESS,
-            probe=self.probe,
+            self.probe,
+            local=local,
             start=self.start if start else None,
             sleep=self.sleep,
             clock=self.clock,
@@ -697,15 +727,15 @@ def db_lines(tmp_path: Path, day: str = "2026-10-23") -> list[str]:
 
 
 def test_db_up_starts_nothing_and_logs_nothing(tmp_path: Path) -> None:
-    """Port open: no Docker launch, no wait, no extra line; the run goes ahead."""
+    """Answers at once: no Docker launch, no wait, no extra line; the run goes ahead."""
     db, runner = FakeDb(up=True), FakeRunner(0)
     assert run_at(tmp_path, kst("2026-10-23 16:00"), runner, db=db.check()) == 0
-    assert db.starts == 0 and db.sleeps == [] and len(runner.calls) == 1
+    assert db.starts == 0 and db.sleeps == [] and db.probes == 1 and len(runner.calls) == 1
     assert db_lines(tmp_path) == []
 
 
 def test_db_down_launches_docker_and_waits(tmp_path: Path) -> None:
-    """Port closed: `open -a Docker` once, probes every 2 s, runs when it opens (7 s -> 8 s)."""
+    """Down: `open -a Docker` once, probes every 2 s, runs when it answers (7 s -> 8 s)."""
     db, runner = FakeDb(opens_after=7), FakeRunner(0)
     assert run_at(tmp_path, kst("2026-10-23 16:00"), runner, db=db.check()) == 0
     assert db.starts == 1 and db.sleeps == [2.0] * 4 and len(runner.calls) == 1
@@ -715,8 +745,17 @@ def test_db_down_launches_docker_and_waits(tmp_path: Path) -> None:
     assert log.index(" db: ") < log.index(" start full")  # before the child
 
 
+def test_db_waits_while_the_port_is_open_but_postgres_refuses(tmp_path: Path) -> None:
+    """Review finding 1: the proxy's port is open but SELECT 1 keeps failing; runs on success."""
+    db, runner = FakeDb(answers=[False, False, False, True]), FakeRunner(0)
+    run_at(tmp_path, kst("2026-10-23 16:00"), runner, db=db.check())
+    assert db.probes == 4 and db.starts == 1 and len(runner.calls) == 1
+    (line,) = db_lines(tmp_path)
+    assert line.endswith("db: down at start; launched Docker Desktop; up after 6 s")
+
+
 def test_db_still_down_after_90_s_runs_anyway(tmp_path: Path) -> None:
-    """Never opens: one line after 90 s, then the child runs and fails as before (exit 1)."""
+    """Never answers: one line after 90 s, then the child runs and fails as before (exit 1)."""
     db, runner = FakeDb(), FakeRunner(1)
     assert run_at(tmp_path, kst("2026-10-23 16:00"), runner, db=db.check()) == 1
     assert db.starts == 1 and sum(db.sleeps) == 90 and len(runner.calls) == 1
@@ -751,6 +790,18 @@ def test_no_start_docker_waits_without_launching(tmp_path: Path) -> None:
     )
 
 
+def test_remote_host_waits_without_launching(tmp_path: Path) -> None:
+    """A non-loopback host (the P-044 VM): Docker Desktop here cannot help, so only wait."""
+    db, runner = FakeDb(), FakeRunner(1)
+    run_at(tmp_path, kst("2026-10-23 16:00"), runner, db=db.check(local=False))
+    assert db.starts == 0 and sum(db.sleeps) == 90 and len(runner.calls) == 1
+    (line,) = db_lines(tmp_path)
+    assert line.endswith(
+        "db: still down after 90 s (Docker Desktop not running?); remote host, not starting "
+        "Docker Desktop; running anyway"
+    )
+
+
 def test_db_check_only_for_slots_that_run(tmp_path: Path) -> None:
     """No slot, an already-run slot and a dry run never probe or launch anything."""
     db = FakeDb()
@@ -759,49 +810,62 @@ def test_db_check_only_for_slots_that_run(tmp_path: Path) -> None:
     (tmp_path / "state" / "slots").mkdir(parents=True)
     (tmp_path / "state" / "slots" / "full-2026-10-23-1600").write_text("x")
     run_at(tmp_path, kst("2026-10-23 16:30"), FakeRunner(0), db=db.check())  # already ran
-    assert db.starts == 0 and db.sleeps == []
+    assert db.probes == 0 and db.starts == 0 and db.sleeps == []
 
 
-def test_unreadable_db_address_is_one_line(tmp_path: Path) -> None:
-    """No host/port from DATABASE_URL: say so once and run without waiting."""
+def test_unreadable_database_url_is_one_line(tmp_path: Path) -> None:
+    """DATABASE_URL that does not parse: say so once and run without waiting."""
     runner = FakeRunner(0)
     run_at(tmp_path, kst("2026-10-23 16:00"), runner, db=pl.DbCheck(None))
     assert len(runner.calls) == 1
     (line,) = db_lines(tmp_path)
-    assert line.endswith("db: no host/port readable from DATABASE_URL; not checked")
+    assert line.endswith("db: DATABASE_URL not readable; not checked")
 
 
-@pytest.mark.parametrize(
-    ("url", "expected"),
-    [
-        ("postgresql+psycopg://u:SECRETPW@127.0.0.1:5433/presagio", ("127.0.0.1", 5433)),
-        ("postgresql+psycopg://u:SECRETPW@db.example/presagio", ("db.example", 5432)),
-        ("postgresql+psycopg://u:SECRETPW@/presagio", None),  # Unix socket: no TCP port
-        ("not a url SECRETPW", None),
-    ],
-)
-def test_read_db_address(monkeypatch, url: str, expected: tuple | None) -> None:
-    """Only host and port leave DATABASE_URL; a URL that does not parse gives None."""
+def read_db_check(monkeypatch, url: str, start_docker: bool = True):
+    """pl.read_db_check with DATABASE_URL set to url."""
     from presagio.config import get_settings
 
     monkeypatch.setenv("DATABASE_URL", url)
     get_settings.cache_clear()
     try:
-        assert pl.read_db_address() == expected
+        return pl.read_db_check(start_docker=start_docker)
     finally:
         get_settings.cache_clear()
 
 
+@pytest.mark.parametrize(
+    ("url", "local"),
+    [
+        ("postgresql+psycopg://u:SECRETPW@127.0.0.1:5433/presagio", True),
+        ("postgresql+psycopg://u:SECRETPW@localhost/presagio", True),
+        ("postgresql+psycopg://u:SECRETPW@[::1]:5433/presagio", True),
+        ("postgresql+psycopg://u:SECRETPW@100.64.0.1:5432/presagio", False),  # e.g. Tailscale
+        ("postgresql+psycopg://u:SECRETPW@db.example/presagio", False),
+    ],
+)
+def test_read_db_check_loopback(monkeypatch, url: str, local: bool) -> None:
+    """Docker Desktop is started only for 127.0.0.1, localhost and ::1."""
+    check = read_db_check(monkeypatch, url)
+    assert check.probe is not None and check.local is local
+    assert check.start is pl.start_docker_desktop and check.wait == timedelta(seconds=90)
+    assert read_db_check(monkeypatch, url, start_docker=False).start is None
+
+
+def test_read_db_check_unreadable_url(monkeypatch) -> None:
+    """A URL that does not parse gives no probe (and no exception with the value in it)."""
+    assert read_db_check(monkeypatch, "not a url SECRETPW").probe is None
+
+
 def test_main_run_passes_the_db_check(tmp_path: Path, monkeypatch) -> None:
-    """main(run): DbCheck from DATABASE_URL's host/port; --no-start-docker drops the launch."""
+    """main(run): the DbCheck from DATABASE_URL; --no-start-docker drops the launch."""
     seen = []
     monkeypatch.setattr(pl, "run", lambda **kwargs: seen.append(kwargs["db"]) or 0)
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:SECRETPW@127.0.0.1:5433/db")
     run_main(tmp_path, monkeypatch)
     run_main(tmp_path, monkeypatch, "--no-start-docker")
-    assert [d.address for d in seen] == [DB_ADDRESS, DB_ADDRESS]
+    assert all(d.probe is not None and d.local for d in seen)
     assert seen[0].start is pl.start_docker_desktop and seen[1].start is None
-    assert seen[0].wait == timedelta(seconds=90)
 
 
 def test_start_docker_desktop_runs_open_once(monkeypatch) -> None:
@@ -819,11 +883,26 @@ def test_start_docker_desktop_runs_open_once(monkeypatch) -> None:
     assert calls == [("/usr/bin/open", "-a", "Docker")] * 2
 
 
-def test_port_open_on_loopback() -> None:
-    """A listening loopback socket is open; the same port after closing is not."""
+def test_connect_probe_closed_port_is_false_and_fast() -> None:
+    """Nothing listens on 127.0.0.1:1: False at once, no exception."""
+    started = monotonic()
+    assert pl.connect_probe("postgresql+psycopg://u:p@127.0.0.1:1/db")() is False
+    assert monotonic() - started < 1
+
+
+def test_connect_probe_open_port_without_postgres_is_false() -> None:
+    """A listening port that never answers (like the proxy before Postgres): False, and the
+    attempt ends at DB_CONNECT_TIMEOUT instead of hanging."""
     with socket.socket() as server:
         server.bind(("127.0.0.1", 0))
         server.listen()
         port = server.getsockname()[1]
-        assert pl.port_open("127.0.0.1", port) is True
-    assert pl.port_open("127.0.0.1", port) is False
+        started = monotonic()
+        assert pl.connect_probe(f"postgresql+psycopg://u:p@127.0.0.1:{port}/db")() is False
+        assert monotonic() - started < pl.DB_CONNECT_TIMEOUT + 1
+
+
+def test_connect_probe_real_database_is_true(db_engine) -> None:
+    """The configured database answers SELECT 1 (skipped without one; required in CI)."""
+    url = db_engine.url.render_as_string(hide_password=False)
+    assert pl.connect_probe(url)() is True

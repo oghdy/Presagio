@@ -4,7 +4,8 @@ launchd's StartCalendarInterval runs on the Mac's local clock (Asia/Seoul, no da
 but the closing odds captures are pinned to US Eastern wall time (ODDS_CLOSING_TIMES_ET), which
 moves by an hour against Korea twice a year. So the job wakes at every Korean time a slot can
 fall on (summer and winter), and this wrapper decides from the real clock whether "now" is a
-slot. It is not one on half of the odds wake-ups, which end quietly with a "skip" log line.
+slot. Of the nine closing-capture wake-ups of an ET day, six are not one on a weekday and four
+on a Saturday or Sunday; they end quietly with a "skip" log line.
 
 A weekday therefore has exactly four `presagio ingest-daily` invocations: the full run at
 INGEST_DAILY_TIME_KST and one `--odds-only` run per ODDS_CLOSING_TIMES_ET entry. Saturdays and
@@ -12,8 +13,8 @@ Sundays (the slot's ET date) add the two WEEKEND_CLOSING_ET captures: six (P-028
 amended by D-049 M-9). A marker file per slot makes a second wake-up for the same slot (manual
 kickstart, coalesced wake, the RunAtLoad wake at login) a no-op.
 
-Before a slot's run the wrapper checks that the database port of DATABASE_URL accepts TCP
-connections; if not, it starts Docker Desktop once and waits up to DB_WAIT (P-028).
+Before a slot's run the wrapper checks that DATABASE_URL answers a query; if not, it starts
+Docker Desktop once (local database only) and waits up to DB_WAIT for it (P-028).
 
 Subcommands (run from the repository with `uv run python <this file> ...`):
   run       what launchd calls: decide, run ingest-daily, append everything to the day's log
@@ -31,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import socket
 import subprocess
 import sys
 import time as monotonic_time
@@ -61,12 +61,16 @@ WEEKEND = (5, 6)  # date.weekday() of Saturday and Sunday
 # After exit code 2 (blocked, D-037) every slot scheduled less than this after the blocked slot's
 # scheduled time is skipped. Slot times are compared, not wall clocks, so seconds of start-up
 # jitter never decide it. The pause ends 1 h 10 min before the next day's same slot (on a 24 h
-# day), so a slot in that gap runs again first: a block at 19:45 ET resumes at 18:45 ET the next
-# day, and across the autumn change (a 25 h day) a block at 21:45 ET resumes at 19:45 ET. Nothing
-# is lost; that day only gets one more closing snapshot. The other slots (the full run, 14:45,
-# 16:45, 18:45 and 21:45 ET) have no slot in that gap and resume at the next day's same slot.
-# 23 h, not 24 h: across the spring change (a 23 h day) the next day's same ET slot comes 23 h
-# later and still runs. Delete the file to resume earlier.
+# day), and the first slot after it is (every slot of 2026-10..2027-05 blocked once in `plan`):
+#   - the next day's same slot: the full run, 18:45 and 21:45 ET, Saturday 14:45 and 16:45 ET;
+#   - one slot early: 19:45 ET resumes at 18:45 ET the next day;
+#   - Sunday 14:45 and 16:45 ET resume at Monday 18:45 ET (Monday has neither slot);
+#   - blocked on the Saturday before the autumn change (10-31; Sunday is a 25 h day), 16:45,
+#     18:45 and 21:45 ET also resume one slot early, at Sunday 14:45, 16:45 and 19:45 ET;
+#   - blocked on the Saturday before the spring change (03-13; Sunday is a 23 h day), every
+#     slot, 19:45 ET included, resumes at Sunday's same slot: that is why it is 23 h, not 24 h.
+# An early resume loses nothing; that day only gets one more closing snapshot. Delete the file
+# to resume earlier.
 BLOCK_PAUSE = timedelta(hours=23) - SLOT_TOLERANCE
 BLOCKED_FILE = "blocked"
 SLOTS_DIR = "slots"
@@ -80,10 +84,14 @@ RUN_TIMEOUT = timedelta(minutes=30)
 # Docker Desktop does not start by itself after a reboot unless its "Start Docker Desktop when you
 # sign in" setting is on (2026-10-25/26: the daemon answered about 5 s after `open -a Docker`, the
 # database a few seconds later). The wait comes before the run and is separate from RUN_TIMEOUT.
+# Ready means a psycopg connection runs SELECT 1, not an open port: Docker Desktop's port proxy
+# accepts connections before Postgres does (P-028 review 1, finding 1).
 DOCKER_START = ("/usr/bin/open", "-a", "Docker")
 DB_WAIT = timedelta(seconds=90)
 DB_POLL = timedelta(seconds=2)
-DB_PROBE_TIMEOUT = 1.0  # seconds per TCP connect attempt
+DB_CONNECT_TIMEOUT = 2  # seconds per connection attempt (libpq's smallest connect_timeout)
+# Docker Desktop on this Mac can only serve a database on these hosts (not the P-044 VM).
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 # The Odds API cost of one capture: 3 markets x 1 region (measured 10-25 479 -> 476, 10-26 -> 473).
 CREDITS_PER_CAPTURE = 3
 EXIT_OK, EXIT_FAILED, EXIT_BLOCKED, EXIT_USAGE, EXIT_TIMEOUT = 0, 1, 2, 64, 124
@@ -264,13 +272,28 @@ def record_block(state_dir: Path, now: datetime, slot: Slot) -> None:
 # --- database: wait for it, start Docker Desktop once ---------------------------------------------
 
 
-def port_open(host: str, port: int) -> bool:
-    """True if a TCP connection to host:port succeeds within DB_PROBE_TIMEOUT."""
-    try:
-        with socket.create_connection((host, port), timeout=DB_PROBE_TIMEOUT):
-            return True
-    except OSError:
-        return False
+def connect_probe(database_url: str) -> Callable[[], bool]:
+    """A probe that is True when DATABASE_URL accepts a psycopg connection and runs SELECT 1.
+
+    The SQLAlchemy URL ('postgresql+psycopg://...') loses its driver suffix for libpq. Every
+    error is just False: messages can hold the URL or password, so nothing of them is kept.
+    """
+    import psycopg
+    from sqlalchemy.engine import make_url
+
+    conninfo = make_url(database_url).set(drivername="postgresql")
+    target = conninfo.render_as_string(hide_password=False)
+
+    def probe() -> bool:
+        """One connection attempt within DB_CONNECT_TIMEOUT."""
+        try:
+            with psycopg.connect(target, connect_timeout=DB_CONNECT_TIMEOUT) as conn:
+                conn.execute("SELECT 1").fetchone()
+        except Exception:  # not ready (refused, reset, starting up, timeout) or unusable
+            return False
+        return True
+
+    return probe
 
 
 def start_docker_desktop() -> None:
@@ -287,8 +310,8 @@ def start_docker_desktop() -> None:
 class DbCheck:
     """How run() checks the database before a slot's run (every part injectable for tests)."""
 
-    address: tuple[str, int] | None  # host and port of DATABASE_URL; None if not readable
-    probe: Callable[[str, int], bool] = port_open
+    probe: Callable[[], bool] | None  # connect_probe(DATABASE_URL); None if not readable
+    local: bool = True  # the host is a loopback address, so Docker Desktop here can serve it
     start: Callable[[], None] | None = start_docker_desktop  # None: --no-start-docker
     sleep: Callable[[float], None] = monotonic_time.sleep
     clock: Callable[[], float] = monotonic_time.monotonic
@@ -296,19 +319,21 @@ class DbCheck:
 
 
 def wait_for_db(check: DbCheck, say: Callable[[str], None]) -> None:
-    """If the database port is closed, start Docker Desktop once and wait for it; one log line.
+    """If the database does not answer, start Docker Desktop once and wait for it; one log line.
 
-    Nothing is logged when the port is open. The run goes ahead either way: a database that is
-    still down fails it as before (connection refused, exit 1). No host, port or URL is logged.
+    Nothing is logged when it answers at once. Docker Desktop is started only for a loopback
+    host. The run goes ahead either way: a database that is still down fails it as before
+    (connection refused, exit 1). No host, port, URL or error message is logged.
     """
-    if check.address is None:
-        say("db: no host/port readable from DATABASE_URL; not checked")
+    if check.probe is None:
+        say("db: DATABASE_URL not readable; not checked")
         return
-    host, port = check.address
-    if check.probe(host, port):
+    if check.probe():
         return
     if check.start is None:
         action = "not starting Docker Desktop (--no-start-docker)"
+    elif not check.local:
+        action = "remote host, not starting Docker Desktop"
     else:
         try:
             check.start()
@@ -319,7 +344,7 @@ def wait_for_db(check: DbCheck, say: Callable[[str], None]) -> None:
     limit = check.wait.total_seconds()
     while check.clock() - started < limit:
         check.sleep(DB_POLL.total_seconds())
-        if check.probe(host, port):
+        if check.probe():
             say(f"db: down at start; {action}; up after {check.clock() - started:.0f} s")
             return
     say(
@@ -350,18 +375,23 @@ def read_times() -> tuple[time, tuple[time, ...]]:
     return parse_clock(settings.ingest_daily_time_kst), closing
 
 
-def read_db_address() -> tuple[str, int] | None:
-    """Host and port of DATABASE_URL (never the URL itself); None without a readable TCP host."""
+def read_db_check(start_docker: bool) -> DbCheck:
+    """DbCheck for DATABASE_URL: a connect probe and whether its host is a loopback address."""
     from sqlalchemy.engine import make_url
 
     from presagio.config import get_settings
 
+    database_url = get_settings().database_url
     try:
-        url = make_url(get_settings().database_url)
-        port = url.port or 5432
-    except Exception:  # sqlalchemy's ArgumentError or a bad port; the message is not logged
-        return None
-    return (url.host, port) if url.host else None
+        host = make_url(database_url).host
+        probe = connect_probe(database_url)
+    except Exception:  # sqlalchemy's ArgumentError; the message would echo the URL
+        return DbCheck(None)
+    return DbCheck(
+        probe,
+        local=host in LOOPBACK_HOSTS,
+        start=start_docker_desktop if start_docker else None,
+    )
 
 
 def settings_error(exc: Exception) -> str:
@@ -648,9 +678,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             log_dir=args.log_dir,
             state_dir=args.state_dir,
             dry_run=args.dry_run,
-            db=DbCheck(
-                read_db_address(), start=None if args.no_start_docker else start_docker_desktop
-            ),
+            db=read_db_check(start_docker=not args.no_start_docker),
         )
     full_kst, closing_et = read_times()
     if args.command == "calendar":
