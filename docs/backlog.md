@@ -435,7 +435,7 @@
 | P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) | platform-engineer | TODO | P-024 DONE ✓ |
 | P-043 | odds 단위 partial 판정·종료 코드 분리(거부 가격 비율 임계, warn/fail) + `ingestion_runs.started_at` 호스트 시계 기록 (P-028 운영 관찰 ②③) | data-engineer | TODO | P-028 관찰 |
-| P-044 | 🧑 매일 배당 수집 + 개발 DB를 소형 클라우드 VM(DigitalOcean $6, 싱가포르)으로 이전 — 하이브리드(nba_api는 맥 16:00 본 실행), Tailscale, 백업, 맥 launchd 축소 (D-058, 단계 6 선행) | platform-engineer | TODO (사람 준비: 계정·결제·SSH 키·Tailscale) | P-028, 사람 준비 |
+| P-044 | 🧑 매일 배당 수집 + 개발 DB를 소형 클라우드 VM(DigitalOcean $6, 싱가포르)으로 이전 — 하이브리드(nba_api는 맥 16:00 본 실행), Tailscale, 백업, 맥 launchd 축소 (D-058, 단계 6 선행) | platform-engineer | TODO (브리핑 완료 10-28; VM 생성됨; 남은 선행: Tailscale 맥 설치, P-028 머지) | P-028, 사람 준비 |
 | P-040 | 🧑 Claude Code 클라우드 세션 환경 셋업 (셋업 스크립트, SessionStart 훅, 환경 생성 절차) — 크레딧 US$250, 2026-11-05 만료 | platform-engineer | DONE (PR #31 `24abf4b`, 기준 4 = P-033 세션 증거) | P-024 DONE |
 | P-042 | 클라우드 셋업 후속 (셋업 칸 cwd 대처, 캐시 낡음 경고, /remote-env 안내, 성공 경로 테스트, 훅 출력 한 줄) | platform-engineer | DONE (PR #48 `b2d0ec1`) | P-040 DONE |
 | P-041 | 모델링 스키마 후속 보강 (P-031 리뷰 낮음 10건: feature_id 정합 품질 체크, 인덱스 정의 비교 테스트, feature_drift SKIP, 9장 문구, README 14→17) | data-engineer | DONE (PR #49 `d7a0e01`) | P-031 DONE, Q-022 |
@@ -627,7 +627,7 @@
   - 2026-10-26 PM: P-028 브리핑에서 분리해 생성(관찰 ②③ 원문은 P-028 메모 10-24). 우선순위 중간 — 지금은 FAILED 표시만 틀리고 데이터는 들어간다.
 
 ### P-044 🧑 매일 배당 수집 + 개발 DB를 소형 클라우드 VM으로 이전 (D-058, 단계 6 일부 선행)
-- **상태:** TODO (상세 완료 기준은 브리핑 때 확정. 사람 준비 단계가 먼저)
+- **상태:** TODO — 브리핑 완료(10-28, 공유 노트 `P-044-briefing.md`, 기준 1~9). VM 생성·SSH 접속 확인. 남은 선행: 사람 Tailscale 맥 설치, P-028 머지(같은 파일) → 사람 "띄워".
 - **담당 역할:** platform-engineer (Opus 5.5 높음). **로컬 세션** — VM에 SSH로 붙어야 하고 개발 DB 복사·맥 `.env`·launchd 전환이 있다(D-052 로컬 조건).
 - **단계:** 2 (운영) — 단계 6 배포의 절반을 앞당김
 - **의존:** P-028(슬롯 로직 재사용; 머지 뒤), **사람 준비 4가지**: ① DigitalOcean 가입 + 결제 수단 ② Droplet 생성(Basic $6, 1 GB, SGP1, Ubuntu 24.04, SSH 키) ③ Tailscale 계정 + 맥에 설치 ④ `ODDS_API_KEY`를 VM `.env`에 직접 넣기(PM이 명령을 주고 사람이 실행, 값은 채팅에 안 적음).
@@ -636,6 +636,7 @@
 - **범위 밖:** `src/`(코드 변경 없이 되는 설계 — 안 되면 멈추고 PM에게), 알림(단계 6), 대시보드, 과거 배당 백필.
 - **메모:**
   - 2026-10-28 PM: Q-026 (b) 승인으로 생성. 사람용 준비 안내는 PM이 채팅으로 줬다(인계 노트 참조). 작업자 세션은 사람 준비 ①~③이 끝나고 IP·Tailscale 이름을 받은 뒤, 사람 "띄워"로.
+  - 2026-10-28 21:5x PM 실측(D-058 보완): VM 생성됨(Ubuntu 24.04.5, x86_64, 1 vCPU/961 MB/24 GB, UTC, 스왑 없음, docker·uv 없음). VM에서 The Odds API 도달 OK, **stats.nba.com은 nba_api 헤더로도 403(Akamai WAF)** → 본 실행은 맥 고정. `--odds-only`는 항상 `pre_tip` 라벨이라 예측 시점 캡처도 맥 본 실행에 남고 키는 양쪽에. 맥 마감 슬롯은 `ODDS_CLOSING_TIMES_ET=` 빈 값(허용 실측)으로 제거. 맥 DB 28 MB. 레포 PUBLIC → IP는 README에 안 적음.
 
 ### P-041 모델링 스키마 후속 보강 (P-031 리뷰 [낮음] 10건)
 - **상태:** DONE (2026-10-24 16:4x PR #49 squash merge `d7a0e01`, 사람 지시("둘 다 머지해줘")로 PM 머지(update-branch → CI → squash). 기준 5 실데이터: 머지 뒤 개발 DB `quality-check` 19개 중 17 pass·1 warn(14번, run 119/120)·1 skip(17번)·fail 0·error 0, 18 PASS checked 0·19 PASS 5,288. D-056)
