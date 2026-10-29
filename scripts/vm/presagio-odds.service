@@ -1,0 +1,18 @@
+# Closing-odds capture on the collector VM (P-044, D-058). Started by presagio-odds.timer.
+# The launchd wrapper decides whether now is a slot (±10 min, markers, block pause) exactly as on
+# the Mac; --odds-only-host makes it refuse the full run (stats.nba.com blocks this address),
+# --no-start-docker keeps the database wait without `open -a Docker`. Logs: /var/log/presagio/
+# ingest-<KST date>.log (RESULT lines); this unit's own output: journalctl -u presagio-odds.
+[Unit]
+Description=Presagio closing-odds capture (ingest-daily --odds-only via the slot wrapper)
+Wants=network-online.target docker.service
+After=network-online.target docker.service tailscaled.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/presagio
+Environment=HOME=/root
+# --no-sync: run the venv that setup.sh/deploy.sh built (uv sync --frozen); never resolve here.
+ExecStart=/usr/local/bin/uv run --no-sync --project /opt/presagio python scripts/launchd/presagio_launchd.py run --repo /opt/presagio --log-dir /var/log/presagio --state-dir /var/lib/presagio --no-start-docker --odds-only-host
+# The wrapper's RUN_TIMEOUT (30 min) + DB_WAIT (90 s) + margin: RUN_TIMEOUT + 5 min.
+TimeoutStartSec=35min

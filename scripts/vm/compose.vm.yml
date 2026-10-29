@@ -1,0 +1,11 @@
+# Collector VM override (P-044, D-058): docker compose -f docker-compose.yml -f scripts/vm/compose.vm.yml
+# (the VM .env sets COMPOSE_FILE to both, so a plain `docker compose` in /opt/presagio uses it).
+# Docker publishes ports through its own iptables chain, ahead of ufw, so the port is closed to
+# the public address by binding it to the Tailscale address only, not by a firewall rule.
+# compose merges `ports` of the same container port: the base file's 127.0.0.1 binding stays
+# (the VM's own wrapper and backup use it); this adds TAILSCALE_IP (from .env). Nothing binds
+# 0.0.0.0. Check: docker compose config (two published entries) and ss -tlnp | grep 5433.
+services:
+  postgres:
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP in .env (tailscale ip -4)}:${POSTGRES_HOST_PORT:-5433}:5432"
