@@ -236,9 +236,130 @@ uv run presagio ingest-daily --odds-only
 - 종료 코드는 백필과 같다: 전부 성공 `0`, 하나라도 성공 아님(`partial` 포함) `1`, 403/429 차단으로 즉시 멈춤 `2`, 인자 오류 `64`.
 - 기록은 `ingestion_runs`에 부모 행(`job_type = 'incremental'`, `scope_key = 'date_kst=<D>'`) 1개와 단계별 자식 행으로 남는다. 어제 날짜의 결과 단위는 `job_type = 'schedule'`, `scope_key = 'date_et=<D-1>'`이다.
 
+#### 운영: 수집 VM(P-044, D-058)
+
+마감 배당은 그 시각에 받지 않으면 영영 없다. 맥은 잠들거나 꺼지거나 가방 안에 있을 수 있으므로(10-23~26 마감 12슬롯 중 6개 결손), **마감 배당 캡처와 개발 DB는 24시간 켜진 소형 클라우드 VM**이 맡는다. 결과·스탯·일정을 받는 본 실행은 **맥에 남는다**: stats.nba.com이 데이터센터 IP를 막기 때문이다(2026-10-28 VM에서 nba_api 헤더 그대로 403 "Access Denied", 같은 요청이 맥에서는 200). 그래서 둘로 나눈다.
+
+| 무엇 | 어디서 | 어떻게 |
+| --- | --- | --- |
+| 마감 배당 `ingest-daily --odds-only`(라벨 `pre_tip`) 평일 3·토일 5회 | **VM** | systemd 타이머 `presagio-odds.timer`(동부 시각) → 래퍼 `presagio_launchd.py run --odds-only-host --no-start-docker`(슬롯 판정·표시 파일·차단 정지는 맥과 같은 코드) → `/opt/presagio`의 `presagio ingest-daily --date <동부 날짜> --odds-only` |
+| 개발 DB(PostgreSQL 17) | **VM** | 같은 `docker-compose.yml` + `scripts/vm/compose.vm.yml`(프로젝트 `presagio`). 5433 포트는 **Tailscale 주소와 VM 자신의 127.0.0.1에만** 열린다 |
+| 본 실행 16:00 KST(nba_api 결과·스탯·일정 + 예측 시점 배당 1회(`prediction`) + 품질 체크) | **맥** | 기존 launchd(아래 소절). `.env`의 `DATABASE_URL`만 VM의 Tailscale 주소로 바꾼다(아래 "전환") |
+| 일일 백업 | **VM** | `presagio-backup.timer` 12:00 UTC(21:00 KST, 슬롯 없음) → `scripts/vm/backup.sh` → `/var/backups/presagio/`, 14일 보관. 맥으로 가져오기 `scripts/vm/pull-backup.sh` |
+| 코드 갱신 | **VM** | `scripts/vm/deploy.sh`(맥에서 ssh로) |
+
+예측 시점 캡처가 맥에 남는 이유: `--odds-only`는 항상 `pre_tip` 라벨이고 `prediction` 라벨은 본 실행에서만 나온다(`src/presagio/ingestion/incremental.py`). 그래서 `ODDS_API_KEY`는 맥과 VM 양쪽 `.env`에 있다. 같은 마감 슬롯을 둘이 받으면 `odds_snapshots` 중복 행과 크레딧 2배가 되므로(유일 제약 없음), 전환 뒤 맥의 마감 슬롯은 `ODDS_CLOSING_TIMES_ET=`(빈 값)로 없앤다(주말 2회도 함께 꺼진다).
+
+**VM.** DigitalOcean Basic Droplet(US$6/월: 1 vCPU, 1 GB RAM, 25 GB 디스크), 리전 싱가포르(SGP1), Ubuntu 24.04 LTS x86_64, hostname `presagio-collector`, 시간대 UTC(그대로 둔다. 래퍼가 동부·한국 시각을 계산한다). 레포가 공개라 VM의 공개 IP와 Tailscale 주소는 여기 적지 않는다(PM 공유 노트에 있다). 아래 `<VM>`은 둘 중 하나, `<VM Tailscale IP>`는 `tailscale ip -4` 값(100.x)이다. 접속은 맥에서 `ssh -i ~/.ssh/presagio_vm root@<VM>`(비밀번호 로그인 꺼짐, 키만). 1 GB라 `setup.sh`가 스왑 2 GB를 만든다(2026-10-29 Postgres가 떠 있을 때 사용 약 440 MB, 가용 약 520 MB, 스왑 16 MB).
+
+**처음 셋업(한 번).** ① 사람이 Droplet을 만들고 SSH 공개키를 등록한다. ② VM에 Tailscale을 설치하고 로그인한다. `setup.sh`가 Tailscale 공식 apt 저장소에서 설치까지 하지만 로그인은 사람이 브라우저로 승인해야 하므로 먼저 한다(인증 키는 만들지 않는다. 비밀값을 채팅·파일에 두지 않으려고):
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'tailscale up --hostname=presagio-collector'
+```
+
+출력되는 `https://login.tailscale.com/a/...` URL을 사람이 열어 테일넷에 승인하면 명령이 끝난다(VM에 tailscale이 아직 없으면 `setup.sh`를 먼저 한 번 돌린다. 패키지를 다 깐 뒤 "Tailscale is not logged in"으로 exit 3에서 멈춘다). 확인: 맥에서 `tailscale status`에 `presagio-collector`가 보인다. ③ 셋업:
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'bash -s' < scripts/vm/setup.sh
+```
+
+하는 일: apt 갱신, Docker Engine + compose 플러그인(Docker 공식 apt), Tailscale(공식 apt), `uv`(고정 버전, GitHub 릴리스 + sha256 확인), 스왑 2 GB(`/swapfile` + fstab), `ufw`(22/tcp·41641/udp만 허용, 나머지 차단), `/opt/presagio`에 레포 클론(main) + `uv sync --frozen --no-dev`, `/opt/presagio/.env`를 `scripts/vm/env.vm.template`에서 생성(`POSTGRES_PASSWORD`는 `openssl rand -hex 24`로 새로 만들어 이 파일에만, `DATABASE_URL`은 같은 비밀번호로 `127.0.0.1:5433`, `ODDS_API_KEY=` 빈 값, 권한 600; 이미 있으면 덮어쓰지 않고 `TAILSCALE_IP` 줄만 맞춘다), Docker가 Tailscale 뒤에 뜨게 하는 드롭인, `docker compose up -d --wait` → `alembic upgrade head`, systemd 유닛 4개 설치·타이머 켜기, `/var/log/presagio`·`/var/lib/presagio/slots`·`/var/backups/presagio`. **두 번 돌려도 같다**(파일은 다를 때만 복사, 두 번째 실행은 `unchanged`·`kept existing /opt/presagio/.env`만 찍는다, 약 25초). 다른 브랜치를 시험할 때만 `'PRESAGIO_REF=<브랜치> bash -s'`. 비밀번호를 `.env` 한 곳에서 compose와 `DATABASE_URL`이 함께 읽는 이유: 래퍼는 DB 준비를 실제 접속(`SELECT 1`)으로 보므로 비밀번호가 어긋나면 "DB가 꺼져 있다"로 보고 90초 기다린다(D-059).
+
+**포트가 밖에서 안 열리는 이유.** Docker는 publish한 포트를 자기 iptables 체인(`DOCKER`)에 직접 넣어 ufw보다 먼저 처리한다. 그래서 "ufw로 5433 차단"은 보호가 아니다. 대신 **바인드 주소 자체**를 Tailscale 주소로 한다(`compose.vm.yml`; compose는 같은 컨테이너 포트의 `ports`를 합치므로 기본 파일의 `127.0.0.1` 바인드도 남는다. `0.0.0.0` 바인드는 없다). 확인(2026-10-29 실측):
+
+```bash
+nc -vz -w 3 <VM 공개 IP> 5433          # 맥에서: Operation timed out (실패가 정상)
+nc -vz -w 3 <VM Tailscale IP> 5433     # 맥에서: succeeded
+ssh -i ~/.ssh/presagio_vm root@<VM> 'ss -tlnp | grep 5433'   # <VM Tailscale IP>:5433, 127.0.0.1:5433 두 줄뿐
+```
+
+Tailscale 주소는 부팅 때 `tailscaled`가 `tailscale0`에 올린 뒤에야 바인드할 수 있다. 그 전에 컨테이너가 뜨면 포트 바인드에 실패하고 다시 시도하지 않는다. 그래서 `setup.sh`가 `docker.service`에 드롭인(`scripts/vm/docker-after-tailscale.conf` → `/etc/systemd/system/docker.service.d/10-after-tailscale.conf`)을 둔다: `After=tailscaled.service`, 그리고 `tailscale0`에 IPv4 주소가 생길 때까지 최대 30초 기다린다. 재부팅 실측(10-29): 드롭인 없이도 떴지만 주소 17.4초·컨테이너 19.5초로 2초 차이의 우연이었고, 드롭인을 넣은 뒤에는 Docker가 주소(18.1초)를 기다렸다가 20.4초에 컨테이너를 띄워 21초쯤 healthy, 두 타이머 active.
+
+**`ODDS_API_KEY` 넣기.** VM `.env`의 `ODDS_API_KEY=` 줄을 채운다(사람이 한다. 값을 화면·채팅·레포에 내지 않는 명령은 PM이 준다). 비어 있는 동안 VM 캡처는 `ingest-daily`의 기존 동작대로 배당 단계를 `skipped`로 남기고 `exit=0`이다(외부 호출 0번). 들어갔는지는 값을 보지 않고 확인한다:
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> "grep -c '^ODDS_API_KEY=.' /opt/presagio/.env"   # 1이면 들어 있음, 0이면 빈 값
+```
+
+**언제 도나.** `presagio-odds.timer`의 `OnCalendar`는 동부 시각대로 적혀 있다(`*-*-* 18:45:00 America/New_York`, `Sat,Sun *-*-* 14:45:00 America/New_York` 등 5줄. systemd는 요일과 시각을 그 시간대로 계산한다. `man systemd.time`의 "CALENDAR EVENTS"·"PARSING TIMESTAMPS", systemd 255). 그래서 서머타임 전환에 손댈 것이 없다. 시각은 `ODDS_CLOSING_TIMES_ET` 기본값과 래퍼 상수 `WEEKEND_CLOSING_ET`에서 왔고, 둘이 어긋나면 `tests/scripts/test_vm_scripts.py`가 실패한다. **VM `.env`의 `ODDS_CLOSING_TIMES_ET`를 바꾸면 타이머 파일도 같이 바꿔야 한다**(아니면 모든 타이머 실행이 `skip`된다). `AccuracySec=1s`, `Persistent=false`(놓친 마감은 메우지 않는다, D-048. 재부팅으로 늦게 깨도 래퍼의 ±10분 규칙이 건너뛴다). 타이머는 마감 슬롯에만 깨어나므로 본 실행 줄은 VM에 없다. 래퍼가 16:00 이후에 손으로 불려 본 실행을 고르더라도 `--odds-only-host`가 막는다(`skip: full run is not this host's job (--odds-only-host): ...` 한 줄, 표시 파일 없음, exit 0). VM에서 본 실행이 돌면 403 → exit 2 → 22시간 50분 차단 정지로 다음 날 마감까지 날아가기 때문이다.
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'systemctl list-timers --all "presagio-*"'
+ssh -i ~/.ssh/presagio_vm root@<VM> 'systemd-analyze calendar --iterations=6 "*-*-* 18:45:00 America/New_York"'
+```
+
+예상 결과(일부): `presagio-odds.timer`의 NEXT가 다음 마감 슬롯(UTC), `Sat 2026-10-31 22:45:00 UTC` 다음이 `Sun 2026-11-01 23:45:00 UTC`(서머타임 종료로 UTC 기준 1시간 늦어짐 = 동부 18:45 그대로).
+
+**로그 보는 법.** 맥과 같은 형식의 한국 날짜별 파일이 VM `/var/log/presagio/ingest-YYYY-MM-DD.log`에 있다(`start`, `ingest-daily` 출력 전부, `RESULT` 줄; 뜻은 아래 launchd 소절의 표). systemd 쪽 기록은 `journalctl`.
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'grep RESULT /var/log/presagio/ingest-*.log | tail -n 10'
+ssh -i ~/.ssh/presagio_vm root@<VM> 'journalctl -u presagio-odds -n 20 --no-pager'
+ssh -i ~/.ssh/presagio_vm root@<VM> 'journalctl -u presagio-backup -n 5 --no-pager'
+```
+
+슬롯이 아닌 시각에 손으로 `systemctl start presagio-odds.service`를 하면 `skip: no slot now (00:35 ET, 13:35 KST)` 한 줄이다(VM에는 launchd 재설치 안내가 붙지 않는다). 차단(exit 2) 뒤 정지 파일은 `/var/lib/presagio/blocked`, 표시 파일은 `/var/lib/presagio/slots/`. 래퍼만 시험(호출 0번, 아무것도 안 씀):
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'cd /opt/presagio && uv run --no-sync python scripts/launchd/presagio_launchd.py run --dry-run --now 2026-10-31T14:45-04:00 --repo /opt/presagio --log-dir /tmp/presagio-dry --state-dir /tmp/presagio-dry --no-start-docker --odds-only-host && cat /tmp/presagio-dry/ingest-*.log'
+```
+
+**DB 보기.** VM 안에서 `cd /opt/presagio && docker compose ps`(`.env`의 `COMPOSE_FILE`이 기본 파일과 `compose.vm.yml`을 함께 읽는다), `docker compose exec -T postgres psql -U presagio -d presagio`. 맥에서는 전환 뒤 `.env`의 `DATABASE_URL`이 VM을 가리키므로 `uv run presagio quality-check` 등이 그대로 VM DB를 읽는다. 전환 전에 맥에서 VM DB를 한 번 보려면 `.env`를 건드리지 않고 그 명령에만 `DATABASE_URL=postgresql+psycopg://presagio:…@<VM Tailscale IP>:5433/presagio uv run presagio quality-check`(…는 VM `.env`의 비밀번호; 10-29 실측: 17 pass, 0 fail, 1 warn, 1 skip).
+
+**백업과 복원.** `backup.sh`는 컨테이너 안 `pg_dump --clean --if-exists`를 `gzip`해 `/var/backups/presagio/presagio-YYYYMMDD-HHMM.sql.gz`(UTC)에 쓰고 14일 지난 파일을 지운다. 끝까지 쓰인 덤프만 남기고(`gzip -t`와 pg_dump 완료 줄 확인), 실패하면 0이 아닌 종료 코드로 `journalctl -u presagio-backup`·`systemctl --failed`에 남는다. 손으로: `ssh ... 'systemctl start presagio-backup.service'`. 맥으로 최신 1개 가져오기(`~/Presagio-backups/`):
+
+```bash
+scripts/vm/pull-backup.sh <VM>
+```
+
+복원은 덤프에 `--clean`이 들어 있어 대상 DB의 표를 **덮어쓴다**. VM에서 시험 복원(10-29: 7개 표 행 수 일치 확인 뒤 DROP):
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'cd /opt/presagio && f=$(ls -1t /var/backups/presagio/presagio-*.sql.gz | head -n 1) && docker compose exec -T postgres psql -U presagio -d presagio -c "CREATE DATABASE presagio_restore_test" && gzip -dc "$f" | docker compose exec -T postgres psql -U presagio -d presagio_restore_test -q -v ON_ERROR_STOP=1 > /dev/null && docker compose exec -T postgres psql -U presagio -d presagio_restore_test -c "select count(*) from odds_snapshots" && docker compose exec -T postgres psql -U presagio -d presagio -c "DROP DATABASE presagio_restore_test"'
+```
+
+맥 컨테이너로 복원(되돌리기 때): `gzip -dc ~/Presagio-backups/presagio-<시각>.sql.gz | docker compose exec -T postgres psql -U presagio -d presagio -q -v ON_ERROR_STOP=1 > /dev/null`(맥 레포 루트에서, Docker Desktop이 켜진 상태). **사람이 확인할 것:** DigitalOcean 콘솔에서 Droplet의 주간 백업(Backups)이 켜져 있는지, 이번 달 요금(Billing).
+
+**맥 DB를 VM으로 복사.** 맥에서(맥 쪽은 `pg_dump`와 행 수 조회만 한다. `.env`는 읽지 않는다):
+
+```bash
+scripts/vm/db-copy-from-mac.sh <VM>
+```
+
+VM DB의 표를 맥의 것으로 **덮어쓴다**(`--clean`). VM이 스스로 받은 배당(VM의 최신 `odds_snapshots.captured_at`이 맥보다 늦음)이 있으면 지워지므로 멈춘다. 그래도 하려면 먼저 `pull-backup.sh`로 받아 두고 `--force`. 끝에 7개 표(`odds_snapshots ingestion_runs games team_game_stats predictions evaluations model_versions`)의 행 수를 양쪽 나란히 찍고 하나라도 다르면 exit 1. 10-29 실측: 28 MB, 복원 35초, 7개 표 모두 일치. 슬롯 시각 ±15분(KST 03:30~07:00, 07:30~12:00, 15:45~16:30)은 피한다. Tailscale 주소로 ssh하는 것이 처음이면 호스트 키 확인을 묻는다(공개 IP로 써도 된다. 데이터는 ssh로만 간다).
+
+**코드 갱신.** main에 머지된 뒤 맥에서:
+
+```bash
+ssh -i ~/.ssh/presagio_vm root@<VM> 'bash -s' < scripts/vm/deploy.sh
+```
+
+`/opt/presagio`를 origin main으로 fast-forward(그 밖이면 거부), `uv sync --frozen --no-dev`, 바뀐 유닛만 복사, 두 타이머 재시작, `alembic current` 표시(DB가 코드보다 낡았으면 경고만 하고 마이그레이션은 하지 않는다. 6단계 명령을 일부러 실행한다). 패키지·Docker·방화벽·드롭인은 `setup.sh`가 맡는다(다시 돌려도 안전).
+
+**전환 체크리스트(PM 실행, P-044 머지 뒤).** 순서가 중요하다. 시각은 **KST 12:00~15:30**(마지막 마감 슬롯 11:45 이후, 16:00 본 실행 전. 서머타임 여부와 관계없다)에 ①~③을 이어서 한다.
+
+0. 준비: VM을 main으로 맞춘다(`deploy.sh`, 위). 맥 Docker Desktop이 켜져 있다.
+1. **맥 DB 최종 복사.** `scripts/vm/db-copy-from-mac.sh <VM>` → 7개 표 모두 `yes`, exit 0. 키가 아직 없으므로 VM은 배당을 받은 적이 없고, 키 없이 돈 VM의 `skipped` 실행 행은 이때 덮어써진다.
+2. **키 투입(사람).** VM `.env`의 `ODDS_API_KEY=` 줄을 채운다(위). 확인 `grep -c '^ODDS_API_KEY=.'` → `1`.
+3. **맥 `.env` 전환 + 재설치.** 아래 launchd 소절의 "VM 전환 뒤 맥 설정". 확인: `calendar`가 `16:00` 한 줄, `launchctl list | grep presagio`의 둘째 칸 `0`, `uv run presagio quality-check`가 VM DB에서 fail 0.
+4. **첫 VM 실제 캡처 확인**(다음 마감 슬롯 뒤): `ssh ... 'grep RESULT /var/log/presagio/ingest-*.log | tail -n 1'` → `RESULT exit=0 OK [odds-<동부 날짜>-<시각>]`, 그 출력의 odds 단계가 `succeeded`이고 `ssh ... 'cd /opt/presagio && docker compose exec -T postgres psql -U presagio -d presagio -Atc "select count(*) from odds_snapshots"'`가 ①의 수보다 늘었다.
+5. **다음 날 결손 쿼리.** launchd 소절의 "빠진 날 확인 쿼리"를 VM DB에서(VM에 ssh로 들어가 `cd /opt/presagio` 뒤 그 소절의 `docker compose exec -T postgres psql ...` 명령을 그대로 실행): 전환한 날부터 `full_runs = 1`, `odds_only_runs = 3`(동부 토·일 5).
+
+왜 이 순서인가: ①의 복사는 `--clean`이라 VM DB를 통째로 맥 것으로 덮는다. VM이 실제 캡처를 한 뒤에 복사하면 그 캡처가 사라지므로 **복사가 키보다 먼저**다. 키(②)는 맥 전환(③) **직전**에 넣는다. ②와 ③ 사이에 마감 슬롯이 끼어도 VM이 그 슬롯을 VM DB에 받는다(맥이 같은 슬롯을 맥 DB에 받는 것은 버려지는 사본일 뿐이고 크레딧 3이 더 든다). 반대로 ③을 먼저 하고 키를 늦게 넣으면 그 사이 마감 슬롯은 아무도 받지 않아 영영 빠진다. ①과 ③ 사이에 맥이 맥 DB에 쓴 것(16:00 본 실행 등)은 사라지므로 그 사이를 짧게, 위 시각 창 안에서 한다.
+
+**되돌리기.**
+
+1. VM 마감 캡처를 먼저 끈다(맥이 다시 받기 시작하면 중복이므로): `ssh ... 'systemctl disable --now presagio-odds.timer'`.
+2. 데이터: `ssh ... 'systemctl start presagio-backup.service'`로 지금 덤프를 만들고 `scripts/vm/pull-backup.sh <VM>`, 맥 컨테이너로 복원(위 "백업과 복원").
+3. 맥 `.env` 원복(전환 때 만든 `.env.before-p044`를 되돌리거나 `DATABASE_URL=postgresql+psycopg://presagio:presagio@127.0.0.1:5433/presagio`, `ODDS_CLOSING_TIMES_ET=18:45,19:45,21:45`, `DB_CONNECT_TIMEOUT=3`) → `scripts/launchd/install.sh` → `calendar`가 다시 10줄.
+4. 다시 VM으로 갈 때는 `systemctl enable --now presagio-odds.timer` 후 전환 체크리스트 ①부터.
+
+**맥이 꺼져 있던 날(전환 뒤).** 마감 배당은 VM이 받으므로 빠지지 않는다(경기는 시즌 일정 백필로 이미 `games`에 있다). 맥이 꺼져 있으면 그날 **본 실행과 예측 시점 캡처만** 늦어진다: 같은 한국 날짜 안에 켜지면 `RunAtLoad`·늦은 깨어남으로 돌고, 자정을 넘기면 다음 날 본 실행이 어제 결과를 다시 받는다(D-039. 예측 시점 배당은 그날 것이 빠진다). 반대로 VM이나 Tailscale이 내려가 있으면 맥 본 실행은 DB를 90초 기다린 뒤(`remote host, not starting Docker Desktop`) `exit=1`이고, 다음 날 본 실행이 다시 받는다.
+
 #### 운영: 임시 스케줄(launchd)
 
-단계 6(서버 스케줄) 전까지 **이 맥의 launchd**가 `presagio ingest-daily`를 평일 하루 4번, 토·일 6번 돌린다(P-024, P-028, D-048). 배당은 그 시각에 받지 않으면 영영 없기 때문이다. 단계 6에서 서버 스케줄로 바꾸면 이 잡은 끈다(아래 "끄는 법").
+**수집 VM으로 전환한 뒤(위 소절, P-044·D-058) 이 맥의 launchd에는 16:00 본 실행만 남긴다**(마감 배당은 VM이 받는다. 설정은 아래 "VM 전환 뒤 맥 설정"). 전환 전까지는 단계 6(서버 스케줄) 전의 임시 장치로서 **이 맥의 launchd**가 `presagio ingest-daily`를 평일 하루 4번, 토·일 6번 돌린다(P-024, P-028, D-048). 아래 설명의 마감 슬롯·시각표는 전환 전(그리고 되돌린 뒤)의 동작이다. 단계 6에서 서버 스케줄로 바꾸면 이 잡은 끈다(아래 "끄는 법").
 
 **전제.** 맥이 켜져 있고(잠자기와 전원 꺼짐은 아래 "맥이 잠들어 있거나 꺼져 있던 날"), Docker Desktop이 켜져 DB 컨테이너가 떠 있고, 실행할 레포 루트에 `.env`(`DATABASE_URL`, `ODDS_API_KEY`)가 있어야 한다. 맥 시간대는 서울이어야 한다(설치 스크립트가 확인한다). 사용자 단위 LaunchAgent라 **그 사용자가 로그인해 있어야** 돈다(재부팅 뒤 로그인 전에는 안 돈다).
 
@@ -301,6 +422,37 @@ scripts/launchd/uninstall.sh
 ```
 
 `launchctl list | grep presagio`가 아무것도 출력하지 않으면 꺼진 것이다. 로그와 표시 파일은 남는다.
+
+**VM 전환 뒤 맥 설정(P-044, D-058).** 전환 체크리스트(위 수집 VM 소절) ③에서, 매일 수집을 돌리는 체크아웃(루트에 `.env`가 있는 곳)에서 한다. 먼저 되돌릴 때를 위해 복사해 둔다(`.env.*`는 커밋되지 않는다):
+
+```bash
+cp .env .env.before-p044
+```
+
+`.env`에서 세 줄을 바꾼다. `ODDS_API_KEY`는 **그대로 둔다**(16:00 본 실행의 예측 시점 캡처용).
+
+```
+DATABASE_URL=postgresql+psycopg://presagio:<VM .env의 POSTGRES_PASSWORD>@<VM Tailscale IP>:5433/presagio
+ODDS_CLOSING_TIMES_ET=
+DB_CONNECT_TIMEOUT=5
+```
+
+비밀번호를 화면에 내지 않고 바꾸려면(맥 레포 루트에서):
+
+```bash
+pw="$(ssh -i ~/.ssh/presagio_vm root@<VM> "sed -n 's/^POSTGRES_PASSWORD=//p' /opt/presagio/.env")"
+sed -i '' "s|^DATABASE_URL=.*|DATABASE_URL=postgresql+psycopg://presagio:${pw}@<VM Tailscale IP>:5433/presagio|" .env; unset pw
+```
+
+`ODDS_CLOSING_TIMES_ET=`(빈 값)는 마감 슬롯을 모두 없앤다(주말 14:45·16:45도 함께, D-059). `DB_CONNECT_TIMEOUT=5`는 Tailscale 너머라 3초보다 여유를 둔다. 그 다음 재설치:
+
+```bash
+scripts/launchd/install.sh
+uv run python scripts/launchd/presagio_launchd.py calendar
+launchctl list | grep presagio
+```
+
+예상 결과: 설치 출력의 wake-ups가 `16:00` 한 줄, `calendar`도 `16:00` 한 줄, `launchctl list`는 `-	0	com.presagio.ingest-daily`. `plan --from <오늘> --days 7`에는 `odds` 줄이 없고 매일 `full base_date=...` 한 줄뿐이다. DB 호스트가 루프백이 아니므로 래퍼는 DB가 답하지 않을 때 Docker Desktop을 띄우지 않고 90초 기다리기만 한다(`remote host, not starting Docker Desktop`). 맥 Docker Desktop은 더 이상 매일 수집에 필요 없다(되돌리기와 테스트용 로컬 DB에만 쓴다).
 
 **로그 보는 법.** 한국 날짜별 파일 하나: `~/Library/Logs/Presagio/ingest-YYYY-MM-DD.log`. 실행마다 `start ...` 줄, `ingest-daily`의 표준 출력·오류 전부, 그리고 `RESULT` 줄이 남는다.
 
