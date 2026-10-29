@@ -16,6 +16,9 @@ kickstart, coalesced wake, the RunAtLoad wake at login) a no-op.
 Before a slot's run the wrapper checks that DATABASE_URL answers a query; if not, it starts
 Docker Desktop once (local database only) and waits up to DB_WAIT for it (P-028).
 
+On the P-044 collector VM a systemd timer calls `run --odds-only-host --no-start-docker` at the
+closing-capture slots only; the full run stays on the Mac (D-058).
+
 Subcommands (run from the repository with `uv run python <this file> ...`):
   run       what launchd calls: decide, run ingest-daily, append everything to the day's log
   calendar  print the Korean wake-up times the plist needs
@@ -105,6 +108,10 @@ EXIT_MEANING = {
 # What ingest-daily prints when it stops on a block (src/presagio/ingestion/incremental.py).
 BLOCK_LINE = "Stopped: the source blocked us"
 TAG = "[presagio-launchd]"
+# --odds-only-host (P-044, D-058): the collector VM runs closing captures only. stats.nba.com
+# answers its data-centre address with 403 (measured 2026-10-28), so a full run there would exit 2
+# and the block pause (BLOCK_PAUSE) would then skip the next day's closing captures as well.
+NOT_THIS_HOST = "skip: full run is not this host's job (--odds-only-host)"
 
 Runner = Callable[..., Any]
 
@@ -413,10 +420,12 @@ def run(
     dry_run: bool = False,
     runner: Runner = subprocess.run,
     db: DbCheck | None = None,
+    odds_only_host: bool = False,
 ) -> int:
     """Decide the slot for now and, if it is one, run ingest-daily once into the day's log.
 
-    With db, a real (not dry) run first waits for the database (wait_for_db).
+    With db, a real (not dry) run first waits for the database (wait_for_db). With
+    odds_only_host, a full-run slot ends in one NOT_THIS_HOST line: no marker, no call, exit 0.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
     with log_path(log_dir, now).open("a", encoding="utf-8") as log:
@@ -428,10 +437,15 @@ def run(
 
         slot = decide(now, full_kst, closing_et)
         if slot is None:
+            # The reinstall hint is about launchd's wake-ups; the VM's timer is not rendered.
+            note = "" if odds_only_host else off_calendar_note(now, full_kst, closing_et)
             say(
                 f"skip: no slot now ({now.astimezone(EASTERN):%H:%M} ET, "
-                f"{now.astimezone(SEOUL):%H:%M} KST){off_calendar_note(now, full_kst, closing_et)}"
+                f"{now.astimezone(SEOUL):%H:%M} KST){note}"
             )
+            return EXIT_OK
+        if odds_only_host and slot.kind == FULL:
+            say(f"{NOT_THIS_HOST}: {slot.describe()}")
             return EXIT_OK
         if not dry_run:
             prune_markers(state_dir, now)
@@ -632,6 +646,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="if the database is down, wait for it but do not run `open -a Docker` (not macOS)",
     )
+    run_cmd.add_argument(
+        "--odds-only-host",
+        action="store_true",
+        help="never run the full run here, only closing captures (the P-044 collector VM)",
+    )
     commands.add_parser("calendar", help="print the Korean wake-up times")
     render = commands.add_parser("render", help="print the plist")
     render.add_argument("--template", type=Path, required=True)
@@ -679,6 +698,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             state_dir=args.state_dir,
             dry_run=args.dry_run,
             db=read_db_check(start_docker=not args.no_start_docker),
+            odds_only_host=args.odds_only_host,
         )
     full_kst, closing_et = read_times()
     if args.command == "calendar":
