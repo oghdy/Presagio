@@ -10,9 +10,10 @@
 # printed URL): without a Tailscale address the script installs everything else, then stops with
 # exit 3 and says what to do. Run it again afterwards.
 #
-# Idempotent: every step checks first, and a second run changes nothing (files are copied only
-# when they differ; /opt/presagio/.env is created once and never overwritten, only its
-# TAILSCALE_IP line follows `tailscale ip -4`). Nothing secret is printed.
+# Idempotent: every step checks first, and a second run changes nothing (no package upgrades;
+# files are copied only when they differ; /opt/presagio/.env is created once and never
+# overwritten, only its TAILSCALE_IP line follows `tailscale ip -4`). Nothing secret is printed.
+# Run it again outside the capture slots (KST 03:30-12:00 and 15:45-16:30).
 set -euo pipefail
 
 REPO_URL="https://github.com/oghdy/Presagio.git"
@@ -73,9 +74,12 @@ apt_repo() {
 [ "$(uname -m)" = "x86_64" ] || die "expected x86_64, got $(uname -m)"
 
 # --- packages: base, Docker Engine + compose plugin, Tailscale (official apt repositories) ------
+# --no-upgrade: install what is missing, never upgrade what is there, so a second run does not
+# restart dockerd (and the database) in the middle of a capture. unattended-upgrades covers the
+# Ubuntu origins only; Docker and Tailscale are upgraded by hand (README section 8).
 say "apt: base packages"
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl git openssl ufw gzip > /dev/null
+apt-get install -y -qq --no-upgrade ca-certificates curl git openssl ufw gzip > /dev/null
 apt_repo docker https://download.docker.com/linux/ubuntu/gpg /etc/apt/keyrings/docker.asc \
   "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
 apt_repo tailscale https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
@@ -83,7 +87,7 @@ apt_repo tailscale https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
   "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main"
 [ "$APT_CHANGED" -eq 0 ] || apt-get update -qq
 say "apt: docker-ce, docker-compose-plugin, tailscale"
-apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
+apt-get install -y -qq --no-upgrade docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
   docker-compose-plugin tailscale > /dev/null
 systemctl enable --now docker.service tailscaled.service > /dev/null 2>&1
 

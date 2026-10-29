@@ -191,7 +191,8 @@ def test_backup_timer_is_noon_utc_away_from_the_slots() -> None:
     assert unit_values("presagio-backup.timer", "OnCalendar") == ["*-*-* 12:00:00 UTC"]
     for zone_offset in (4, 5):  # EDT, EST: 12:00 UTC is 08:00 / 07:00 ET
         et = 12 - zone_offset
-        for clock_time in [*parse_clock_times(DEFAULT_ODDS_CLOSING_TIMES_ET), "14:45", "16:45"]:
+        weekend = [f"{t:%H:%M}" for t in pl.WEEKEND_CLOSING_ET]
+        for clock_time in [*parse_clock_times(DEFAULT_ODDS_CLOSING_TIMES_ET), *weekend]:
             assert abs(int(clock_time[:2]) - et) >= 1
     assert unit_values("presagio-backup.service", "ExecStart") == [
         "/bin/bash /opt/presagio/scripts/vm/backup.sh"
@@ -388,16 +389,24 @@ COUNTS = "\n".join(
     f"{t}|{n}" for t, n in zip(TABLES, [8336, 163, 6489, 10670, 5288, 5276, 3], strict=True)
 )
 
+# Capture times as the guard's query returns them: epoch microseconds | UTC time.
+MAC_CAPTURES = [
+    "1761702605627205|2025-10-29 01:50:05",
+    "1761706205000000|2025-10-29 02:50:05",
+    "1761788445000000|2025-10-30 01:40:45",
+]
+# A capture only the VM has, older than the Mac's newest (the case a max() comparison misses).
+VM_ONLY = "1761704000000000|2025-10-29 02:13:20"
+
 # The docker stub answers as the Mac, or as the VM when ssh ran it (SIDE=vm). It logs each call.
 DOCKER_STUB = """\
 side="${SIDE:-mac}"
 echo "$side docker $*" >> "__LOG__"
 case "$*" in
   *pg_dump*) echo "-- dump from the mac" ;;
-  *"max(captured_at)"*) cat "__DIR__/$side.newest" ;;
+  *"SELECT DISTINCT"*) cat "__DIR__/$side.captures" ;;
   *"UNION ALL"*) cat "__DIR__/$side.counts" ;;
   *"version_num"*) echo 0002 ;;
-  *" > '"*) cat "__DIR__/later" ;;
   *psql*) cat > "__DIR__/restored.sql" ;;
 esac
 """
@@ -409,68 +418,87 @@ SIDE=vm bash -c "${cmd#cd /opt/presagio && }"
 """
 
 
-def copy_env(tmp_path: Path, vm_newer: bool = False, vm_counts: str = COUNTS) -> dict[str, str]:
-    """Stub docker and ssh; files hold each side's answers."""
+def copy_env(
+    tmp_path: Path, vm_captures: list[str] | None = None, vm_counts: str = COUNTS
+) -> dict[str, str]:
+    """Stub docker and ssh; files hold each side's answers (VM captures default: a subset)."""
     stubs = tmp_path / "bin"
     stubs.mkdir()
     log = tmp_path / "calls.log"
     for name, body in (("docker", DOCKER_STUB), ("ssh", SSH_STUB)):
         write_stub(stubs, name, body.replace("__LOG__", str(log)).replace("__DIR__", str(tmp_path)))
-    (tmp_path / "mac.newest").write_text("2026-10-29 01:50:05+00\n")
-    (tmp_path / "vm.newest").write_text(
-        "2026-10-30 22:45:03+00\n" if vm_newer else "1970-01-01 00:00:00+00\n"
-    )
-    (tmp_path / "later").write_text("t\n" if vm_newer else "f\n")
+    vm = MAC_CAPTURES[:2] if vm_captures is None else vm_captures
+    (tmp_path / "mac.captures").write_text("".join(f"{line}\n" for line in MAC_CAPTURES))
+    (tmp_path / "vm.captures").write_text("".join(f"{line}\n" for line in vm))
     (tmp_path / "mac.counts").write_text(COUNTS + "\n")
     (tmp_path / "vm.counts").write_text(vm_counts + "\n")
     return {"PATH": f"{stubs}:{SYSTEM_PATH}", "HOME": str(tmp_path)}
 
 
+def restore_calls(tmp_path: Path) -> list[str]:
+    """The VM-side psql calls that read the dump from stdin (no -c)."""
+    calls = (tmp_path / "calls.log").read_text().splitlines()
+    return [c for c in calls if c.startswith("vm docker") and "psql" in c and " -c " not in c]
+
+
 def test_db_copy_restores_and_prints_matching_counts(tmp_path: Path) -> None:
-    """pg_dump on the Mac (read only) -> ssh -> psql on the VM; seven tables, all 'yes', exit 0."""
+    """VM captures a subset of the Mac's: pg_dump (read only) -> ssh -> psql -1; seven 'yes'."""
     result = run(VM / "db-copy-from-mac.sh", "100.64.0.9", env=copy_env(tmp_path))
     assert result.returncode == 0, result.stderr
+    assert "capture times (distinct odds_snapshots.captured_at): Mac 3, VM 2, VM only 0" in (
+        result.stdout
+    )
     calls = (tmp_path / "calls.log").read_text()
     assert "mac docker compose -p presagio -f " in calls
     assert "exec -T postgres pg_dump -U presagio --clean --if-exists presagio" in calls
     assert "ssh -i " + str(tmp_path / ".ssh/presagio_vm") + " -o BatchMode=yes" in calls
     assert "root@100.64.0.9" in calls
+    (restore,) = restore_calls(tmp_path)
+    assert restore.endswith("psql -U presagio -d presagio -q -1 -v ON_ERROR_STOP=1")
     assert (tmp_path / "restored.sql").read_text() == "-- dump from the mac\n"
     for table in TABLES:
         assert any(
             line.startswith(table) and line.endswith("yes") for line in result.stdout.splitlines()
         )
     assert "alembic_version: Mac 0002, VM 0002" in result.stdout
-    assert not [
-        line
-        for line in calls.splitlines()
-        if line.startswith("mac") and "psql" in line and "-At" not in line
-    ]
+    mac_calls = [line for line in calls.splitlines() if line.startswith("mac") and "psql" in line]
+    assert mac_calls and all(" -At " in line and " -c " in line for line in mac_calls)
 
 
-def test_db_copy_refuses_when_the_vm_has_newer_captures(tmp_path: Path) -> None:
-    """VM odds newer than the Mac's: stop before pg_dump (the copy would erase them)."""
-    result = run(VM / "db-copy-from-mac.sh", "100.64.0.9", env=copy_env(tmp_path, vm_newer=True))
+def test_db_copy_with_an_empty_vm_proceeds(tmp_path: Path) -> None:
+    """A VM that never captured (no key yet: the switch's final copy) is not a reason to stop."""
+    result = run(VM / "db-copy-from-mac.sh", "100.64.0.9", env=copy_env(tmp_path, vm_captures=[]))
+    assert result.returncode == 0, result.stderr
+    assert "VM 0, VM only 0" in result.stdout and len(restore_calls(tmp_path)) == 1
+
+
+def test_db_copy_refuses_when_the_vm_has_a_capture_the_mac_lacks(tmp_path: Path) -> None:
+    """One VM-only capture time, older than the Mac's newest: exit 1, no pg_dump, no restore."""
+    env = copy_env(tmp_path, vm_captures=[MAC_CAPTURES[0], VM_ONLY])
+    result = run(VM / "db-copy-from-mac.sh", "100.64.0.9", env=env)
     assert result.returncode == 1
-    assert "the VM has odds captured after the Mac's newest" in result.stderr
+    assert "the VM has 1 capture time(s) the Mac does not" in result.stderr
+    assert "(earliest 2025-10-29 02:13:20 UTC, latest 2025-10-29 02:13:20 UTC)" in result.stderr
     assert "pg_dump" not in (tmp_path / "calls.log").read_text()
+    assert restore_calls(tmp_path) == [] and not (tmp_path / "restored.sql").exists()
 
 
 def test_db_copy_force_overrides_the_guard(tmp_path: Path) -> None:
     """--force (after pull-backup.sh) copies anyway; a second argument is the key path."""
-    env = copy_env(tmp_path, vm_newer=True)
+    env = copy_env(tmp_path, vm_captures=[VM_ONLY, MAC_CAPTURES[2]])
     result = run(VM / "db-copy-from-mac.sh", "100.64.0.9", "/keys/other", "--force", env=env)
     assert result.returncode == 0, result.stderr
+    assert "--force: overwriting the VM's own captures (2025-10-29 02:13:20 .. " in result.stdout
     calls = (tmp_path / "calls.log").read_text()
     assert "pg_dump" in calls and "ssh -i /keys/other " in calls
+    assert len(restore_calls(tmp_path)) == 1
 
 
 def test_db_copy_count_mismatch_exits_1(tmp_path: Path) -> None:
     """A table whose counts differ is marked NO and the script exits 1."""
     vm_counts = COUNTS.replace("odds_snapshots|8336", "odds_snapshots|8000")
-    result = run(
-        VM / "db-copy-from-mac.sh", "100.64.0.9", env=copy_env(tmp_path, vm_counts=vm_counts)
-    )
+    env = copy_env(tmp_path, vm_counts=vm_counts)
+    result = run(VM / "db-copy-from-mac.sh", "100.64.0.9", env=env)
     assert result.returncode == 1
     line = next(line for line in result.stdout.splitlines() if line.startswith("odds_snapshots"))
     assert line.split() == ["odds_snapshots", "8336", "8000", "NO"]

@@ -9,7 +9,8 @@
 # copies changed systemd units and restarts the two timers. It does not touch .env, the database
 # container or the schema: when alembic reports the database behind the code, it says so and the
 # migration is applied on purpose (README section 6), not here. Packages, Docker and the firewall
-# are setup.sh's job (run it again for those; it is idempotent).
+# are setup.sh's job (run it again for those; it is idempotent). Run it outside the capture
+# slots (KST 03:30-12:00 and 15:45-16:30): the timers restart and the venv is re-synced.
 set -euo pipefail
 
 REF="${PRESAGIO_REF:-main}"
@@ -46,7 +47,8 @@ for unit in "${UNITS[@]}"; do
 done
 [ "$changed" -eq 0 ] || systemctl daemon-reload
 systemctl restart presagio-odds.timer presagio-backup.timer
-current="$(cd "$APP" && "$UV" run --no-sync alembic current 2> /dev/null)"
+# Errors are not hidden: with the database down this fails here, not as a false "behind".
+current="$(cd "$APP" && "$UV" run --no-sync alembic current)"
 say "alembic current: $current"
 case "$current" in
   *"(head)"*) ;;

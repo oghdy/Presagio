@@ -264,7 +264,7 @@ ssh -i ~/.ssh/presagio_vm root@<VM> 'tailscale up --hostname=presagio-collector'
 ssh -i ~/.ssh/presagio_vm root@<VM> 'bash -s' < scripts/vm/setup.sh
 ```
 
-하는 일: apt 갱신, Docker Engine + compose 플러그인(Docker 공식 apt), Tailscale(공식 apt), `uv`(고정 버전, GitHub 릴리스 + sha256 확인), 스왑 2 GB(`/swapfile` + fstab), `ufw`(22/tcp·41641/udp만 허용, 나머지 차단), `/opt/presagio`에 레포 클론(main) + `uv sync --frozen --no-dev`, `/opt/presagio/.env`를 `scripts/vm/env.vm.template`에서 생성(`POSTGRES_PASSWORD`는 `openssl rand -hex 24`로 새로 만들어 이 파일에만, `DATABASE_URL`은 같은 비밀번호로 `127.0.0.1:5433`, `ODDS_API_KEY=` 빈 값, 권한 600; 이미 있으면 덮어쓰지 않고 `TAILSCALE_IP` 줄만 맞춘다), Docker가 Tailscale 뒤에 뜨게 하는 드롭인, `docker compose up -d --wait` → `alembic upgrade head`, systemd 유닛 4개 설치·타이머 켜기, `/var/log/presagio`·`/var/lib/presagio/slots`·`/var/backups/presagio`. **두 번 돌려도 같다**(파일은 다를 때만 복사, 두 번째 실행은 `unchanged`·`kept existing /opt/presagio/.env`만 찍는다, 약 25초). 다른 브랜치를 시험할 때만 `'PRESAGIO_REF=<브랜치> bash -s'`. 비밀번호를 `.env` 한 곳에서 compose와 `DATABASE_URL`이 함께 읽는 이유: 래퍼는 DB 준비를 실제 접속(`SELECT 1`)으로 보므로 비밀번호가 어긋나면 "DB가 꺼져 있다"로 보고 90초 기다린다(D-059).
+하는 일: apt 갱신, Docker Engine + compose 플러그인(Docker 공식 apt), Tailscale(공식 apt), `uv`(고정 버전, GitHub 릴리스 + sha256 확인), 스왑 2 GB(`/swapfile` + fstab), `ufw`(22/tcp·41641/udp만 허용, 나머지 차단), `/opt/presagio`에 레포 클론(main) + `uv sync --frozen --no-dev`, `/opt/presagio/.env`를 `scripts/vm/env.vm.template`에서 생성(`POSTGRES_PASSWORD`는 `openssl rand -hex 24`로 새로 만들어 이 파일에만, `DATABASE_URL`은 같은 비밀번호로 `127.0.0.1:5433`, `ODDS_API_KEY=` 빈 값, 권한 600; 이미 있으면 덮어쓰지 않고 `TAILSCALE_IP` 줄만 맞춘다), Docker가 Tailscale 뒤에 뜨게 하는 드롭인, `docker compose up -d --wait` → `alembic upgrade head`, systemd 유닛 4개 설치·타이머 켜기, `/var/log/presagio`·`/var/lib/presagio/slots`·`/var/backups/presagio`. **두 번 돌려도 같다**(파일은 다를 때만 복사, 두 번째 실행은 `unchanged`·`kept existing /opt/presagio/.env`만 찍는다, 약 25초). 패키지는 `apt-get install --no-upgrade`라 없는 것만 깔고 이미 있는 것은 올리지 않는다(올리면 dockerd와 DB가 재시작된다). VM의 `unattended-upgrades`는 Ubuntu 저장소(보안 포함)만 자동으로 올리고 Docker·Tailscale 저장소는 대상이 아니므로(`/etc/apt/apt.conf.d/50unattended-upgrades`의 `Allowed-Origins`, 10-29 확인), 둘은 가끔 손으로 올린다: `ssh ... 'apt-get update && apt-get install --only-upgrade -y docker-ce docker-ce-cli containerd.io docker-compose-plugin tailscale'`. **다시 돌릴 때와 손으로 올릴 때는 슬롯 창(KST 03:30~12:00, 15:45~16:30) 밖에서** 한다. 다른 브랜치를 시험할 때만 `'PRESAGIO_REF=<브랜치> bash -s'`. 비밀번호를 `.env` 한 곳에서 compose와 `DATABASE_URL`이 함께 읽는 이유: 래퍼는 DB 준비를 실제 접속(`SELECT 1`)으로 보므로 비밀번호가 어긋나면 "DB가 꺼져 있다"로 보고 90초 기다린다(D-059).
 
 **포트가 밖에서 안 열리는 이유.** Docker는 publish한 포트를 자기 iptables 체인(`DOCKER`)에 직접 넣어 ufw보다 먼저 처리한다. 그래서 "ufw로 5433 차단"은 보호가 아니다. 대신 **바인드 주소 자체**를 Tailscale 주소로 한다(`compose.vm.yml`; compose는 같은 컨테이너 포트의 `ports`를 합치므로 기본 파일의 `127.0.0.1` 바인드도 남는다. `0.0.0.0` 바인드는 없다). 확인(2026-10-29 실측):
 
@@ -274,7 +274,7 @@ nc -vz -w 3 <VM Tailscale IP> 5433     # 맥에서: succeeded
 ssh -i ~/.ssh/presagio_vm root@<VM> 'ss -tlnp | grep 5433'   # <VM Tailscale IP>:5433, 127.0.0.1:5433 두 줄뿐
 ```
 
-Tailscale 주소는 부팅 때 `tailscaled`가 `tailscale0`에 올린 뒤에야 바인드할 수 있다. 그 전에 컨테이너가 뜨면 포트 바인드에 실패하고 다시 시도하지 않는다. 그래서 `setup.sh`가 `docker.service`에 드롭인(`scripts/vm/docker-after-tailscale.conf` → `/etc/systemd/system/docker.service.d/10-after-tailscale.conf`)을 둔다: `After=tailscaled.service`, 그리고 `tailscale0`에 IPv4 주소가 생길 때까지 최대 30초 기다린다. 재부팅 실측(10-29): 드롭인 없이도 떴지만 주소 17.4초·컨테이너 19.5초로 2초 차이의 우연이었고, 드롭인을 넣은 뒤에는 Docker가 주소(18.1초)를 기다렸다가 20.4초에 컨테이너를 띄워 21초쯤 healthy, 두 타이머 active.
+Tailscale 주소는 부팅 때 `tailscaled`가 `tailscale0`에 올린 뒤에야 바인드할 수 있다. 그 전에 컨테이너가 뜨면 포트 바인드에 실패하고 다시 시도하지 않는다. 그래서 `setup.sh`가 `docker.service`에 드롭인(`scripts/vm/docker-after-tailscale.conf` → `/etc/systemd/system/docker.service.d/10-after-tailscale.conf`)을 둔다: `After=tailscaled.service`, 그리고 `tailscale0`에 IPv4 주소가 생길 때까지 최대 30초 기다린다. 재부팅 실측(10-29): 드롭인 없이도 떴지만 주소 17.4초·컨테이너 19.5초로 2초 차이의 우연이었고, 드롭인을 넣은 뒤에는 Docker가 주소(18.1초)를 기다렸다가 21초쯤 시작했고(컨테이너 20.4초), 50초 안에 healthy, 두 타이머 active.
 
 **`ODDS_API_KEY` 넣기.** VM `.env`의 `ODDS_API_KEY=` 줄을 채운다(사람이 한다. 값을 화면·채팅·레포에 내지 않는 명령은 PM이 준다). 비어 있는 동안 VM 캡처는 `ingest-daily`의 기존 동작대로 배당 단계를 `skipped`로 남기고 `exit=0`이다(외부 호출 0번). 들어갔는지는 값을 보지 않고 확인한다:
 
@@ -299,6 +299,8 @@ ssh -i ~/.ssh/presagio_vm root@<VM> 'journalctl -u presagio-odds -n 20 --no-page
 ssh -i ~/.ssh/presagio_vm root@<VM> 'journalctl -u presagio-backup -n 5 --no-pager'
 ```
 
+**재부팅 뒤 DB가 안 뜬 경우(드롭인의 한계).** `tailscale0`에 30초 안에 주소가 안 생기면 드롭인은 Docker를 그냥 띄우지만, 컨테이너는 포트 바인드 하나만 실패해도 통째로 안 뜬다(`127.0.0.1` 바인드 포함). 그러면 VM의 캡처와 백업이 DB를 기다린 뒤 실패한다: 로그에 `db: still down after 90 s ...; not starting Docker Desktop (--no-start-docker); running anyway` 다음 `RESULT exit=1 FAILED`, `docker compose ps`에 컨테이너 없음. 대응: Tailscale이 올라왔는지(`tailscale ip -4`) 보고 `ssh ... 'systemctl restart docker'`. 자동 알림은 단계 6이다(실측 두 번은 주소가 18초 안팎에 생겨 문제없었다).
+
 슬롯이 아닌 시각에 손으로 `systemctl start presagio-odds.service`를 하면 `skip: no slot now (00:35 ET, 13:35 KST)` 한 줄이다(VM에는 launchd 재설치 안내가 붙지 않는다). 차단(exit 2) 뒤 정지 파일은 `/var/lib/presagio/blocked`, 표시 파일은 `/var/lib/presagio/slots/`. 래퍼만 시험(호출 0번, 아무것도 안 씀):
 
 ```bash
@@ -316,10 +318,10 @@ scripts/vm/pull-backup.sh <VM>
 복원은 덤프에 `--clean`이 들어 있어 대상 DB의 표를 **덮어쓴다**. VM에서 시험 복원(10-29: 7개 표 행 수 일치 확인 뒤 DROP):
 
 ```bash
-ssh -i ~/.ssh/presagio_vm root@<VM> 'cd /opt/presagio && f=$(ls -1t /var/backups/presagio/presagio-*.sql.gz | head -n 1) && docker compose exec -T postgres psql -U presagio -d presagio -c "CREATE DATABASE presagio_restore_test" && gzip -dc "$f" | docker compose exec -T postgres psql -U presagio -d presagio_restore_test -q -v ON_ERROR_STOP=1 > /dev/null && docker compose exec -T postgres psql -U presagio -d presagio_restore_test -c "select count(*) from odds_snapshots" && docker compose exec -T postgres psql -U presagio -d presagio -c "DROP DATABASE presagio_restore_test"'
+ssh -i ~/.ssh/presagio_vm root@<VM> 'cd /opt/presagio && f=$(ls -1t /var/backups/presagio/presagio-*.sql.gz | head -n 1) && docker compose exec -T postgres psql -U presagio -d presagio -c "CREATE DATABASE presagio_restore_test" && gzip -dc "$f" | docker compose exec -T postgres psql -U presagio -d presagio_restore_test -q -1 -v ON_ERROR_STOP=1 > /dev/null && docker compose exec -T postgres psql -U presagio -d presagio_restore_test -c "select count(*) from odds_snapshots" && docker compose exec -T postgres psql -U presagio -d presagio -c "DROP DATABASE presagio_restore_test"'
 ```
 
-맥 컨테이너로 복원(되돌리기 때): `gzip -dc ~/Presagio-backups/presagio-<시각>.sql.gz | docker compose exec -T postgres psql -U presagio -d presagio -q -v ON_ERROR_STOP=1 > /dev/null`(맥 레포 루트에서, Docker Desktop이 켜진 상태). **사람이 확인할 것:** DigitalOcean 콘솔에서 Droplet의 주간 백업(Backups)이 켜져 있는지, 이번 달 요금(Billing).
+맥 컨테이너로 복원(되돌리기 때): `gzip -dc ~/Presagio-backups/presagio-<시각>.sql.gz | docker compose exec -T postgres psql -U presagio -d presagio -q -1 -v ON_ERROR_STOP=1 > /dev/null`(맥 레포 루트에서, Docker Desktop이 켜진 상태). `-1`은 한 트랜잭션이라 중간에 끊기면 원래 상태 그대로 남는다(반쯤 빈 DB가 안 생긴다). **사람이 확인할 것:** DigitalOcean 콘솔에서 Droplet의 주간 백업(Backups)이 켜져 있는지, 이번 달 요금(Billing).
 
 **맥 DB를 VM으로 복사.** 맥에서(맥 쪽은 `pg_dump`와 행 수 조회만 한다. `.env`는 읽지 않는다):
 
@@ -327,7 +329,7 @@ ssh -i ~/.ssh/presagio_vm root@<VM> 'cd /opt/presagio && f=$(ls -1t /var/backups
 scripts/vm/db-copy-from-mac.sh <VM>
 ```
 
-VM DB의 표를 맥의 것으로 **덮어쓴다**(`--clean`). VM이 스스로 받은 배당(VM의 최신 `odds_snapshots.captured_at`이 맥보다 늦음)이 있으면 지워지므로 멈춘다. 그래도 하려면 먼저 `pull-backup.sh`로 받아 두고 `--force`. 끝에 7개 표(`odds_snapshots ingestion_runs games team_game_stats predictions evaluations model_versions`)의 행 수를 양쪽 나란히 찍고 하나라도 다르면 exit 1. 10-29 실측: 28 MB, 복원 35초, 7개 표 모두 일치. 슬롯 시각 ±15분(KST 03:30~07:00, 07:30~12:00, 15:45~16:30)은 피한다. Tailscale 주소로 ssh하는 것이 처음이면 호스트 키 확인을 묻는다(공개 IP로 써도 된다. 데이터는 ssh로만 간다).
+VM DB의 표를 맥의 것으로 **덮어쓴다**(`--clean`). 복원은 한 트랜잭션(`psql -1`)이라 스트림이 끊기면 VM DB는 그대로다. VM이 스스로 받은 배당이 있으면 지워지므로 멈춘다: VM의 `odds_snapshots.captured_at` 값(캡처 호출마다 하나) 중 **맥에 없는 것이 하나라도 있으면** 그 개수와 가장 이른·늦은 시각을 찍고 exit 1(키가 없을 때의 `skipped` 실행은 배당 행이 없으므로 걸리지 않는다). 그래도 하려면 먼저 `pull-backup.sh`로 받아 두고 `--force`. 끝에 7개 표(`odds_snapshots ingestion_runs games team_game_stats predictions evaluations model_versions`)의 행 수를 양쪽 나란히 찍고 하나라도 다르면 exit 1. 10-29 실측: 28 MB, 복원 35초, 7개 표 모두 일치. 슬롯 창(KST 03:30~12:00, 15:45~16:30)은 피한다. Tailscale 주소로 ssh하는 것이 처음이면 호스트 키 확인을 묻는다(공개 IP로 써도 된다. 데이터는 ssh로만 간다).
 
 **코드 갱신.** main에 머지된 뒤 맥에서:
 
@@ -335,7 +337,7 @@ VM DB의 표를 맥의 것으로 **덮어쓴다**(`--clean`). VM이 스스로 �
 ssh -i ~/.ssh/presagio_vm root@<VM> 'bash -s' < scripts/vm/deploy.sh
 ```
 
-`/opt/presagio`를 origin main으로 fast-forward(그 밖이면 거부), `uv sync --frozen --no-dev`, 바뀐 유닛만 복사, 두 타이머 재시작, `alembic current` 표시(DB가 코드보다 낡았으면 경고만 하고 마이그레이션은 하지 않는다. 6단계 명령을 일부러 실행한다). 패키지·Docker·방화벽·드롭인은 `setup.sh`가 맡는다(다시 돌려도 안전).
+`/opt/presagio`를 origin main으로 fast-forward(그 밖이면 거부), `uv sync --frozen --no-dev`, 바뀐 유닛만 복사, 두 타이머 재시작, `alembic current` 표시(DB가 코드보다 낡았으면 경고만 하고 마이그레이션은 하지 않는다. 6단계 명령을 일부러 실행한다). `alembic current`가 실패하면(DB가 내려가 있음 등) 오류를 그대로 내고 멈춘다. 패키지·Docker·방화벽·드롭인은 `setup.sh`가 맡는다(다시 돌려도 안전). 타이머 재시작·venv 동기화가 진행 중인 캡처와 겹치지 않게 **슬롯 창(KST 03:30~12:00, 15:45~16:30) 밖에서** 돌린다.
 
 **전환 체크리스트(PM 실행, P-044 머지 뒤).** 순서가 중요하다. 시각은 **KST 12:00~15:30**(마지막 마감 슬롯 11:45 이후, 16:00 본 실행 전. 서머타임 여부와 관계없다)에 ①~③을 이어서 한다.
 
@@ -344,6 +346,7 @@ ssh -i ~/.ssh/presagio_vm root@<VM> 'bash -s' < scripts/vm/deploy.sh
 2. **키 투입(사람).** VM `.env`의 `ODDS_API_KEY=` 줄을 채운다(위). 확인 `grep -c '^ODDS_API_KEY=.'` → `1`.
 3. **맥 `.env` 전환 + 재설치.** 아래 launchd 소절의 "VM 전환 뒤 맥 설정". 확인: `calendar`가 `16:00` 한 줄, `launchctl list | grep presagio`의 둘째 칸 `0`, `uv run presagio quality-check`가 VM DB에서 fail 0.
 4. **첫 VM 실제 캡처 확인**(다음 마감 슬롯 뒤): `ssh ... 'grep RESULT /var/log/presagio/ingest-*.log | tail -n 1'` → `RESULT exit=0 OK [odds-<동부 날짜>-<시각>]`, 그 출력의 odds 단계가 `succeeded`이고 `ssh ... 'cd /opt/presagio && docker compose exec -T postgres psql -U presagio -d presagio -Atc "select count(*) from odds_snapshots"'`가 ①의 수보다 늘었다.
+   **가벼운 되돌리기(④의 첫 VM 캡처가 실패하면).** 원인을 고칠 때까지 마감 배당을 다시 맥이 받게 한다. 맥 `.env`의 `DATABASE_URL`은 **VM 그대로** 두고 `ODDS_CLOSING_TIMES_ET=18:45,19:45,21:45`만 되살려 `scripts/launchd/install.sh`(→ `calendar` 10줄), VM은 `ssh ... 'systemctl disable --now presagio-odds.timer'`. 맥이 VM DB에 마감 배당을 쓰므로 중복도 데이터 복원도 없다. 고친 뒤에는 VM 타이머를 `enable --now` 하고 맥을 ③대로 다시 바꾼다.
 5. **다음 날 결손 쿼리.** launchd 소절의 "빠진 날 확인 쿼리"를 VM DB에서(VM에 ssh로 들어가 `cd /opt/presagio` 뒤 그 소절의 `docker compose exec -T postgres psql ...` 명령을 그대로 실행): 전환한 날부터 `full_runs = 1`, `odds_only_runs = 3`(동부 토·일 5).
 
 왜 이 순서인가: ①의 복사는 `--clean`이라 VM DB를 통째로 맥 것으로 덮는다. VM이 실제 캡처를 한 뒤에 복사하면 그 캡처가 사라지므로 **복사가 키보다 먼저**다. 키(②)는 맥 전환(③) **직전**에 넣는다. ②와 ③ 사이에 마감 슬롯이 끼어도 VM이 그 슬롯을 VM DB에 받는다(맥이 같은 슬롯을 맥 DB에 받는 것은 버려지는 사본일 뿐이고 크레딧 3이 더 든다). 반대로 ③을 먼저 하고 키를 늦게 넣으면 그 사이 마감 슬롯은 아무도 받지 않아 영영 빠진다. ①과 ③ 사이에 맥이 맥 DB에 쓴 것(16:00 본 실행 등)은 사라지므로 그 사이를 짧게, 위 시각 창 안에서 한다.
@@ -353,7 +356,7 @@ ssh -i ~/.ssh/presagio_vm root@<VM> 'bash -s' < scripts/vm/deploy.sh
 1. VM 마감 캡처를 먼저 끈다(맥이 다시 받기 시작하면 중복이므로): `ssh ... 'systemctl disable --now presagio-odds.timer'`.
 2. 데이터: `ssh ... 'systemctl start presagio-backup.service'`로 지금 덤프를 만들고 `scripts/vm/pull-backup.sh <VM>`, 맥 컨테이너로 복원(위 "백업과 복원").
 3. 맥 `.env` 원복(전환 때 만든 `.env.before-p044`를 되돌리거나 `DATABASE_URL=postgresql+psycopg://presagio:presagio@127.0.0.1:5433/presagio`, `ODDS_CLOSING_TIMES_ET=18:45,19:45,21:45`, `DB_CONNECT_TIMEOUT=3`) → `scripts/launchd/install.sh` → `calendar`가 다시 10줄.
-4. 다시 VM으로 갈 때는 `systemctl enable --now presagio-odds.timer` 후 전환 체크리스트 ①부터.
+4. 다시 VM으로 갈 때는 **2단계(VM 덤프를 맥에 복원)를 끝낸 경우에만** `systemctl enable --now presagio-odds.timer` 후 전환 체크리스트 ①부터 한다. 2를 건너뛰면 VM에만 있는 마감 배당이 ①의 복사로 지워진다. `db-copy-from-mac.sh`가 그 경우(VM에만 있는 캡처 시각)를 감지해 멈추면 `--force`를 붙이기 전에 그 이유를 먼저 본다(보통 2를 안 했거나 덜 했다).
 
 **맥이 꺼져 있던 날(전환 뒤).** 마감 배당은 VM이 받으므로 빠지지 않는다(경기는 시즌 일정 백필로 이미 `games`에 있다). 맥이 꺼져 있으면 그날 **본 실행과 예측 시점 캡처만** 늦어진다: 같은 한국 날짜 안에 켜지면 `RunAtLoad`·늦은 깨어남으로 돌고, 자정을 넘기면 다음 날 본 실행이 어제 결과를 다시 받는다(D-039. 예측 시점 배당은 그날 것이 빠진다). 반대로 VM이나 Tailscale이 내려가 있으면 맥 본 실행은 DB를 90초 기다린 뒤(`remote host, not starting Docker Desktop`) `exit=1`이고, 다음 날 본 실행이 다시 받는다.
 

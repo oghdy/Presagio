@@ -9,14 +9,17 @@
 # Prerequisites: the Mac's Docker Desktop is running with the `presagio` compose project up, and
 # the VM is set up (scripts/vm/setup.sh).
 #
-# The Mac side is read-only: pg_dump inside the Mac container and row counts; no .env is read.
-# The VM side is overwritten: the dump has --clean --if-exists, so every table on the VM is
-# replaced by the Mac's. Because that would also erase odds the VM captured on its own, the
-# script refuses when the VM's newest odds_snapshots.captured_at is later than the Mac's (the VM
-# has captures the Mac does not) unless --force is given. Runs without a capture (the VM's
-# timer before ODDS_API_KEY is set: odds step 'skipped') do not count; they are replaced.
-# Avoid the capture slots (README section 8). At the end it prints the row counts of seven
-# tables on both sides and exits 1 if any differ.
+# The Mac side is read-only: pg_dump inside the Mac container and SELECTs. docker compose reads
+# the checkout's .env (if any) for variable interpolation only; nothing from it is printed or
+# sent to the VM. The VM side is overwritten: the dump has --clean --if-exists, so every table
+# on the VM is replaced by the Mac's, in one transaction (psql -1: a stream cut halfway leaves
+# the VM database as it was). Because that would also erase odds the VM captured on its own,
+# the script refuses when any distinct odds_snapshots.captured_at on the VM (one per capture
+# call) is missing on the Mac - it prints how many and the earliest and latest - unless --force
+# is given. Runs without a capture (the VM's timer before ODDS_API_KEY is set: odds step
+# 'skipped') add no snapshot, so they do not count; they are replaced. Avoid the capture slots
+# (README section 8). At the end it prints the row counts of seven tables on both sides and
+# exits 1 if any differ.
 set -euo pipefail
 
 TABLES=(odds_snapshots ingestion_runs games team_game_stats predictions evaluations model_versions)
@@ -37,25 +40,36 @@ vm() { ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=10 "root@$HOST" "$@"; }
 mac_sql() { mac_compose exec -T postgres psql -U presagio -d presagio -At -v ON_ERROR_STOP=1 -c "$1"; }
 vm_sql() { vm "cd /opt/presagio && docker compose exec -T postgres psql -U presagio -d presagio -At -v ON_ERROR_STOP=1 -c \"$1\""; }
 
+# lines TEXT: number of non-empty lines.
+lines() { printf '%s\n' "$1" | grep -c . || true; }
+
 counts_sql=""
 for t in "${TABLES[@]}"; do
   counts_sql+="${counts_sql:+ UNION ALL }SELECT '$t', count(*) FROM $t"
 done
 
-newest="SELECT coalesce(max(captured_at), 'epoch') FROM odds_snapshots"
-mac_newest="$(mac_sql "$newest")"
-vm_newest="$(vm_sql "$newest")"
-echo "newest odds_snapshots.captured_at: Mac $mac_newest, VM $vm_newest"
-later="$(mac_sql "SELECT '$vm_newest'::timestamptz > '$mac_newest'::timestamptz")"
-if [ "$later" = "t" ] && [ "$FORCE" -eq 0 ]; then
-  echo "db-copy-from-mac.sh: the VM has odds captured after the Mac's newest; copying would" >&2
-  echo "  erase them. Back up first (scripts/vm/pull-backup.sh) and pass --force." >&2
-  exit 1
+# One line per capture call: microseconds since the epoch (exact match) | UTC time (to print).
+captures="SELECT DISTINCT (extract(epoch FROM captured_at) * 1000000)::bigint || '|' || to_char(captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') FROM odds_snapshots"
+mac_captures="$(mac_sql "$captures")"
+vm_captures="$(vm_sql "$captures")"
+vm_only="$(awk -F'|' 'NR == FNR { mac[$1] = 1; next } $1 != "" && !($1 in mac)' \
+  <(printf '%s\n' "$mac_captures") <(printf '%s\n' "$vm_captures") | sort -t'|' -k1,1n)"
+echo "capture times (distinct odds_snapshots.captured_at): Mac $(lines "$mac_captures"), VM $(lines "$vm_captures"), VM only $(lines "$vm_only")"
+if [ -n "$vm_only" ]; then
+  first="$(printf '%s\n' "$vm_only" | head -n 1 | cut -d'|' -f2)"
+  last="$(printf '%s\n' "$vm_only" | tail -n 1 | cut -d'|' -f2)"
+  if [ "$FORCE" -eq 0 ]; then
+    echo "db-copy-from-mac.sh: the VM has $(lines "$vm_only") capture time(s) the Mac does not" >&2
+    echo "  (earliest $first UTC, latest $last UTC); copying would erase them. Back up first" >&2
+    echo "  (scripts/vm/pull-backup.sh) and pass --force." >&2
+    exit 1
+  fi
+  echo "--force: overwriting the VM's own captures ($first .. $last UTC)"
 fi
 
 started=$SECONDS
 mac_compose exec -T postgres pg_dump -U presagio --clean --if-exists presagio \
-  | vm "cd /opt/presagio && docker compose exec -T postgres psql -U presagio -d presagio -q -v ON_ERROR_STOP=1 > /dev/null"
+  | vm "cd /opt/presagio && docker compose exec -T postgres psql -U presagio -d presagio -q -1 -v ON_ERROR_STOP=1 > /dev/null"
 echo "restored in $((SECONDS - started)) s"
 
 mac_counts="$(mac_sql "$counts_sql")"
