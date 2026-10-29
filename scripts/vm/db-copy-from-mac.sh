@@ -11,10 +11,12 @@
 #
 # The Mac side is read-only: pg_dump inside the Mac container and row counts; no .env is read.
 # The VM side is overwritten: the dump has --clean --if-exists, so every table on the VM is
-# replaced by the Mac's. Because that would also erase closing captures the VM made on its own,
-# the script refuses when the VM has ingestion_runs ids above the Mac's highest one (runs only
-# the VM has) unless --force is given. Avoid the capture slots (README section 8). At the end it
-# prints the row counts of seven tables on both sides and exits 1 if any differ.
+# replaced by the Mac's. Because that would also erase odds the VM captured on its own, the
+# script refuses when the VM's newest odds_snapshots.captured_at is later than the Mac's (the VM
+# has captures the Mac does not) unless --force is given. Runs without a capture (the VM's
+# timer before ODDS_API_KEY is set: odds step 'skipped') do not count; they are replaced.
+# Avoid the capture slots (README section 8). At the end it prints the row counts of seven
+# tables on both sides and exits 1 if any differ.
 set -euo pipefail
 
 TABLES=(odds_snapshots ingestion_runs games team_game_stats predictions evaluations model_versions)
@@ -40,12 +42,14 @@ for t in "${TABLES[@]}"; do
   counts_sql+="${counts_sql:+ UNION ALL }SELECT '$t', count(*) FROM $t"
 done
 
-mac_max="$(mac_sql "SELECT coalesce(max(run_id), 0) FROM ingestion_runs")"
-vm_max="$(vm_sql "SELECT coalesce(max(run_id), 0) FROM ingestion_runs" 2> /dev/null || echo 0)"
-echo "ingestion_runs max(run_id): Mac $mac_max, VM $vm_max"
-if [ "${vm_max:-0}" -gt "$mac_max" ] && [ "$FORCE" -eq 0 ]; then
-  echo "db-copy-from-mac.sh: the VM has runs the Mac does not (run_id > $mac_max); copying" >&2
-  echo "  would erase them. Back up first (scripts/vm/pull-backup.sh) and pass --force." >&2
+newest="SELECT coalesce(max(captured_at), 'epoch') FROM odds_snapshots"
+mac_newest="$(mac_sql "$newest")"
+vm_newest="$(vm_sql "$newest")"
+echo "newest odds_snapshots.captured_at: Mac $mac_newest, VM $vm_newest"
+later="$(mac_sql "SELECT '$vm_newest'::timestamptz > '$mac_newest'::timestamptz")"
+if [ "$later" = "t" ] && [ "$FORCE" -eq 0 ]; then
+  echo "db-copy-from-mac.sh: the VM has odds captured after the Mac's newest; copying would" >&2
+  echo "  erase them. Back up first (scripts/vm/pull-backup.sh) and pass --force." >&2
   exit 1
 fi
 

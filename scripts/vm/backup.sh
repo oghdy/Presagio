@@ -38,4 +38,4 @@ chmod 600 "$partial"
 mv "$partial" "$DEST/$name"
 find "$DEST" -maxdepth 1 -type f -name 'presagio-*.sql.gz' -mtime "$KEEP_MTIME" -print -delete \
   | sed 's/^/backup.sh: deleted /'
-echo "backup.sh: wrote $DEST/$name ($(stat -c %s "$DEST/$name") bytes)"
+echo "backup.sh: wrote $DEST/$name ($(wc -c < "$DEST/$name" | tr -d " ") bytes)"
