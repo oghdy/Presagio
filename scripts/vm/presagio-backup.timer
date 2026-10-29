@@ -1,0 +1,12 @@
+# 12:00 UTC = 21:00 KST = 07:00/08:00 ET: away from every capture slot (P-044, D-058).
+[Unit]
+Description=Presagio daily database dump
+
+[Timer]
+OnCalendar=*-*-* 12:00:00 UTC
+AccuracySec=1min
+Persistent=true
+Unit=presagio-backup.service
+
+[Install]
+WantedBy=timers.target

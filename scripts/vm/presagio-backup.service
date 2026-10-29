@@ -1,0 +1,12 @@
+# Daily pg_dump of the collector VM database (P-044, D-058): scripts/vm/backup.sh.
+# A failure exits non-zero and shows in journalctl -u presagio-backup and systemctl --failed.
+[Unit]
+Description=Presagio daily database dump (/var/backups/presagio)
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=HOME=/root
+ExecStart=/bin/bash /opt/presagio/scripts/vm/backup.sh
+TimeoutStartSec=15min

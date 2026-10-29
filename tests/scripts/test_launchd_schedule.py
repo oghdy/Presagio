@@ -906,3 +906,129 @@ def test_connect_probe_real_database_is_true(db_engine) -> None:
     """The configured database answers SELECT 1 (skipped without one; required in CI)."""
     url = db_engine.url.render_as_string(hide_password=False)
     assert pl.connect_probe(url)() is True
+
+
+# --- the collector VM: closing captures only (P-044, D-058) -------------------------------------
+
+
+def test_odds_only_host_never_runs_the_full_run(tmp_path: Path) -> None:
+    """16:30 KST with --odds-only-host: one line, no call, no marker, no database check, exit 0."""
+    db, runner = FakeDb(up=True), FakeRunner(0)
+    code = run_at(tmp_path, kst("2026-10-23 16:30"), runner, db=db.check(), odds_only_host=True)
+    assert code == 0 and runner.calls == [] and db.probes == 0
+    (line,) = read_log(tmp_path, "2026-10-23").splitlines()
+    assert line.endswith(
+        "skip: full run is not this host's job (--odds-only-host): full base_date=2026-10-23 "
+        "at 10-23 03:00 ET (10-23 16:00 KST)"
+    )
+    assert not (tmp_path / "state" / "slots").exists()
+
+
+def test_without_the_flag_the_same_wakeup_is_the_full_run(tmp_path: Path) -> None:
+    """The Mac (no flag) at the same moment: the full run, as before."""
+    runner = FakeRunner(0)
+    assert run_at(tmp_path, kst("2026-10-23 16:30"), runner) == 0
+    assert runner.calls == [["/venv/bin/presagio", "ingest-daily", "--date", "2026-10-23"]]
+
+
+@pytest.mark.parametrize(
+    ("now", "base"),
+    [
+        ("2026-10-24 07:45", "2026-10-23"),  # Friday 18:45 EDT
+        ("2026-11-01 03:45", "2026-10-31"),  # Saturday 14:45 EDT (weekend capture)
+        ("2026-11-02 08:45", "2026-11-01"),  # Sunday 18:45 EST, after the autumn change
+    ],
+)
+def test_odds_only_host_runs_closing_captures(tmp_path: Path, now: str, base: str) -> None:
+    """Closing slots still run with --odds-only-host: `--odds-only` for the slot's ET date."""
+    db, runner = FakeDb(up=True), FakeRunner(0)
+    assert run_at(tmp_path, kst(now), runner, db=db.check(start=False), odds_only_host=True) == 0
+    assert runner.calls == [["/venv/bin/presagio", "ingest-daily", "--date", base, "--odds-only"]]
+    assert db.probes == 1 and db.starts == 0
+
+
+def test_odds_only_host_skip_has_no_reinstall_hint(tmp_path: Path) -> None:
+    """A manual start at 13:00 KST on the VM: 'no slot now' without the launchd install.sh hint."""
+    run_at(tmp_path, kst("2026-10-24 13:00"), FakeRunner(0), odds_only_host=True)
+    (line,) = read_log(tmp_path, "2026-10-24").splitlines()
+    assert line.endswith("skip: no slot now (00:00 ET, 13:00 KST)")
+
+
+def test_main_run_on_the_vm_drops_the_docker_launch(tmp_path: Path, monkeypatch) -> None:
+    """main(run --odds-only-host --no-start-docker), the VM unit's command: no `open -a Docker`."""
+    seen = []
+    monkeypatch.setattr(pl, "run", lambda **kwargs: seen.append(kwargs) or 0)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:SECRETPW@127.0.0.1:5433/db")
+    run_main(tmp_path, monkeypatch, "--no-start-docker", "--odds-only-host")
+    run_main(tmp_path, monkeypatch)
+    vm, mac = seen
+    assert vm["odds_only_host"] is True and vm["db"].start is None and vm["db"].local
+    assert mac["odds_only_host"] is False and mac["db"].start is pl.start_docker_desktop
+
+
+# --- the Mac after the switch: the full run only (P-044 criterion 7a) --------------------------
+
+
+def full_run_only_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty folder whose settings say ODDS_CLOSING_TIMES_ET= (empty), as the switched Mac."""
+    from presagio.config import get_settings
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@100.64.0.1:5433/db")
+    monkeypatch.setenv("ODDS_CLOSING_TIMES_ET", "")
+    monkeypatch.delenv("INGEST_DAILY_TIME_KST", raising=False)
+    get_settings.cache_clear()
+
+
+def test_full_run_only_calendar_and_plan(tmp_path: Path, monkeypatch, capsys) -> None:
+    """`calendar` prints 16:00 alone and a week of `plan` (both DST sides) has no closing line."""
+    from presagio.config import get_settings
+
+    full_run_only_env(tmp_path, monkeypatch)
+    try:
+        assert pl.main(["calendar"]) == 0
+        assert capsys.readouterr().out == "16:00\n"
+        assert pl.main(["plan", "--from", "2026-10-29", "--days", "7"]) == 0
+    finally:
+        get_settings.cache_clear()
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 7 and all("->  full base_date=" in line for line in lines)
+    assert not any(" odds " in line for line in lines)
+
+
+def test_full_run_only_render_is_a_valid_plist(tmp_path: Path, monkeypatch, capsys) -> None:
+    """install.sh's `render` with the empty setting: one wake-up (16:00), RunAtLoad, lint ok."""
+    from presagio.config import get_settings
+
+    full_run_only_env(tmp_path, monkeypatch)
+    try:
+        code = pl.main(
+            [
+                "render",
+                "--template",
+                str(TEMPLATE),
+                "--repo",
+                str(tmp_path),
+                "--uv",
+                "/opt/homebrew/bin/uv",
+                "--wrapper",
+                str(SCRIPT),
+                "--log-dir",
+                str(tmp_path / "logs"),
+                "--state-dir",
+                str(tmp_path / "state"),
+            ]
+        )
+    finally:
+        get_settings.cache_clear()
+    assert code == 0
+    text = capsys.readouterr().out
+    data = plistlib.loads(text.encode())
+    assert data["StartCalendarInterval"] == [{"Hour": 16, "Minute": 0}]
+    assert data["RunAtLoad"] is True
+    plutil = Path("/usr/bin/plutil")
+    if plutil.exists():  # macOS only; CI (Linux) has the plistlib parse above
+        out = tmp_path / "full-run-only.plist"
+        out.write_text(text)
+        result = subprocess.run([str(plutil), "-lint", str(out)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout

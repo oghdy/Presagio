@@ -1,0 +1,25 @@
+# Closing-capture slots on the collector VM (P-044, D-058), US Eastern wall time: systemd
+# evaluates the weekday and the clock in America/New_York (man systemd.time, "CALENDAR EVENTS";
+# systemd 255), so the daylight-saving changes need nothing here. Sources of the times:
+#   - every day 18:45, 19:45, 21:45 ET = ODDS_CLOSING_TIMES_ET (presagio.config default,
+#     DEFAULT_ODDS_CLOSING_TIMES_ET; the VM .env keeps it);
+#   - Saturday and Sunday (ET date) 14:45, 16:45 ET = WEEKEND_CLOSING_ET in
+#     scripts/launchd/presagio_launchd.py.
+# tests/scripts/test_vm_scripts.py fails if these lines and those two sources drift apart.
+# Persistent=false: a missed closing capture is not made up later (D-048); after a reboot the
+# wrapper's ±10 min rule would skip a late one anyway.
+[Unit]
+Description=Presagio closing-odds capture slots (ET)
+
+[Timer]
+OnCalendar=*-*-* 18:45:00 America/New_York
+OnCalendar=*-*-* 19:45:00 America/New_York
+OnCalendar=*-*-* 21:45:00 America/New_York
+OnCalendar=Sat,Sun *-*-* 14:45:00 America/New_York
+OnCalendar=Sat,Sun *-*-* 16:45:00 America/New_York
+AccuracySec=1s
+Persistent=false
+Unit=presagio-odds.service
+
+[Install]
+WantedBy=timers.target
