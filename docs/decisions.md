@@ -520,7 +520,7 @@
 - **다른 선택지:** (a) 집에 켜 둔 기기(남는 기기 없음), (c) 맥 유지(결손 감수), GitHub Actions 예약(지연 수십 분, 기각), 무료 티어(기각).
 - **다시 볼 때:** VM에서 nba_api 실측 결과(2항), 단계 6 배포 설계 때(VM을 그대로 운영 서버로 승격할지), 요금 변동.
 - **보완(2026-10-28 21:5x, PM — VM 생성 뒤 실측):**
-  1. **nba_api는 VM에서 안 된다(확정).** VM(DigitalOcean SGP1, `152.42.x.x`)에서 `nba_api`가 쓰는 헤더 그대로 `stats.nba.com`에 보내면 **403 "Access Denied"**(Akamai WAF 오류 페이지, 0.1 s). 같은 요청이 맥에서는 200(7.8 KB). The Odds API는 VM에서 정상 도달(키 없이 401, 0.8 s). → 2항의 "되면 본 실행도 VM으로" 후속은 열지 않는다. 본 실행은 맥에 남는다.
+  1. **nba_api는 VM에서 안 된다(확정).** VM(DigitalOcean SGP1 리전; 주소는 공유 노트에만)에서 `nba_api`가 쓰는 헤더 그대로 `stats.nba.com`에 보내면 **403 "Access Denied"**(Akamai WAF 오류 페이지, 0.1 s). 같은 요청이 맥에서는 200(7.8 KB). The Odds API는 VM에서 정상 도달(키 없이 401, 0.8 s). → 2항의 "되면 본 실행도 VM으로" 후속은 열지 않는다. 본 실행은 맥에 남는다.
   2. **예측 시점 캡처는 맥 본 실행이 계속 맡는다.** 코드상 `--odds-only`는 항상 `pre_tip` 라벨이고 `prediction` 라벨은 본 실행에서만 나온다(`incremental.py` 448·867행). 코드 변경 없이 가려면 맥 16:00 본 실행이 예측 시점 1회를 VM DB에 대고 받는다. 따라서 **`ODDS_API_KEY`는 맥·VM 양쪽 `.env`에 둔다**(2항·5항의 "맥 키 제거"는 철회). 맥이 꺼진 날은 예측 시점 캡처만 늦어지거나 빠지고(본 실행과 같은 복구 규칙), 되살릴 수 없는 마감 캡처는 VM이 지킨다.
   3. **맥 마감 슬롯 제거 방법:** `odds_snapshots`에 유일 제약이 없어 맥·VM 동시 캡처는 중복 행 + 크레딧 2배가 된다. 전환 때 맥 `.env`에 `ODDS_CLOSING_TIMES_ET=`(빈 값, `parse_clock_times('') == ()` 실측) + `install.sh` 재실행으로 깨어남을 16:00 하나로 줄인다. VM 래퍼에는 본 실행을 절대 고르지 않는 가드 플래그를 둔다(VM에서 본 실행이 켜지면 403 → exit 2 → 22h50m 차단 정지로 다음 날 캡처까지 날아가므로).
   4. **키 투입:** 사람이 맥에서 ssh 파이프 한 줄로 맥 `.env`의 `ODDS_API_KEY=` 줄을 VM `/opt/presagio/.env`에 그대로 복사한다(값이 화면·채팅·레포에 안 나옴). 레포가 PUBLIC이므로 VM 공개 IP·Tailscale 주소는 README·PR에 적지 않고 공유 노트에만 둔다.
@@ -537,6 +537,19 @@
 - **왜:** 주말 낮 경기 492개(12.4%)의 마감 커버리지(87.6% → 97.0%, D-027 개정)와 10-23~26 결손 원인 ⑤⑥을 스케줄러 쪽에서 막되, 수집 코드(`src/`)는 건드리지 않는다. 포트 프로브는 이 티켓이 막으려는 바로 그 창(DB 기동 중)에서 실패하므로 실접속으로 바꿨다.
 - **다른 선택지:** 주말 시각을 `config.py` 설정으로(data-engineer 영역·D-027 개정과 중복, 기각), `Weekday` 키(근거 두 곳, 기각), 허용폭 확대(마감 의미 흐려짐, 기각), 네이티브 Postgres로 Docker 의존 제거(단계 6/P-044에서).
 - **다시 볼 때:** 첫 주말(ET 10-31·11-01) 실측, 재부팅 뒤 로그인 RunAtLoad 실측, P-044 전환 뒤 맥 launchd가 본 실행만 남을 때(D-058), The Odds API 월 계수 기준 확인.
+
+## D-060 수집 VM 전환 절차와 P-044 구현 규칙 (PR #63 결정 제안 1~5 + 리뷰 1·2회차 + 기준 개정 2건)
+- **날짜:** 2026-10-29 (PM 수락, 사람 머지 PR #63 `c63fb3c`; 전환 ①~③ 같은 날 실행)
+- **무엇을:**
+  1. **전환 순서(기준 7(c), 사람 승인 개정):** ① 맥 DB 최종 복사 → ② `ODDS_API_KEY` 투입(사람, ssh 파이프 한 줄) → ③ 맥 `.env` 전환 + `install.sh` → ④ 다음 아침 첫 VM 자연 발화 확인(실패 시 **가벼운 되돌리기**: 맥 `ODDS_CLOSING_TIMES_ET`만 되살려 `install.sh`, VM 타이머 disable; `DATABASE_URL`은 VM 그대로) → ⑤ 다음 날 결손 쿼리. 복사는 `--clean`이라 VM이 실제로 받기 전(키 전)에, 키는 맥 전환 **직전**에(②③ 사이 슬롯은 VM이 받고 맥 사본은 버려짐 — 반대면 영영 결손). ①~③은 맥·VM 어느 쪽도 안 쓰는 창(마지막 마감 뒤 ~ 16:00 전, 또는 16:00 본 실행 뒤 ~ 다음 첫 마감 전)에서.
+  2. **"슬롯이 먼" 티켓의 실제 발화 기준은 2단계로 쓴다(기준 3(c) 개정의 일반화):** PR 시점에는 실제 시계·실제 유닛 명령으로 같은 경로를 대체 시험하고, 머지 뒤 첫 자연 발화를 PM이 확인해 backlog 메모로 남긴다. PR이 열릴 때 구조적으로 만족할 수 없는 기준은 티켓 작성 때 바로 2단계로 적는다.
+  3. **`db-copy-from-mac.sh` 덮어쓰기 가드 = VM `odds_snapshots.captured_at` distinct 집합 ⊆ 맥 집합**(아니면 멈춤, `--force`). `max()` 비교(리뷰 1회차 중간)와 `ingestion_runs.run_id` 비교(키 없는 VM `skipped` 실행 행에 걸림)는 버림. 복원은 `psql -q -1 -v ON_ERROR_STOP=1`(단일 트랜잭션; 덤프가 문장 경계에서 정확히 끊겨 EOF가 되면 앞부분만 커밋될 수 있는 작은 틈은 남음 — 리뷰 2회차 낮음 1, README 문구 완화 후속).
+  4. **VM 런타임:** `uv sync --frozen --no-dev`(셋업·배포 때만) + `uv run --no-sync`(매 실행; 잠금 해석·네트워크 없음). VM `.env`에 `COMPOSE_PROJECT_NAME`·`COMPOSE_FILE`(override `scripts/vm/compose.vm.yml`: Postgres를 Tailscale 주소:5433 + 127.0.0.1:5433에만 바인드)을 둬 `docker compose …`만으로 override가 읽힌다. 래퍼 `--odds-only-host`는 본 실행 슬롯을 `NOT_THIS_HOST`로 건너뛴다(VM에서 nba_api 403, D-058 보완 1). systemd `presagio-odds.timer`는 `OnCalendar … America/New_York`(DST 자동), `Persistent=false`(놓친 마감 슬롯 보충 없음, D-048과 같은 뜻); `presagio-backup.timer` 12:00 UTC `Persistent=true`, 14일 보관.
+  5. **Docker 드롭인 `10-after-tailscale.conf`:** `After=tailscaled.service` + `tailscale0` 주소 최대 30초 대기(재부팅 journal 실측: Docker 15.0 s, 주소 18.1 s). 30초 뒤에도 없으면 그대로 기동(127.0.0.1 바인드는 살려야 함) → 그 경우 컨테이너가 안 뜰 수 있어 README에 `systemctl restart docker` 안내. `setup.sh`는 재실행 안전(`apt-get install --no-upgrade`, unattended-upgrades는 Ubuntu 저장소만이라 Docker·Tailscale은 손 갱신), `deploy.sh`는 오류를 숨기지 않고 슬롯 창 밖에서만.
+  6. **비밀·주소:** 레포 PUBLIC → VM 공개 IP·Tailscale 주소·테일넷 이름은 README·PR·테스트·주석에 안 적고 공유 노트에만(D-058 보완 4 재확인; D-058 보완 1에 있던 공개 IP 앞자리도 리전 이름으로 고침). `ODDS_API_KEY`는 맥·VM 양쪽 `.env`에만. 맥 `.env`는 PM도 내용을 출력하지 않고 `grep -c`로만 확인한다. 전환 ③에서 `ODDS_CLOSING_TIMES_ET` 키가 맥 `.env`에 없었으므로 README의 sed 치환이 아니라 빈 줄 추가로 꺼야 했다(README 후속: "없으면 추가").
+- **왜:** 마감 배당은 되살릴 수 없는 데이터라 전환 중 한 슬롯도 빠지지 않는 순서가 필요했고(1항), VM 쪽 첫 발화는 PR 시점에 볼 수 없어 기준을 정직하게 2단계로 나눴다(2항, D-008대로 사람이 바꿈). 가드·단일 트랜잭션·`--no-sync`·드롭인 대기는 리뷰 1회차와 재부팅 실측에서 나온 구멍을 막는다.
+- **다른 선택지:** 키를 먼저 넣고 복사(복사가 VM 캡처를 덮음, 기각), `Persistent=true` 마감 보충(마감 뒤 캡처는 "마감"이 아님, 기각), `ip_nonlocal_bind=1`(전역 설정, 기각), Tailscale ssh 주소 사용(맥 known_hosts 변경, 작업자 범위 밖).
+- **다시 볼 때:** ④ 10-30 첫 발화와 ⑤ 결손 쿼리, 첫 주말(ET 10-31·11-01, DST 전환) VM 캡처, VM 메모리(961 MB, available ~520 MB) 추세, 단계 6 배포 설계 때 VM 승격 여부(D-058).
 
 ---
 
