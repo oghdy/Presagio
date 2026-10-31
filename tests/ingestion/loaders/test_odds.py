@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, text
 
+from presagio import config
 from presagio.ingestion.client import IngestionClient, db_raw_store
 from presagio.ingestion.errors import BlockedError, ClientRequestError, RetriesExhaustedError
 from presagio.ingestion.loaders import (
@@ -37,7 +38,9 @@ from ..odds_helpers import (
     E_STARTED,
     EVENTS_FIXTURE,
     FAKE_KEY,
+    MANY_EVENTS,
     PHI_CLE_GAME,
+    PRICES_PER_EVENT,
     REAL_ODDS_FIXTURE,
     REAL_OKC_DEN,
     REAL_PHI_CLE,
@@ -45,8 +48,11 @@ from ..odds_helpers import (
     as_american,
     bump_prices,
     event_of,
+    many_events,
     odds_handler,
     odds_json,
+    outcomes_of,
+    set_bad_prices,
 )
 from .conftest import NbaApiStub
 
@@ -395,27 +401,207 @@ def test_events_only_load_maps_without_prices(odds_db: Engine, odds: OddsStub) -
     assert (result.events.inserted, result.snapshots_inserted, result.mapping.matched) == (3, 0, 1)
     assert snapshot_count(odds_db) == 0
     assert runs(odds_db)[-1] == ("odds_events", "the_odds_api", "succeeded")
+    assert "warnings" not in last_detail(odds_db)  # no prices at all: nothing to warn about
     # The later /odds capture reuses the same event rows.
     assert load_odds(odds.source, odds_db).events.inserted == 0
 
 
-def test_unreadable_event_or_price_makes_the_run_partial(odds_db: Engine, odds: OddsStub) -> None:
-    """A rejected event is a failed item; a dropped price marks the run partial (D-034 3)."""
+def test_unreadable_event_is_a_failed_item_and_the_run_partial(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """A rejected event is a failed item -> partial (D-034 3); P-043 leaves this as it was."""
     data = odds_json()
     del event_of(data, E_DEN_LAC)["home_team"]
-    event_of(data, E_PHI_CLE)["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = 1.0
     odds.bodies["odds"] = data
     result = load_odds(odds.source, odds_db)
     assert list(result.failed) == [E_DEN_LAC]
-    assert result.snapshots_inserted == 11
-    run = rows(
-        odds_db,
-        "SELECT status, items_total, items_succeeded, items_failed FROM ingestion_runs"
-        " ORDER BY run_id DESC LIMIT 1",
+    assert result.snapshots_inserted == 12 and result.skipped["rejected_outcomes"] == 0
+    assert last_run(odds_db) == (
+        "partial",
+        3,
+        2,
+        1,
+        12 + 2,
+        f"the_odds_api/odds/{E_DEN_LAC}: missing field 'home_team'",
     )
-    assert run == [("partial", 3, 2, 1)]
-    kinds = [i["kind"] for i in last_detail(odds_db)["quality_issues"]]
-    assert "bad_price" in kinds
+    assert "warnings" not in last_detail(odds_db)
+
+
+def test_unusable_price_in_a_small_capture_makes_the_run_partial(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """One bad price of 18 (5.6%, over the 2% limit) still marks a small capture partial."""
+    data = odds_json()
+    event_of(data, E_PHI_CLE)["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = 1.0
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.failed == {} and result.snapshots_inserted == 17
+    assert last_run(odds_db) == (
+        "partial",
+        3,
+        3,
+        0,
+        17 + 3,
+        "1 price(s) could not be used (5.6% of 18; over ODDS_REJECTED_PRICE_MAX_RATIO 2%)",
+    )
+    detail = last_detail(odds_db)
+    assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == 1
+    assert "warnings" not in detail
+
+
+# --- P-043: a few unusable prices are a warning, many make the capture partial -------------------
+
+
+def price_line(bad: int, total: int, verdict: str, limit: str = "2%") -> str:
+    """The warning / partial message the loader writes for bad rejected prices of total."""
+    return (
+        f"{bad} price(s) could not be used ({100 * bad / total:.1f}% of {total}; "
+        f"{verdict} ODDS_REJECTED_PRICE_MAX_RATIO {limit})"
+    )
+
+
+def last_run(db: Engine) -> tuple[Any, ...]:
+    """(status, items_total, items_succeeded, items_failed, rows_written, error_message)."""
+    return rows(
+        db,
+        "SELECT status, items_total, items_succeeded, items_failed, rows_written, error_message"
+        " FROM ingestion_runs ORDER BY run_id DESC LIMIT 1",
+    )[0]
+
+
+def test_a_few_unusable_prices_are_a_warning_not_a_failure(
+    odds_db: Engine, odds: OddsStub, caplog: pytest.LogCaptureFixture
+) -> None:
+    """P-043 (a), like run 120: 1 bad price of a full slate -> succeeded, stored, warned."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    assert total == MANY_EVENTS * PRICES_PER_EVENT and set_bad_prices(data, 1) == 1
+    odds.bodies["odds"] = data
+    with caplog.at_level(logging.WARNING, logger="presagio.ingestion.runs"):
+        result = load_odds(odds.source, odds_db, capture_label="pre_tip")
+    assert result.failed == {} and result.skipped["rejected_outcomes"] == 1
+    assert result.snapshots_inserted == total - 1
+    assert snapshot_count(odds_db) == total - 1
+    line = price_line(1, total, "within")
+    assert last_run(odds_db) == (
+        "succeeded",
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - 1,
+        None,
+    )
+    detail = last_detail(odds_db)
+    bad = [i for i in detail["quality_issues"] if i["kind"] == "bad_price"]
+    assert len(bad) == 1 and bad[0]["key"] == data[0]["id"] and "1.0" in bad[0]["message"]
+    assert detail["skipped"]["rejected_outcomes"] == 1
+    assert detail["warnings"] == [line]
+    assert [r.getMessage() for r in caplog.records if r.name == "presagio.ingestion.runs"] == [
+        f"odds the_odds_api: {line}"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("bad", "status"),
+    [(5, "succeeded"), (6, "partial")],  # 5/270 = 1.9% is within 2%, 6/270 = 2.2% is over
+)
+def test_the_ratio_limit_is_inclusive(
+    odds_db: Engine, odds: OddsStub, bad: int, status: str
+) -> None:
+    """P-043 (b): up to the ODDS_REJECTED_PRICE_MAX_RATIO share -> succeeded; more -> partial."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    assert set_bad_prices(data, bad) == bad
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == total - bad
+    line = price_line(bad, total, "within" if status == "succeeded" else "over")
+    message = None if status == "succeeded" else line
+    assert last_run(odds_db) == (
+        status,
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - bad,
+        message,
+    )
+    detail = last_detail(odds_db)
+    assert detail.get("warnings") == ([line] if status == "succeeded" else None)
+    assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == bad
+
+
+def test_a_whole_bookmaker_unusable_makes_the_capture_partial(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """P-043 (b): one of three bookmakers unusable is 33% of the prices -> partial, data kept."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    bad = set_bad_prices(data, bookmaker="bovada")
+    assert bad == total // 3
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == total - bad
+    assert last_run(odds_db) == (
+        "partial",
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - bad,
+        price_line(bad, total, "over"),
+    )
+    assert "33.3% of" in last_run(odds_db)[5]
+    assert "warnings" not in last_detail(odds_db)
+
+
+@pytest.fixture
+def rejected_price_max_ratio(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
+    """Set ODDS_REJECTED_PRICE_MAX_RATIO for get_settings(); the cache is reset afterwards."""
+
+    def _set(value: str) -> None:
+        """Change the environment variable and drop the cached Settings."""
+        monkeypatch.setenv("ODDS_REJECTED_PRICE_MAX_RATIO", value)
+        config.get_settings.cache_clear()
+
+    yield _set
+    config.get_settings.cache_clear()
+
+
+def test_ratio_zero_restores_the_old_rule(
+    odds_db: Engine, odds: OddsStub, rejected_price_max_ratio: Callable[[str], None]
+) -> None:
+    """P-043 (c): ODDS_REJECTED_PRICE_MAX_RATIO=0 -> one bad price makes the capture partial."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    set_bad_prices(data, 1)
+    odds.bodies["odds"] = data
+    rejected_price_max_ratio("0")
+    load_odds(odds.source, odds_db)
+    line = price_line(1, total, "over", limit="0%")
+    assert last_run(odds_db) == (
+        "partial",
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - 1,
+        line,
+    )
+    # The explicit argument wins over the setting.
+    load_odds(odds.source, odds_db, rejected_price_max_ratio=0.5)
+    assert last_run(odds_db)[0] == "succeeded"
+
+
+def test_a_reloaded_capture_counts_its_stored_prices(odds_db: Engine, odds: OddsStub) -> None:
+    """The share uses stored + rejected: the same capture loaded again (0 new rows) warns alike."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    set_bad_prices(data, 1)
+    odds.bodies["odds"] = data
+    load_odds(odds.source, odds_db)
+    odds.clock.advance(60)
+    result = load_odds(odds.source, odds_db)  # identical bytes: same raw row, same capture
+    assert (result.snapshots_inserted, result.snapshots_duplicate) == (0, total - 1)
+    assert last_run(odds_db)[0] == "succeeded"
+    assert last_detail(odds_db)["warnings"] == [price_line(1, total, "within")]
 
 
 def test_blocked_429_aborts_and_keeps_the_raw_body(

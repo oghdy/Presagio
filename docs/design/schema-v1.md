@@ -217,7 +217,7 @@ erDiagram
 | `season_type` | `text` | NULL | `LeagueGameLog`의 `season_type_all_star` 값(`Regular Season`, `PlayIn`, `Playoffs`) |
 | `target_date_et` | `date` | NULL | 대상 동부 날짜(`ScoreboardV3(game_date=...)`에 넘긴 값) |
 | `status` | `text` | NOT NULL | `running`, `succeeded`, `partial`(일부 항목 실패), `failed`, `aborted`(403/429 등으로 즉시 중단, D-024) (CHECK) |
-| `started_at` | `timestamptz` | NOT NULL, 기본 `now()` | 시작 시각 |
+| `started_at` | `timestamptz` | NOT NULL, 기본 `now()` | 시작 시각. 코드가 파이썬(호스트) 시계 UTC로 직접 넣는다(`captured_at`·`fetched_at`과 같은 시계, P-043). `finished_at`도 같은 시계다. DB 기본값 `now()`는 손으로 INSERT할 때만 쓰인다 |
 | `finished_at` | `timestamptz` | NULL | 종료 시각. `running`일 때만 NULL (CHECK) |
 | `api_calls` | `integer` | NOT NULL, 기본 0 | 외부 호출 수(재시도 포함) |
 | `retry_count` | `integer` | NOT NULL, 기본 0 | 그중 재시도 수 |

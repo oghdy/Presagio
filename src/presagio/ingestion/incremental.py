@@ -15,7 +15,9 @@ Steps, all children of one parent run (job_type 'incremental', scope 'date_kst=<
   gamelog   LeagueGameLog of the season, once per season type of the unfinished games on
             those dates -> games results + team_game_stats (A-6: daily stats are game logs)
   upcoming  ScoreboardV3(D) -> games (schedule, 'date_et=<D>;phase=upcoming')
-  odds      The Odds API /odds once -> odds_events + odds_snapshots; 'skipped' without a key
+  odds      The Odds API /odds once -> odds_events + odds_snapshots; 'skipped' without a key.
+            A few unusable prices (at most ODDS_REJECTED_PRICE_MAX_RATIO of the capture) are
+            a warning (step succeeded, exit 0); more make the step partial (P-043)
   checks    P-020 quality checks (presagio.quality.run_checks, read only) on ET D-1; a
             'fail' or 'error' makes the step failed (exit 1), 'warn' alone does not.
             The summary goes to the parent run's error_detail.quality
@@ -30,6 +32,9 @@ date unit that already succeeded is skipped (resume, like the backfill) unless -
 
 Failures: a step that fails is recorded and the next step runs. A 403/429 stops at once and
 the parent ends 'aborted' (D-024). Exit codes as in the backfill (D-037): 0, 1, 2, 64.
+Warnings (a step that succeeded with findings: the odds warning above, quality 'warn' checks)
+are listed in the report under "Warnings (N):" and keep exit code 0. A child that ended
+'partial' makes the parent 'partial' (not 'failed', P-043); a failed child is a failed item.
 All writes are upserts; running the same day twice leaves games and team_game_stats as they
 were. Odds are snapshots: a later capture with new prices adds rows at its own captured_at.
 """
@@ -81,6 +86,7 @@ from presagio.ingestion.runs import (
     PARTIAL,
     RUNNING,
     SUCCEEDED,
+    WARNINGS_KEY,
     RunTracker,
     abort_stale_runs,
     error_line,
@@ -593,6 +599,15 @@ class StepResult:
         """Succeeded, or skipped on purpose."""
         return self.status in (SUCCEEDED, SKIPPED)
 
+    @property
+    def warnings(self) -> list[str]:
+        """The run's error_detail.warnings, plus the quality checks that ended 'warn'."""
+        found = [str(w) for w in self.detail.get(WARNINGS_KEY, [])]
+        quality = self.detail.get("quality") or {}
+        if quality.get(WARN):
+            found.append(f"quality checks warn: {', '.join(quality[WARN])}")
+        return found
+
 
 @dataclass
 class DailyReport:
@@ -608,6 +623,11 @@ class DailyReport:
     def failures(self) -> list[StepResult]:
         """Steps that did not end succeeded or skipped."""
         return [r for r in self.results if not r.ok]
+
+    @property
+    def warnings(self) -> list[tuple[StepResult, str]]:
+        """(step, warning) of steps that ended ok but with findings; exit code stays 0."""
+        return [(r, w) for r in self.results if r.ok for w in r.warnings]
 
     @property
     def exit_code(self) -> int:
@@ -700,6 +720,7 @@ class DailyRunner:
         self.clock = clock
         self.report = DailyReport(plan)
         self.parent: RunTracker | None = None
+        self._partial_steps: list[str] = []
 
     def run(self) -> DailyReport:
         """Run every step; raises RunAlreadyRunningError if this day's run is still running."""
@@ -810,6 +831,12 @@ class DailyRunner:
         )
         if result.ok:
             self.parent.item_succeeded()
+        elif result.status == PARTIAL:
+            # Most of the step's data is in: the parent is partial too, not failed (P-043).
+            self._partial_steps.append(
+                f"{result.step} {result.scope_key}: {result.status}: {result.error or '-'}"
+            )
+            self.parent.mark_partial("; ".join(self._partial_steps))
         else:
             self.parent.item_failed(
                 f"{result.step} {result.scope_key}", f"{result.status}: {result.error or '-'}"
@@ -1153,12 +1180,13 @@ def print_report(report: DailyReport) -> None:
             if r.run_id is not None
             else ""
         )
+        warned = len(r.warnings) if r.ok else 0
         rows.append(
             (
                 n,
                 r.step,
                 r.scope_key,
-                r.status,
+                f"{r.status} ({warned} warning{'s' * (warned != 1)})" if warned else r.status,
                 r.api_calls,
                 items,
                 r.rows_written,
@@ -1202,6 +1230,10 @@ def print_report(report: DailyReport) -> None:
             for status in (FAIL, ERROR, WARN):
                 if quality[status]:
                     print(f"  {status}: {', '.join(quality[status])}")
+    if report.warnings:
+        print(f"\nWarnings ({len(report.warnings)}):")
+        for r, warning in report.warnings:
+            print(f"  - {r.step} {r.scope_key}: {warning}")
     if report.failures:
         print(f"\nNot done ({len(report.failures)}):")
         for r in report.failures:
