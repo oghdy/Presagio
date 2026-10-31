@@ -12,6 +12,10 @@
 - Mapping (A-9), only here: both team names known in team_aliases and exactly one game with
   those home/away teams starting within +-6 h of commence_time. Otherwise game_id stays NULL
   and a quality issue says why; remap_unmatched_events retries once games are loaded.
+- Prices the adapter could not use (bad_price etc., skipped['rejected_outcomes']) are a
+  warning while they are at most ODDS_REJECTED_PRICE_MAX_RATIO of the capture's prices
+  (stored + rejected); above that the run ends 'partial' (P-043, D-034 3 applied in
+  proportion). An event the adapter rejected whole is still a failed item (partial/failed).
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, and_, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from presagio.config import get_settings
 from presagio.db.models import Game, OddsEvent, OddsSnapshot, RawApiResponse, Team, TeamAlias
 from presagio.ingestion.loaders.base import (
     INSERTED,
@@ -371,8 +376,29 @@ def store_odds_batch(conn: Connection, batch: OddsBatch) -> OddsLoadResult:
     )
 
 
-def _record(run: RunTracker, batch: OddsBatch, result: OddsLoadResult) -> None:
-    """Write a stored batch's counts, quota and issues into the run."""
+def rejected_price_line(rejected: int, stored: int, max_ratio: float) -> tuple[bool, str]:
+    """(within the limit?, one line) for a capture with rejected unusable prices.
+
+    The share is rejected / (stored + rejected); stored are the capture's prices now in
+    odds_snapshots (inserted, or already there from an earlier load of the same capture).
+    """
+    total = stored + rejected
+    ratio = rejected / total
+    verdict = "within" if ratio <= max_ratio else "over"
+    line = (
+        f"{rejected} price(s) could not be used ({100 * ratio:.1f}% of {total}; "
+        f"{verdict} ODDS_REJECTED_PRICE_MAX_RATIO {100 * max_ratio:g}%)"
+    )
+    return ratio <= max_ratio, line
+
+
+def _record(
+    run: RunTracker,
+    batch: OddsBatch,
+    result: OddsLoadResult,
+    rejected_price_max_ratio: float | None = None,
+) -> None:
+    """Write a stored batch's counts, quota and issues into the run; judge rejected prices."""
     # A repeated event id is one item (stored once, its repeats are issues).
     listed = {event.source_event_id for event in batch.events}
     run.items_total = len(listed) + len(batch.rejected)
@@ -397,8 +423,16 @@ def _record(run: RunTracker, batch: OddsBatch, result: OddsLoadResult) -> None:
     record_issues(run, result.issues)
     rejected_prices = result.skipped.get(SKIPPED_REJECTED_OUTCOMES, 0)
     if rejected_prices:
-        # A price we could not read is lost for this capture: say so loudly (D-034 3).
-        run.mark_partial(f"{rejected_prices} price(s) could not be used")
+        # A price we could not read is lost for this capture: say so loudly (D-034 3). A few
+        # (at most the configured share) are a warning; more make the capture partial (P-043).
+        if rejected_price_max_ratio is None:
+            rejected_price_max_ratio = get_settings().odds_rejected_price_max_ratio
+        stored = result.snapshots_inserted + result.snapshots_duplicate
+        within, line = rejected_price_line(rejected_prices, stored, rejected_price_max_ratio)
+        if within:
+            run.warn(line)
+        else:
+            run.mark_partial(line)
 
 
 def load_odds(
@@ -407,15 +441,19 @@ def load_odds(
     *,
     capture_label: str | None = None,
     stale_after_hours: float | None = None,
+    rejected_price_max_ratio: float | None = None,
 ) -> OddsLoadResult:
-    """Capture current odds once and store them as one ingestion run (job_type 'odds')."""
+    """Capture current odds once and store them as one ingestion run (job_type 'odds').
+
+    rejected_price_max_ratio defaults to the ODDS_REJECTED_PRICE_MAX_RATIO setting.
+    """
     with track_run(
         engine, JOB_ODDS, source.name, source=source.name, stale_after_hours=stale_after_hours
     ) as run:
         batch = source.fetch_odds(run, capture_label=capture_label)
         with engine.begin() as conn:
             result = store_odds_batch(conn, batch)
-        _record(run, batch, result)
+        _record(run, batch, result, rejected_price_max_ratio)
     return result
 
 

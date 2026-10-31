@@ -12,16 +12,21 @@ job_type values (schema v1 ch. 4 leaves them unchecked in the DB; start_run chec
 
 A run opened inside another track_run block becomes its child (parent_run_id), and every run
 records code_version (git commit, or the package version when git is not available).
+
+started_at and finished_at are host-clock values (datetime.now(UTC), the clock of captured_at
+and fetched_at), written by this module rather than left to the column default (P-043): after
+a laptop sleeps, the Docker VM's clock lagged 17 minutes behind the host, and now() put a run
+before its own capture. The clock can be injected (utc_now, or the clock= arguments) in tests.
 """
 
 from __future__ import annotations
 
 import logging
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from importlib import metadata
 from pathlib import Path
@@ -63,6 +68,15 @@ FINAL_STATUSES = frozenset({SUCCEEDED, PARTIAL, FAILED, ABORTED})
 
 # Keep error_message to one short line; details belong in error_detail.
 MAX_ERROR_MESSAGE = 500
+# error_detail key under which warnings (findings that do not change the status) are kept.
+WARNINGS_KEY = "warnings"
+
+Clock = Callable[[], datetime]
+
+
+def utc_now() -> datetime:
+    """The host clock in UTC: the time written to started_at and finished_at."""
+    return datetime.now(UTC)
 
 
 def error_line(exc: BaseException) -> str:
@@ -75,12 +89,23 @@ def error_line(exc: BaseException) -> str:
 class RunTracker:
     """An open ingestion_runs row; counters accumulate in memory and are written on finish."""
 
-    def __init__(self, engine: Engine, run_id: int, job_type: str, scope_key: str) -> None:
-        """Wrap an already inserted 'running' row."""
+    def __init__(
+        self,
+        engine: Engine,
+        run_id: int,
+        job_type: str,
+        scope_key: str,
+        *,
+        started_at: datetime | None = None,
+        clock: Clock | None = None,
+    ) -> None:
+        """Wrap an already inserted 'running' row; clock (default utc_now) stamps finished_at."""
         self.engine = engine
         self.run_id = run_id
         self.job_type = job_type
         self.scope_key = scope_key
+        self.clock: Clock = clock if clock is not None else utc_now
+        self.started_at = started_at
         self.api_calls = 0
         self.retry_count = 0
         self.items_total: int | None = None
@@ -115,6 +140,16 @@ class RunTracker:
         self._partial_reason = reason[:MAX_ERROR_MESSAGE]
         self.detail.update(detail)
 
+    def warn(self, message: str) -> None:
+        """Log a warning and keep it in error_detail.warnings; the status does not change."""
+        logger.warning("%s %s: %s", self.job_type, self.scope_key, message)
+        self.detail.setdefault(WARNINGS_KEY, []).append(message[:MAX_ERROR_MESSAGE])
+
+    @property
+    def warnings(self) -> list[str]:
+        """Warnings recorded so far."""
+        return list(self.detail.get(WARNINGS_KEY, []))
+
     def outcome(self) -> str:
         """Status for a run whose body finished without raising."""
         if self.items_failed and not self.items_succeeded:
@@ -147,8 +182,9 @@ class RunTracker:
                 .where(RUNS.c.status == RUNNING)
                 .values(
                     status=status,
-                    # DB clock for both ends of the run, so finished_at >= started_at holds.
-                    finished_at=func.now(),
+                    # Host clock, like started_at (same clock at both ends); never earlier than
+                    # started_at even if the clock stepped back, so finished_after_started holds.
+                    finished_at=func.greatest(self.clock(), RUNS.c.started_at),
                     api_calls=self.api_calls,
                     retry_count=self.retry_count,
                     items_total=self.items_total,
@@ -177,15 +213,25 @@ class RunTracker:
         return False
 
 
-def abort_stale_runs(engine: Engine, older_than_hours: float, job_type: str | None = None) -> int:
+def abort_stale_runs(
+    engine: Engine,
+    older_than_hours: float,
+    job_type: str | None = None,
+    *,
+    clock: Clock | None = None,
+) -> int:
     """Close 'running' rows older than the limit as 'aborted' (crashed processes); return count."""
+    now = (clock if clock is not None else utc_now)()
     stmt = (
         update(RUNS)
         .where(RUNS.c.status == RUNNING)
+        # The DB clock (now()) is compared with host-clock started_at values here. The two can
+        # differ by minutes (the Docker VM after a sleep), the limit is hours: good enough.
         .where(RUNS.c.started_at < func.now() - timedelta(hours=older_than_hours))
         .values(
             status=ABORTED,
-            finished_at=func.now(),
+            # Host clock, guarded like RunTracker.finish (finished_after_started).
+            finished_at=func.greatest(now, RUNS.c.started_at),
             error_message=f"stale: still running after {older_than_hours:g} h (process died?)",
         )
     )
@@ -232,15 +278,20 @@ def start_run(
     target_date_et: date | None = None,
     items_total: int | None = None,
     code_version: str | None = None,
+    clock: Clock | None = None,
 ) -> RunTracker:
     """Insert a 'running' row; raises RunAlreadyRunningError if this unit is already running.
 
     code_version defaults to current_code_version() (git commit or package version).
+    started_at is clock() (default utc_now, the host clock), not the column's DB default.
     """
     if job_type not in JOB_TYPES:
         raise ValueError(f"unknown job_type {job_type!r}; add it to JOB_TYPES with a docstring")
     if code_version is None:
         code_version = current_code_version()
+    if clock is None:
+        clock = utc_now
+    started_at = clock()
     values = {
         "job_type": job_type,
         "scope_key": scope_key,
@@ -252,6 +303,7 @@ def start_run(
         "items_total": items_total,
         "code_version": code_version,
         "status": RUNNING,
+        "started_at": started_at,
     }
     try:
         with engine.begin() as conn:
@@ -261,7 +313,7 @@ def start_run(
         if "uq_ingestion_runs_one_running" in str(exc.orig):
             raise RunAlreadyRunningError(f"{job_type} {scope_key} is already running") from None
         raise
-    tracker = RunTracker(engine, run_id, job_type, scope_key)
+    tracker = RunTracker(engine, run_id, job_type, scope_key, started_at=started_at, clock=clock)
     tracker.items_total = items_total
     return tracker
 
@@ -277,6 +329,7 @@ def track_run(
     scope_key: str,
     *,
     stale_after_hours: float | None = None,
+    clock: Clock | None = None,
     **fields: Any,
 ) -> Iterator[RunTracker]:
     """Run the block as one ingestion_runs row: succeeded/partial, failed, or aborted on block.
@@ -284,12 +337,13 @@ def track_run(
     Before starting, 'running' rows of this job_type older than stale_after_hours (default:
     settings STALE_RUN_HOURS) are closed 'aborted', so a dead process cannot block the unit
     forever (D-032 follow-up a). parent defaults to the enclosing track_run block, if any.
+    clock (default utc_now) stamps started_at and finished_at.
     """
     if stale_after_hours is None:
         stale_after_hours = get_settings().stale_run_hours
-    abort_stale_runs(engine, stale_after_hours, job_type=job_type)
+    abort_stale_runs(engine, stale_after_hours, job_type=job_type, clock=clock)
     fields.setdefault("parent", _CURRENT_RUN.get())
-    run = start_run(engine, job_type, scope_key, **fields)
+    run = start_run(engine, job_type, scope_key, clock=clock, **fields)
     token = _CURRENT_RUN.set(run)
     try:
         yield run
@@ -312,7 +366,8 @@ def has_succeeded(
     """True if this work unit has a 'succeeded' run (resume check, query Q9).
 
     With started_after, only a run that started after that moment counts (e.g. after the
-    season was over, so the stored data is final).
+    season was over, so the stored data is final). started_at is a host-clock value, so a
+    host-clock started_after compares like with like.
     """
     stmt = (
         select(RUNS.c.run_id)

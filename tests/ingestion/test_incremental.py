@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import Engine, func, select, text
 
 import presagio.db.models  # noqa: F401  (registers every table on Base.metadata)
+from presagio import config
 from presagio.cli import main
 from presagio.config import Settings
 from presagio.db.base import Base
@@ -29,6 +30,7 @@ from presagio.ingestion.incremental import (
     capture_times,
     korean_today,
     plan_daily,
+    print_report,
     result_date,
     run_daily,
 )
@@ -47,11 +49,15 @@ from presagio.quality import CHECK_NAMES, CheckResult, QualityReport, Scope
 from .helpers import FakeClock, fixture_bytes, fixture_json, fixture_name, html, json_bytes
 from .odds_helpers import (
     FAKE_KEY,
+    MANY_EVENTS,
     QUOTA,
     REAL_ODDS_FIXTURE,
     REAL_SAS_LAL,
     bump_prices,
+    many_events,
     odds_json,
+    outcomes_of,
+    set_bad_prices,
 )
 
 KST_OCT22 = date(2026, 10, 22)  # yesterday ET 10-21 (no games here), today ET 10-22
@@ -752,6 +758,159 @@ def test_dry_run_does_not_run_quality_checks(db: Engine, world: World, capsys) -
     out = capsys.readouterr().out
     assert "P-020 quality checks on yesterday (ET), read only" in out
     assert "Quality checks (" not in out and runs(db, job_type="incremental") == []
+
+
+# --- P-043: odds warnings vs partial, parent status, the Warnings section ------------------------
+
+
+def odds_body(bad: int | None = None, *, bookmaker: str | None = None) -> tuple[list[Any], int]:
+    """A full-slate /odds body with bad prices set; returns (body, number of prices)."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    if bad is not None or bookmaker is not None:
+        set_bad_prices(data, bad, bookmaker=bookmaker)
+    return data, total
+
+
+def step_statuses(parent: Any) -> dict[str, str]:
+    """step -> status as the parent run recorded them."""
+    return {s["step"]: s["status"] for s in parent.error_detail["steps"]}
+
+
+def test_a_few_unusable_prices_keep_exit_0_with_a_warning(db: Engine, world: World, capsys) -> None:
+    """P-043 (a): --odds-only with 1 bad price -> child and parent succeeded, exit 0, Warnings."""
+    world.odds, total = odds_body(1)
+    assert ingest(db, world, KST_OCT22, "--odds-only") == 0
+    (parent,) = runs(db, job_type="incremental")
+    (child,) = runs(db, job_type="odds")
+    assert (parent.status, child.status) == ("succeeded", "succeeded")
+    assert parent.error_message is None and child.error_message is None
+    assert (parent.items_total, parent.items_succeeded, parent.items_failed) == (1, 1, 0)
+    assert (child.items_succeeded, child.rows_written) == (MANY_EVENTS, MANY_EVENTS + total - 1)
+    line = (
+        f"1 price(s) could not be used (0.4% of {total}; within ODDS_REJECTED_PRICE_MAX_RATIO 2%)"
+    )
+    assert child.error_detail["warnings"] == [line]
+    assert sum(i["kind"] == "bad_price" for i in child.error_detail["quality_issues"]) == 1
+    assert "warnings" not in parent.error_detail
+    out = capsys.readouterr().out
+    assert "succeeded (1 warning)" in out
+    assert f"\nWarnings (1):\n  - odds the_odds_api: {line}\n" in out
+    assert "Not done" not in out and out.rstrip().endswith("Exit code 0")
+
+
+def test_too_many_unusable_prices_make_the_step_and_the_parent_partial(
+    db: Engine, world: World, capsys
+) -> None:
+    """P-043 (b)+(e): a whole bookmaker unusable -> odds partial, parent partial (not failed), 1."""
+    world.odds, total = odds_body(bookmaker="bovada")
+    assert ingest(db, world, KST_OCT22, "--odds-only") == 1
+    (parent,) = runs(db, job_type="incremental")
+    (child,) = runs(db, job_type="odds")
+    assert (parent.status, child.status) == ("partial", "partial")
+    line = (
+        f"{total // 3} price(s) could not be used (33.3% of {total}; "
+        "over ODDS_REJECTED_PRICE_MAX_RATIO 2%)"
+    )
+    assert child.error_message == line and "warnings" not in child.error_detail
+    assert child.rows_written == MANY_EVENTS + total - total // 3  # the usable prices are in
+    assert parent.error_message == f"odds the_odds_api: partial: {line}"
+    assert (parent.items_total, parent.items_succeeded, parent.items_failed) == (1, 0, 0)
+    assert "failed_items" not in parent.error_detail
+    out = capsys.readouterr().out
+    assert "Warnings" not in out
+    assert f"\nNot done (1):\n  - odds the_odds_api: partial: {line}\n" in out
+    assert out.rstrip().endswith("Exit code 1")
+
+
+@pytest.fixture
+def ratio_zero(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """ODDS_REJECTED_PRICE_MAX_RATIO=0 for get_settings(); the cache is reset afterwards."""
+    monkeypatch.setenv("ODDS_REJECTED_PRICE_MAX_RATIO", "0")
+    config.get_settings.cache_clear()
+    yield
+    config.get_settings.cache_clear()
+
+
+def test_ratio_zero_keeps_the_old_partial_and_exit_1(db: Engine, world: World, ratio_zero) -> None:
+    """P-043 (c): with the setting at 0, one bad price is partial and exit 1 as before."""
+    world.odds, total = odds_body(1)
+    assert ingest(db, world, KST_OCT22, "--odds-only") == 1
+    (parent,) = runs(db, job_type="incremental")
+    (child,) = runs(db, job_type="odds")
+    assert (parent.status, child.status) == ("partial", "partial")
+    assert child.error_message == (
+        f"1 price(s) could not be used (0.4% of {total}; over ODDS_REJECTED_PRICE_MAX_RATIO 0%)"
+    )
+
+
+def test_a_partial_step_makes_a_full_run_partial(db: Engine, world: World, capsys) -> None:
+    """P-043 (e): in the 4-step run a partial odds step leaves the parent partial, exit 1."""
+    world.odds, total = odds_body(bookmaker="bovada")
+    assert ingest(db, world, KST_OCT22) == 1
+    (parent,) = runs(db, job_type="incremental")
+    assert parent.status == "partial"
+    assert step_statuses(parent) == {
+        "teams": "skipped",
+        "results": "succeeded",
+        "gamelog": "skipped",
+        "upcoming": "succeeded",
+        "odds": "partial",
+        "checks": "succeeded",
+    }
+    assert (parent.items_total, parent.items_succeeded, parent.items_failed) == (6, 5, 0)
+    assert parent.error_message.startswith("odds the_odds_api: partial: ")
+    out = capsys.readouterr().out
+    assert "Not done (1):" in out and "Exit code 1" in out
+
+
+def test_a_failed_only_step_makes_the_parent_failed(db: Engine, world: World, capsys) -> None:
+    """P-043 (e): --odds-only whose one step fails (HTTP 500) -> parent failed, exit 1.
+
+    With other steps succeeded a failed step leaves the parent partial
+    (test_a_failed_step_does_not_stop_the_next).
+    """
+    world.blocked["odds"] = 500
+    assert ingest(db, world, KST_OCT22, "--odds-only") == 1
+    (parent,) = runs(db, job_type="incremental")
+    (child,) = runs(db, job_type="odds")
+    assert (parent.status, child.status) == ("failed", "failed")
+    assert (parent.items_total, parent.items_succeeded, parent.items_failed) == (1, 0, 1)
+    assert parent.error_detail["failed_items"][0]["key"] == "odds the_odds_api"
+    assert "Not done (1):" in capsys.readouterr().out
+
+
+def test_quality_warnings_are_listed_in_the_warnings_section(
+    db: Engine, world: World, capsys
+) -> None:
+    """A quality check that ends 'warn' is a Warnings line too; the exit code stays 0."""
+
+    def warn_only(engine: Engine, day: date) -> QualityReport:
+        """A report with one passing and one warning check for the day."""
+        return QualityReport(
+            Scope(date_et=day),
+            (
+                CheckResult("team_rows_per_game", "final games", "pass", 2, 0, (), "ok"),
+                CheckResult("past_games_not_final", "games", "warn", 2, 1, (OKC_DEN,), "late"),
+            ),
+        )
+
+    world.odds, _ = odds_body(1)
+    world.clock.wall = RUN_AT[KST_OCT22]
+    plan = plan_daily(db, DailyRequest(KST_OCT22), odds_enabled=True)
+    report = run_daily(db, plan, world.sources(db), quality=warn_only)
+    print_report(report)
+    assert report.exit_code == 0 and report.parent_status == "succeeded"
+    assert [(r.step, w) for r, w in report.warnings] == [
+        ("odds", report.results[-2].warnings[0]),
+        ("checks", "quality checks warn: past_games_not_final"),
+    ]
+    out = capsys.readouterr().out
+    assert "Warnings (2):" in out
+    assert "  - odds the_odds_api: 1 price(s) could not be used" in out
+    assert "  - checks date_et=2026-10-21: quality checks warn: past_games_not_final" in out
+    assert "warn: past_games_not_final" in out  # the Quality checks block still names it
+    assert out.rstrip().endswith("Exit code 0")
 
 
 # --- odds loader: a repeated event id (P-019 review L1) -------------------------------------------
