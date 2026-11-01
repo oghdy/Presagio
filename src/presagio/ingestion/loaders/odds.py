@@ -12,10 +12,13 @@
 - Mapping (A-9), only here: both team names known in team_aliases and exactly one game with
   those home/away teams starting within +-6 h of commence_time. Otherwise game_id stays NULL
   and a quality issue says why; remap_unmatched_events retries once games are loaded.
-- Prices the adapter could not use (bad_price etc., skipped['rejected_outcomes']) are a
-  warning while they are at most ODDS_REJECTED_PRICE_MAX_RATIO of the capture's prices
-  (stored + rejected); above that the run ends 'partial' (P-043, D-034 3 applied in
-  proportion). An event the adapter rejected whole is still a failed item (partial/failed).
+- Prices the adapter could not use (bad_price etc.) of events not yet started at captured_at
+  (skipped['rejected_outcomes']) are a warning while they are at most
+  ODDS_REJECTED_PRICE_MAX_RATIO of the capture's prices (stored + rejected); above that the run
+  ends 'partial' (P-043, D-034 3 applied in proportion). Unusable prices of events that had
+  already started (skipped['rejected_outcomes_started']) are not lost data, since every price
+  of a started event is dropped: they stay quality issues and never count (Q-027). An event
+  the adapter rejected whole is still a failed item (partial/failed).
 """
 
 from __future__ import annotations
@@ -377,7 +380,7 @@ def store_odds_batch(conn: Connection, batch: OddsBatch) -> OddsLoadResult:
 
 
 def rejected_price_line(rejected: int, stored: int, max_ratio: float) -> tuple[bool, str]:
-    """(within the limit?, one line) for a capture with rejected unusable prices.
+    """(within the limit?, one line) for a capture with unusable prices of upcoming events.
 
     The share is rejected / (stored + rejected); stored are the capture's prices now in
     odds_snapshots (inserted, or already there from an earlier load of the same capture).
@@ -386,7 +389,8 @@ def rejected_price_line(rejected: int, stored: int, max_ratio: float) -> tuple[b
     ratio = rejected / total
     verdict = "within" if ratio <= max_ratio else "over"
     line = (
-        f"{rejected} price(s) could not be used ({100 * ratio:.1f}% of {total}; "
+        f"{rejected} price(s) of upcoming events could not be used "
+        f"({rejected}/{total} = {100 * ratio:.2f}%; "
         f"{verdict} ODDS_REJECTED_PRICE_MAX_RATIO {100 * max_ratio:g}%)"
     )
     return ratio <= max_ratio, line
@@ -421,6 +425,8 @@ def _record(
         quota=dict(batch.quota),
     )
     record_issues(run, result.issues)
+    # Only unusable prices of events not yet started count: those of started events would
+    # have been dropped anyway (Q-027). They stay in quality_issues and skipped.
     rejected_prices = result.skipped.get(SKIPPED_REJECTED_OUTCOMES, 0)
     if rejected_prices:
         # A price we could not read is lost for this capture: say so loudly (D-034 3). A few

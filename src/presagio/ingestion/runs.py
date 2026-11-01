@@ -151,8 +151,12 @@ class RunTracker:
         return list(self.detail.get(WARNINGS_KEY, []))
 
     def outcome(self) -> str:
-        """Status for a run whose body finished without raising."""
-        if self.items_failed and not self.items_succeeded:
+        """Status for a run whose body finished without raising.
+
+        Every item failed and nothing succeeded -> failed, unless mark_partial was called:
+        then something was stored (e.g. a child step ended partial), so partial (P-043 4).
+        """
+        if self.items_failed and not self.items_succeeded and self._partial_reason is None:
             return FAILED
         if self.items_failed or self._partial_reason is not None:
             return PARTIAL
@@ -225,9 +229,9 @@ def abort_stale_runs(
     stmt = (
         update(RUNS)
         .where(RUNS.c.status == RUNNING)
-        # The DB clock (now()) is compared with host-clock started_at values here. The two can
-        # differ by minutes (the Docker VM after a sleep), the limit is hours: good enough.
-        .where(RUNS.c.started_at < func.now() - timedelta(hours=older_than_hours))
+        # Host clock against host-clock started_at (same clock as the rows), never the DB's
+        # now(): a host lagging the DB by more than the limit must not abort a live run.
+        .where(RUNS.c.started_at < now - timedelta(hours=older_than_hours))
         .values(
             status=ABORTED,
             # Host clock, guarded like RunTracker.finish (finished_after_started).

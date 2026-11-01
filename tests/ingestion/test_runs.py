@@ -385,3 +385,45 @@ def test_stale_rows_are_closed_with_the_host_clock(engine: Engine) -> None:
     row = _row(engine, dead)
     assert row.status == "aborted" and row.finished_at == at
     assert _finished_after_start(engine, dead)
+
+
+def test_partial_plus_failed_children_with_no_success_leave_the_parent_partial(
+    engine: Engine,
+) -> None:
+    """Review 1 (low 2): a partial child and a failed child, nothing succeeded -> parent partial.
+
+    The parent is recorded the way incremental._record does it: the failed child is a failed
+    item, the partial child a mark_partial reason. Something was stored, so not 'failed'.
+    """
+    with track_run(engine, "incremental", "date_kst=2026-10-24;odds_only") as parent:
+        with track_run(engine, "odds", "the_odds_api") as odds:
+            odds.item_succeeded(rows_written=180)
+            odds.mark_partial("90 price(s) of upcoming events could not be used")
+        with pytest.raises(RuntimeError), track_run(engine, "odds_events", "the_odds_api"):
+            raise RuntimeError("boom")
+        parent.mark_partial("odds the_odds_api: partial: 90 price(s) ...")
+        parent.item_failed("odds_events the_odds_api", "failed: RuntimeError: boom")
+    row = _row(engine, parent.run_id)
+    assert (row.status, row.items_succeeded, row.items_failed) == ("partial", 0, 1)
+    assert row.error_message == "failed: RuntimeError: boom"
+    assert _row(engine, odds.run_id).status == "partial"
+
+
+def test_a_failed_only_run_without_a_partial_reason_is_still_failed(engine: Engine) -> None:
+    """The old rule holds when nothing was marked partial: all items failed -> failed."""
+    with track_run(engine, "incremental", "date_kst=2026-10-25;odds_only") as parent:
+        parent.item_failed("odds the_odds_api", "failed: boom")
+    assert _row(engine, parent.run_id).status == "failed"
+
+
+def test_stale_age_is_measured_on_the_host_clock(engine: Engine) -> None:
+    """Review 1 (low 4): a host lagging the DB by more than the limit must not abort a live
+    run; a host ahead sees a row started 7 h ago (by its own clock) as stale."""
+    live = start_run(engine, "schedule", "season=2025-26", clock=HostClock(T_START))
+    behind = HostClock(T_START + timedelta(hours=1))  # 1 h later on the same host clock
+    assert abort_stale_runs(engine, 6, clock=behind) == 0  # even though the DB is days ahead
+    assert _row(engine, live.run_id).status == "running"
+    ahead = HostClock(T_START + timedelta(hours=7))
+    assert abort_stale_runs(engine, 6, clock=ahead) == 1
+    row = _row(engine, live.run_id)
+    assert row.status == "aborted" and row.finished_at == ahead.now

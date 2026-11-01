@@ -34,6 +34,7 @@ QUOTA = {"x-requests-remaining": "497", "x-requests-used": "3", "x-requests-last
 PRICES_PER_EVENT = 18
 MANY_EVENTS = 15  # every team once: a full slate, like the P-043 captures (run 120: 15 events)
 MANY_FIRST_COMMENCE = datetime(2026, 10, 25, 0, 0, tzinfo=UTC)  # after every test run time
+MANY_STARTED_COMMENCE = datetime(2026, 10, 21, 0, 0, tzinfo=UTC)  # before every test run time
 
 
 def odds_json(name: str = ODDS_FIXTURE) -> Any:
@@ -92,11 +93,13 @@ def odds_handler(
     return handler
 
 
-def many_events(count: int = MANY_EVENTS) -> list[dict[str, Any]]:
+def many_events(count: int = MANY_EVENTS, *, started: int = 0) -> list[dict[str, Any]]:
     """A /odds body of count events (every NBA team once), PRICES_PER_EVENT prices each.
 
     Each event copies the real fixture's PHI-CLE event (3 bookmakers, h2h/spreads/totals)
     with its own id, teams and a commence time from MANY_FIRST_COMMENCE on, one hour apart.
+    The first `started` events commence from MANY_STARTED_COMMENCE instead (already started
+    at any test capture time, so the adapter drops their prices).
     """
     if not 0 <= count <= len(TEAM_NAME_SEED) // 2:
         raise ValueError(f"count must be 0..{len(TEAM_NAME_SEED) // 2}")
@@ -109,9 +112,8 @@ def many_events(count: int = MANY_EVENTS) -> list[dict[str, Any]]:
         event = copy.deepcopy(template)
         event["id"] = f"p043-synthetic-{i:02d}"
         event["home_team"], event["away_team"] = home, away
-        event["commence_time"] = (MANY_FIRST_COMMENCE + timedelta(hours=i)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        first = MANY_STARTED_COMMENCE if i < started else MANY_FIRST_COMMENCE
+        event["commence_time"] = (first + timedelta(hours=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
         renamed = {template["home_team"]: home, template["away_team"]: away}
         for outcome in outcomes_of([event]):
             outcome["name"] = renamed.get(outcome["name"], outcome["name"])
@@ -120,16 +122,23 @@ def many_events(count: int = MANY_EVENTS) -> list[dict[str, Any]]:
 
 
 def set_bad_prices(
-    data: list[dict[str, Any]], count: int | None = None, *, bookmaker: str | None = None
+    data: list[dict[str, Any]],
+    count: int | None = None,
+    *,
+    bookmaker: str | None = None,
+    event: int | None = None,
 ) -> int:
-    """Set the first count prices (all when None; only one bookmaker's when given) to 1.0.
+    """Set the first count prices (all when None; one bookmaker's / one event's when given) to 1.0.
 
     1.0 is a price the adapter refuses (probability 100%), so each becomes a 'bad_price'
-    issue counted in skipped['rejected_outcomes']. Returns how many were changed.
+    issue counted in skipped['rejected_outcomes'] (or ..._started when the event has started).
+    Returns how many were changed.
     """
     changed = 0
-    for event in data:
-        for book in event.get("bookmakers", []):
+    for index, item in enumerate(data):
+        if event is not None and index != event:
+            continue
+        for book in item.get("bookmakers", []):
             if bookmaker is not None and book["key"] != bookmaker:
                 continue
             for market in book["markets"]:
@@ -139,3 +148,11 @@ def set_bad_prices(
                     outcome["price"] = 1.0
                     changed += 1
     return changed
+
+
+def price_line(bad: int, total: int, verdict: str, limit: str = "2%") -> str:
+    """The warning / partial message the loader writes for bad unusable prices of total."""
+    return (
+        f"{bad} price(s) of upcoming events could not be used ({bad}/{total} = "
+        f"{100 * bad / total:.2f}%; {verdict} ODDS_REJECTED_PRICE_MAX_RATIO {limit})"
+    )

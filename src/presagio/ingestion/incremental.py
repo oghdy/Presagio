@@ -282,11 +282,13 @@ def latest_runs(engine: Engine, job_type: str, scope_keys: Iterable[str]) -> dic
 
 
 def recent_teams_run(engine: Engine, scope_key: str, hours: float) -> LatestRun | None:
-    """A teams run that succeeded within the last hours, by the database clock. Read only."""
+    """A teams run that succeeded within the last hours (DB now() vs host started_at). Read only."""
     stmt = (
         select(RUNS.c.run_id, RUNS.c.status, RUNS.c.started_at)
         .where(RUNS.c.job_type == JOB_TEAMS, RUNS.c.scope_key == scope_key)
         .where(RUNS.c.status == SUCCEEDED)
+        # The DB clock against host-clock started_at (P-043): they can differ by minutes, the
+        # window is a week (TEAMS_REFRESH_HOURS), so the mix is harmless here.
         .where(RUNS.c.started_at > func.now() - timedelta(hours=hours))
         .order_by(RUNS.c.run_id.desc())
         .limit(1)

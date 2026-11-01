@@ -1,7 +1,7 @@
 """odds_events / odds_snapshots loader, mapping and alias seed on a temp database (D-030)."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -52,6 +52,7 @@ from ..odds_helpers import (
     odds_handler,
     odds_json,
     outcomes_of,
+    price_line,
     set_bad_prices,
 )
 from .conftest import NbaApiStub
@@ -138,7 +139,12 @@ def test_same_capture_twice_adds_no_rows(odds_db: Engine, odds: OddsStub) -> Non
         18,
         0,
     )
-    assert first.skipped == {"started_events": 1, "started_outcomes": 2, "rejected_outcomes": 0}
+    assert first.skipped == {
+        "started_events": 1,
+        "started_outcomes": 2,
+        "rejected_outcomes": 0,
+        "rejected_outcomes_started": 0,
+    }
     captured = first.captured_at
 
     odds.clock.advance(3600)  # an hour later the provider still returns identical bytes
@@ -436,28 +442,14 @@ def test_unusable_price_in_a_small_capture_makes_the_run_partial(
     odds.bodies["odds"] = data
     result = load_odds(odds.source, odds_db)
     assert result.failed == {} and result.snapshots_inserted == 17
-    assert last_run(odds_db) == (
-        "partial",
-        3,
-        3,
-        0,
-        17 + 3,
-        "1 price(s) could not be used (5.6% of 18; over ODDS_REJECTED_PRICE_MAX_RATIO 2%)",
-    )
+    assert last_run(odds_db) == ("partial", 3, 3, 0, 17 + 3, price_line(1, 18, "over"))
+    assert "1/18 = 5.56%" in last_run(odds_db)[5]
     detail = last_detail(odds_db)
     assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == 1
     assert "warnings" not in detail
 
 
 # --- P-043: a few unusable prices are a warning, many make the capture partial -------------------
-
-
-def price_line(bad: int, total: int, verdict: str, limit: str = "2%") -> str:
-    """The warning / partial message the loader writes for bad rejected prices of total."""
-    return (
-        f"{bad} price(s) could not be used ({100 * bad / total:.1f}% of {total}; "
-        f"{verdict} ODDS_REJECTED_PRICE_MAX_RATIO {limit})"
-    )
 
 
 def last_run(db: Engine) -> tuple[Any, ...]:
@@ -503,7 +495,7 @@ def test_a_few_unusable_prices_are_a_warning_not_a_failure(
 
 @pytest.mark.parametrize(
     ("bad", "status"),
-    [(5, "succeeded"), (6, "partial")],  # 5/270 = 1.9% is within 2%, 6/270 = 2.2% is over
+    [(5, "succeeded"), (6, "partial")],  # 5/270 = 1.85% is within 2%, 6/270 = 2.22% is over
 )
 def test_the_ratio_limit_is_inclusive(
     odds_db: Engine, odds: OddsStub, bad: int, status: str
@@ -530,6 +522,19 @@ def test_the_ratio_limit_is_inclusive(
     assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == bad
 
 
+def test_exactly_the_limit_is_still_a_success(odds_db: Engine, odds: OddsStub) -> None:
+    """Review 1 (low 1): 1 of 50 prices = 2.00% exactly is within the 2% limit (<=, not <)."""
+    data = many_events(3)
+    del data[0]["bookmakers"][0]["markets"][1:]  # 54 - 4 = 50 prices
+    total = sum(1 for _ in outcomes_of(data))
+    assert total == 50 and set_bad_prices(data, 1) == 1
+    odds.bodies["odds"] = data
+    load_odds(odds.source, odds_db)
+    assert last_run(odds_db) == ("succeeded", 3, 3, 0, 3 + 49, None)
+    line = price_line(1, 50, "within")
+    assert "1/50 = 2.00%" in line and last_detail(odds_db)["warnings"] == [line]
+
+
 def test_a_whole_bookmaker_unusable_makes_the_capture_partial(
     odds_db: Engine, odds: OddsStub
 ) -> None:
@@ -549,12 +554,12 @@ def test_a_whole_bookmaker_unusable_makes_the_capture_partial(
         MANY_EVENTS + total - bad,
         price_line(bad, total, "over"),
     )
-    assert "33.3% of" in last_run(odds_db)[5]
+    assert f"{bad}/{total} = 33.33%" in last_run(odds_db)[5]
     assert "warnings" not in last_detail(odds_db)
 
 
 @pytest.fixture
-def rejected_price_max_ratio(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
+def rejected_price_max_ratio(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[str], None]]:
     """Set ODDS_REJECTED_PRICE_MAX_RATIO for get_settings(); the cache is reset afterwards."""
 
     def _set(value: str) -> None:
@@ -723,3 +728,59 @@ def test_key_is_never_stored_logged_or_raised(
     haystack = "\n".join([*dump, *messages, caplog.text])
     assert FAKE_KEY not in haystack
     assert FAKE_KEY.lower() not in haystack.lower()
+
+
+# --- Q-027: unusable prices of events that already started never count --------------------------
+
+
+def test_bad_prices_of_started_events_do_not_count(odds_db: Engine, odds: OddsStub) -> None:
+    """(h): 2 bad prices, both of a started event, 72 prices of upcoming events stored ->
+    succeeded, no warning, the issues kept, skipped shows the 2 under rejected_outcomes_started."""
+    data = many_events(5, started=1)
+    assert set_bad_prices(data, 2, event=0) == 2
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == 4 * PRICES_PER_EVENT
+    assert result.skipped == {
+        "started_events": 1,
+        "started_outcomes": PRICES_PER_EVENT - 2,
+        "rejected_outcomes": 0,
+        "rejected_outcomes_started": 2,
+    }
+    assert last_run(odds_db) == ("succeeded", 5, 5, 0, 5 + 4 * PRICES_PER_EVENT, None)
+    detail = last_detail(odds_db)
+    assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == 2
+    assert "warnings" not in detail and detail["skipped"]["rejected_outcomes_started"] == 2
+
+
+def test_one_upcoming_event_and_a_bad_started_price_is_a_success(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """(i): a late slot with one event left (18 stored) and 1 bad price of a started event."""
+    data = many_events(2, started=1)
+    assert set_bad_prices(data, 1, event=0) == 1
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == PRICES_PER_EVENT
+    assert last_run(odds_db) == ("succeeded", 2, 2, 0, 2 + PRICES_PER_EVENT, None)
+    assert "warnings" not in last_detail(odds_db)
+
+
+def test_the_real_late_slot_shape_is_a_success(odds_db: Engine, odds: OddsStub) -> None:
+    """Runs 120/185/195: 7-8 events already started, the one bad price among them -> succeeded."""
+    data = many_events(15, started=8)
+    assert set_bad_prices(data, 1, event=7) == 1  # FanDuel h2h 1.0 of a game in progress
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == 7 * PRICES_PER_EVENT
+    assert result.skipped["rejected_outcomes"] == 0
+    assert result.skipped["rejected_outcomes_started"] == 1
+    assert last_run(odds_db) == ("succeeded", 15, 15, 0, 15 + 7 * PRICES_PER_EVENT, None)
+    assert "warnings" not in last_detail(odds_db)
+    # (j): the same bad price on an upcoming event still counts (1/127 = 0.79%, a warning).
+    data = many_events(15, started=8)
+    set_bad_prices(data, 1, event=8)
+    odds.bodies["odds"] = data
+    load_odds(odds.source, odds_db)
+    assert last_run(odds_db)[0] == "succeeded"
+    assert last_detail(odds_db)["warnings"] == [price_line(1, 7 * PRICES_PER_EVENT, "within")]

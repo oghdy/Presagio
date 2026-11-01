@@ -7,7 +7,7 @@ injected; no test compares Python time with the database clock.
 
 import copy
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -57,6 +57,7 @@ from .odds_helpers import (
     many_events,
     odds_json,
     outcomes_of,
+    price_line,
     set_bad_prices,
 )
 
@@ -787,9 +788,7 @@ def test_a_few_unusable_prices_keep_exit_0_with_a_warning(db: Engine, world: Wor
     assert parent.error_message is None and child.error_message is None
     assert (parent.items_total, parent.items_succeeded, parent.items_failed) == (1, 1, 0)
     assert (child.items_succeeded, child.rows_written) == (MANY_EVENTS, MANY_EVENTS + total - 1)
-    line = (
-        f"1 price(s) could not be used (0.4% of {total}; within ODDS_REJECTED_PRICE_MAX_RATIO 2%)"
-    )
+    line = price_line(1, total, "within")
     assert child.error_detail["warnings"] == [line]
     assert sum(i["kind"] == "bad_price" for i in child.error_detail["quality_issues"]) == 1
     assert "warnings" not in parent.error_detail
@@ -797,6 +796,24 @@ def test_a_few_unusable_prices_keep_exit_0_with_a_warning(db: Engine, world: Wor
     assert "succeeded (1 warning)" in out
     assert f"\nWarnings (1):\n  - odds the_odds_api: {line}\n" in out
     assert "Not done" not in out and out.rstrip().endswith("Exit code 0")
+
+
+def test_a_bad_price_of_a_started_game_is_not_even_a_warning(
+    db: Engine, world: World, capsys
+) -> None:
+    """Q-027, like runs 120/185/195: the only bad price belongs to a game already in progress
+    -> child and parent succeeded, exit 0, no Warnings section."""
+    world.odds = many_events(15, started=8)
+    set_bad_prices(world.odds, 1, event=7)
+    assert ingest(db, world, KST_OCT22, "--odds-only") == 0
+    (parent,) = runs(db, job_type="incremental")
+    (child,) = runs(db, job_type="odds")
+    assert (parent.status, child.status) == ("succeeded", "succeeded")
+    assert child.error_detail["skipped"]["rejected_outcomes_started"] == 1
+    assert "warnings" not in child.error_detail
+    out = capsys.readouterr().out
+    assert "Warnings" not in out and "succeeded (" not in out
+    assert out.rstrip().endswith("Exit code 0")
 
 
 def test_too_many_unusable_prices_make_the_step_and_the_parent_partial(
@@ -808,10 +825,7 @@ def test_too_many_unusable_prices_make_the_step_and_the_parent_partial(
     (parent,) = runs(db, job_type="incremental")
     (child,) = runs(db, job_type="odds")
     assert (parent.status, child.status) == ("partial", "partial")
-    line = (
-        f"{total // 3} price(s) could not be used (33.3% of {total}; "
-        "over ODDS_REJECTED_PRICE_MAX_RATIO 2%)"
-    )
+    line = price_line(total // 3, total, "over")
     assert child.error_message == line and "warnings" not in child.error_detail
     assert child.rows_written == MANY_EVENTS + total - total // 3  # the usable prices are in
     assert parent.error_message == f"odds the_odds_api: partial: {line}"
@@ -824,7 +838,7 @@ def test_too_many_unusable_prices_make_the_step_and_the_parent_partial(
 
 
 @pytest.fixture
-def ratio_zero(monkeypatch: pytest.MonkeyPatch) -> Any:
+def ratio_zero(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """ODDS_REJECTED_PRICE_MAX_RATIO=0 for get_settings(); the cache is reset afterwards."""
     monkeypatch.setenv("ODDS_REJECTED_PRICE_MAX_RATIO", "0")
     config.get_settings.cache_clear()
@@ -839,9 +853,7 @@ def test_ratio_zero_keeps_the_old_partial_and_exit_1(db: Engine, world: World, r
     (parent,) = runs(db, job_type="incremental")
     (child,) = runs(db, job_type="odds")
     assert (parent.status, child.status) == ("partial", "partial")
-    assert child.error_message == (
-        f"1 price(s) could not be used (0.4% of {total}; over ODDS_REJECTED_PRICE_MAX_RATIO 0%)"
-    )
+    assert child.error_message == price_line(1, total, "over", limit="0%")
 
 
 def test_a_partial_step_makes_a_full_run_partial(db: Engine, world: World, capsys) -> None:
@@ -907,7 +919,7 @@ def test_quality_warnings_are_listed_in_the_warnings_section(
     ]
     out = capsys.readouterr().out
     assert "Warnings (2):" in out
-    assert "  - odds the_odds_api: 1 price(s) could not be used" in out
+    assert "  - odds the_odds_api: 1 price(s) of upcoming events could not be used" in out
     assert "  - checks date_et=2026-10-21: quality checks warn: past_games_not_final" in out
     assert "warn: past_games_not_final" in out  # the Quality checks block still names it
     assert out.rstrip().endswith("Exit code 0")

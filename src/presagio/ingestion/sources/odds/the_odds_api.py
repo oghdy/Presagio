@@ -29,6 +29,7 @@ from presagio.ingestion.sources.base import Provenance, QualityIssue, SourceForm
 from presagio.ingestion.sources.odds.base import (
     MARKETS,
     SKIPPED_REJECTED_OUTCOMES,
+    SKIPPED_REJECTED_OUTCOMES_STARTED,
     OddsBatch,
     OddsEventRecord,
     OddsOutcomeRecord,
@@ -182,6 +183,9 @@ def parse_odds(
 
     A malformed event is rejected alone (the rest are kept); a price that cannot be used is
     left out with a quality issue; prices of events that had already started are dropped.
+    skipped[SKIPPED_REJECTED_OUTCOMES] counts unusable prices of events not yet started at
+    captured_at (lost data); those of started events go to SKIPPED_REJECTED_OUTCOMES_STARTED
+    (they would have been dropped anyway, Q-027).
     """
     if odds_format not in ODDS_FORMATS:
         raise ValueError(f"unknown odds format {odds_format!r}")
@@ -191,7 +195,7 @@ def parse_odds(
     events: list[OddsEventRecord] = []
     rejected: dict[str, str] = {}
     issues: list[QualityIssue] = []
-    rejected_outcomes = 0
+    rejected_outcomes = rejected_outcomes_started = 0
     for index, raw_event in enumerate(data):
         key = str(raw_event.get("id")) if isinstance(raw_event, Mapping) else f"#{index}"
         where = f"{SOURCE}/{provenance.source}/{key}"
@@ -212,10 +216,15 @@ def parse_odds(
             rejected[key] = str(exc)
             continue
         issues.extend(outcome_issues)
-        rejected_outcomes += sum(1 for i in outcome_issues if i.kind != "unrequested_market")
+        unusable = sum(1 for i in outcome_issues if i.kind != "unrequested_market")
+        if commence <= captured_at:  # the same test as drop_started_prices
+            rejected_outcomes_started += unusable
+        else:
+            rejected_outcomes += unusable
         events.append(OddsEventRecord(event_id, home, away, commence, tuple(outcomes)))
     kept, skipped = drop_started_prices(tuple(events), captured_at)
     skipped[SKIPPED_REJECTED_OUTCOMES] = rejected_outcomes
+    skipped[SKIPPED_REJECTED_OUTCOMES_STARTED] = rejected_outcomes_started
     return OddsBatch(
         source=SOURCE,
         captured_at=captured_at,
