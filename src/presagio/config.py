@@ -29,6 +29,10 @@ DEFAULT_STALE_RUN_HOURS = 6.0
 DEFAULT_ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4"
 DEFAULT_ODDS_API_REGIONS = "us"
 DEFAULT_ODDS_API_MARKETS = "h2h,spreads,totals"
+# P-043: a capture whose unusable prices are at most this share of its prices (stored + rejected)
+# still ends 'succeeded' with a warning; above it the odds run ends 'partial'. 0 restores the
+# old rule (one rejected price makes the run partial). A whole bookmaker missing is well over 2%.
+DEFAULT_ODDS_REJECTED_PRICE_MAX_RATIO = 0.02
 
 # Daily ingest times (D-027, P-017 decision proposal). Only scheduling (stage 6) acts on them;
 # `presagio ingest-daily --dry-run` prints what they mean for a given date.
@@ -109,6 +113,12 @@ class Settings(BaseSettings):
     )
     odds_api_markets: str = Field(
         default=DEFAULT_ODDS_API_MARKETS, description="Markets to request, comma separated."
+    )
+    odds_rejected_price_max_ratio: float = Field(
+        default=DEFAULT_ODDS_REJECTED_PRICE_MAX_RATIO,
+        ge=0,
+        le=1,
+        description="Largest share of unusable prices in one odds capture that is only a warning.",
     )
 
     ingest_daily_time_kst: str = Field(

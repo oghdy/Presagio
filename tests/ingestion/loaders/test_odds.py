@@ -1,7 +1,7 @@
 """odds_events / odds_snapshots loader, mapping and alias seed on a temp database (D-030)."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, text
 
+from presagio import config
 from presagio.ingestion.client import IngestionClient, db_raw_store
 from presagio.ingestion.errors import BlockedError, ClientRequestError, RetriesExhaustedError
 from presagio.ingestion.loaders import (
@@ -37,7 +38,9 @@ from ..odds_helpers import (
     E_STARTED,
     EVENTS_FIXTURE,
     FAKE_KEY,
+    MANY_EVENTS,
     PHI_CLE_GAME,
+    PRICES_PER_EVENT,
     REAL_ODDS_FIXTURE,
     REAL_OKC_DEN,
     REAL_PHI_CLE,
@@ -45,8 +48,12 @@ from ..odds_helpers import (
     as_american,
     bump_prices,
     event_of,
+    many_events,
     odds_handler,
     odds_json,
+    outcomes_of,
+    price_line,
+    set_bad_prices,
 )
 from .conftest import NbaApiStub
 
@@ -132,7 +139,12 @@ def test_same_capture_twice_adds_no_rows(odds_db: Engine, odds: OddsStub) -> Non
         18,
         0,
     )
-    assert first.skipped == {"started_events": 1, "started_outcomes": 2, "rejected_outcomes": 0}
+    assert first.skipped == {
+        "started_events": 1,
+        "started_outcomes": 2,
+        "rejected_outcomes": 0,
+        "rejected_outcomes_started": 0,
+    }
     captured = first.captured_at
 
     odds.clock.advance(3600)  # an hour later the provider still returns identical bytes
@@ -395,27 +407,206 @@ def test_events_only_load_maps_without_prices(odds_db: Engine, odds: OddsStub) -
     assert (result.events.inserted, result.snapshots_inserted, result.mapping.matched) == (3, 0, 1)
     assert snapshot_count(odds_db) == 0
     assert runs(odds_db)[-1] == ("odds_events", "the_odds_api", "succeeded")
+    assert "warnings" not in last_detail(odds_db)  # no prices at all: nothing to warn about
     # The later /odds capture reuses the same event rows.
     assert load_odds(odds.source, odds_db).events.inserted == 0
 
 
-def test_unreadable_event_or_price_makes_the_run_partial(odds_db: Engine, odds: OddsStub) -> None:
-    """A rejected event is a failed item; a dropped price marks the run partial (D-034 3)."""
+def test_unreadable_event_is_a_failed_item_and_the_run_partial(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """A rejected event is a failed item -> partial (D-034 3); P-043 leaves this as it was."""
     data = odds_json()
     del event_of(data, E_DEN_LAC)["home_team"]
-    event_of(data, E_PHI_CLE)["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = 1.0
     odds.bodies["odds"] = data
     result = load_odds(odds.source, odds_db)
     assert list(result.failed) == [E_DEN_LAC]
-    assert result.snapshots_inserted == 11
-    run = rows(
-        odds_db,
-        "SELECT status, items_total, items_succeeded, items_failed FROM ingestion_runs"
-        " ORDER BY run_id DESC LIMIT 1",
+    assert result.snapshots_inserted == 12 and result.skipped["rejected_outcomes"] == 0
+    assert last_run(odds_db) == (
+        "partial",
+        3,
+        2,
+        1,
+        12 + 2,
+        f"the_odds_api/odds/{E_DEN_LAC}: missing field 'home_team'",
     )
-    assert run == [("partial", 3, 2, 1)]
-    kinds = [i["kind"] for i in last_detail(odds_db)["quality_issues"]]
-    assert "bad_price" in kinds
+    assert "warnings" not in last_detail(odds_db)
+
+
+def test_unusable_price_in_a_small_capture_makes_the_run_partial(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """One bad price of 18 (5.6%, over the 2% limit) still marks a small capture partial."""
+    data = odds_json()
+    event_of(data, E_PHI_CLE)["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = 1.0
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.failed == {} and result.snapshots_inserted == 17
+    assert last_run(odds_db) == ("partial", 3, 3, 0, 17 + 3, price_line(1, 18, "over"))
+    assert "1/18 = 5.56%" in last_run(odds_db)[5]
+    detail = last_detail(odds_db)
+    assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == 1
+    assert "warnings" not in detail
+
+
+# --- P-043: a few unusable prices are a warning, many make the capture partial -------------------
+
+
+def last_run(db: Engine) -> tuple[Any, ...]:
+    """(status, items_total, items_succeeded, items_failed, rows_written, error_message)."""
+    return rows(
+        db,
+        "SELECT status, items_total, items_succeeded, items_failed, rows_written, error_message"
+        " FROM ingestion_runs ORDER BY run_id DESC LIMIT 1",
+    )[0]
+
+
+def test_a_few_unusable_prices_are_a_warning_not_a_failure(
+    odds_db: Engine, odds: OddsStub, caplog: pytest.LogCaptureFixture
+) -> None:
+    """P-043 (a), like run 120: 1 bad price of a full slate -> succeeded, stored, warned."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    assert total == MANY_EVENTS * PRICES_PER_EVENT and set_bad_prices(data, 1) == 1
+    odds.bodies["odds"] = data
+    with caplog.at_level(logging.WARNING, logger="presagio.ingestion.runs"):
+        result = load_odds(odds.source, odds_db, capture_label="pre_tip")
+    assert result.failed == {} and result.skipped["rejected_outcomes"] == 1
+    assert result.snapshots_inserted == total - 1
+    assert snapshot_count(odds_db) == total - 1
+    line = price_line(1, total, "within")
+    assert last_run(odds_db) == (
+        "succeeded",
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - 1,
+        None,
+    )
+    detail = last_detail(odds_db)
+    bad = [i for i in detail["quality_issues"] if i["kind"] == "bad_price"]
+    assert len(bad) == 1 and bad[0]["key"] == data[0]["id"] and "1.0" in bad[0]["message"]
+    assert detail["skipped"]["rejected_outcomes"] == 1
+    assert detail["warnings"] == [line]
+    assert [r.getMessage() for r in caplog.records if r.name == "presagio.ingestion.runs"] == [
+        f"odds the_odds_api: {line}"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("bad", "status"),
+    [(5, "succeeded"), (6, "partial")],  # 5/270 = 1.85% is within 2%, 6/270 = 2.22% is over
+)
+def test_the_ratio_limit_is_inclusive(
+    odds_db: Engine, odds: OddsStub, bad: int, status: str
+) -> None:
+    """P-043 (b): up to the ODDS_REJECTED_PRICE_MAX_RATIO share -> succeeded; more -> partial."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    assert set_bad_prices(data, bad) == bad
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == total - bad
+    line = price_line(bad, total, "within" if status == "succeeded" else "over")
+    message = None if status == "succeeded" else line
+    assert last_run(odds_db) == (
+        status,
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - bad,
+        message,
+    )
+    detail = last_detail(odds_db)
+    assert detail.get("warnings") == ([line] if status == "succeeded" else None)
+    assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == bad
+
+
+def test_exactly_the_limit_is_still_a_success(odds_db: Engine, odds: OddsStub) -> None:
+    """Review 1 (low 1): 1 of 50 prices = 2.00% exactly is within the 2% limit (<=, not <)."""
+    data = many_events(3)
+    del data[0]["bookmakers"][0]["markets"][1:]  # 54 - 4 = 50 prices
+    total = sum(1 for _ in outcomes_of(data))
+    assert total == 50 and set_bad_prices(data, 1) == 1
+    odds.bodies["odds"] = data
+    load_odds(odds.source, odds_db)
+    assert last_run(odds_db) == ("succeeded", 3, 3, 0, 3 + 49, None)
+    line = price_line(1, 50, "within")
+    assert "1/50 = 2.00%" in line and last_detail(odds_db)["warnings"] == [line]
+
+
+def test_a_whole_bookmaker_unusable_makes_the_capture_partial(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """P-043 (b): one of three bookmakers unusable is 33% of the prices -> partial, data kept."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    bad = set_bad_prices(data, bookmaker="bovada")
+    assert bad == total // 3
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == total - bad
+    assert last_run(odds_db) == (
+        "partial",
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - bad,
+        price_line(bad, total, "over"),
+    )
+    assert f"{bad}/{total} = 33.33%" in last_run(odds_db)[5]
+    assert "warnings" not in last_detail(odds_db)
+
+
+@pytest.fixture
+def rejected_price_max_ratio(monkeypatch: pytest.MonkeyPatch) -> Iterator[Callable[[str], None]]:
+    """Set ODDS_REJECTED_PRICE_MAX_RATIO for get_settings(); the cache is reset afterwards."""
+
+    def _set(value: str) -> None:
+        """Change the environment variable and drop the cached Settings."""
+        monkeypatch.setenv("ODDS_REJECTED_PRICE_MAX_RATIO", value)
+        config.get_settings.cache_clear()
+
+    yield _set
+    config.get_settings.cache_clear()
+
+
+def test_ratio_zero_restores_the_old_rule(
+    odds_db: Engine, odds: OddsStub, rejected_price_max_ratio: Callable[[str], None]
+) -> None:
+    """P-043 (c): ODDS_REJECTED_PRICE_MAX_RATIO=0 -> one bad price makes the capture partial."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    set_bad_prices(data, 1)
+    odds.bodies["odds"] = data
+    rejected_price_max_ratio("0")
+    load_odds(odds.source, odds_db)
+    line = price_line(1, total, "over", limit="0%")
+    assert last_run(odds_db) == (
+        "partial",
+        MANY_EVENTS,
+        MANY_EVENTS,
+        0,
+        MANY_EVENTS + total - 1,
+        line,
+    )
+    # The explicit argument wins over the setting.
+    load_odds(odds.source, odds_db, rejected_price_max_ratio=0.5)
+    assert last_run(odds_db)[0] == "succeeded"
+
+
+def test_a_reloaded_capture_counts_its_stored_prices(odds_db: Engine, odds: OddsStub) -> None:
+    """The share uses stored + rejected: the same capture loaded again (0 new rows) warns alike."""
+    data = many_events()
+    total = sum(1 for _ in outcomes_of(data))
+    set_bad_prices(data, 1)
+    odds.bodies["odds"] = data
+    load_odds(odds.source, odds_db)
+    odds.clock.advance(60)
+    result = load_odds(odds.source, odds_db)  # identical bytes: same raw row, same capture
+    assert (result.snapshots_inserted, result.snapshots_duplicate) == (0, total - 1)
+    assert last_run(odds_db)[0] == "succeeded"
+    assert last_detail(odds_db)["warnings"] == [price_line(1, total, "within")]
 
 
 def test_blocked_429_aborts_and_keeps_the_raw_body(
@@ -537,3 +728,59 @@ def test_key_is_never_stored_logged_or_raised(
     haystack = "\n".join([*dump, *messages, caplog.text])
     assert FAKE_KEY not in haystack
     assert FAKE_KEY.lower() not in haystack.lower()
+
+
+# --- Q-027: unusable prices of events that already started never count --------------------------
+
+
+def test_bad_prices_of_started_events_do_not_count(odds_db: Engine, odds: OddsStub) -> None:
+    """(h): 2 bad prices, both of a started event, 72 prices of upcoming events stored ->
+    succeeded, no warning, the issues kept, skipped shows the 2 under rejected_outcomes_started."""
+    data = many_events(5, started=1)
+    assert set_bad_prices(data, 2, event=0) == 2
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == 4 * PRICES_PER_EVENT
+    assert result.skipped == {
+        "started_events": 1,
+        "started_outcomes": PRICES_PER_EVENT - 2,
+        "rejected_outcomes": 0,
+        "rejected_outcomes_started": 2,
+    }
+    assert last_run(odds_db) == ("succeeded", 5, 5, 0, 5 + 4 * PRICES_PER_EVENT, None)
+    detail = last_detail(odds_db)
+    assert sum(i["kind"] == "bad_price" for i in detail["quality_issues"]) == 2
+    assert "warnings" not in detail and detail["skipped"]["rejected_outcomes_started"] == 2
+
+
+def test_one_upcoming_event_and_a_bad_started_price_is_a_success(
+    odds_db: Engine, odds: OddsStub
+) -> None:
+    """(i): a late slot with one event left (18 stored) and 1 bad price of a started event."""
+    data = many_events(2, started=1)
+    assert set_bad_prices(data, 1, event=0) == 1
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == PRICES_PER_EVENT
+    assert last_run(odds_db) == ("succeeded", 2, 2, 0, 2 + PRICES_PER_EVENT, None)
+    assert "warnings" not in last_detail(odds_db)
+
+
+def test_the_real_late_slot_shape_is_a_success(odds_db: Engine, odds: OddsStub) -> None:
+    """Runs 120/185/195: 7-8 events already started, the one bad price among them -> succeeded."""
+    data = many_events(15, started=8)
+    assert set_bad_prices(data, 1, event=7) == 1  # FanDuel h2h 1.0 of a game in progress
+    odds.bodies["odds"] = data
+    result = load_odds(odds.source, odds_db)
+    assert result.snapshots_inserted == 7 * PRICES_PER_EVENT
+    assert result.skipped["rejected_outcomes"] == 0
+    assert result.skipped["rejected_outcomes_started"] == 1
+    assert last_run(odds_db) == ("succeeded", 15, 15, 0, 15 + 7 * PRICES_PER_EVENT, None)
+    assert "warnings" not in last_detail(odds_db)
+    # (j): the same bad price on an upcoming event still counts (1/127 = 0.79%, a warning).
+    data = many_events(15, started=8)
+    set_bad_prices(data, 1, event=8)
+    odds.bodies["odds"] = data
+    load_odds(odds.source, odds_db)
+    assert last_run(odds_db)[0] == "succeeded"
+    assert last_detail(odds_db)["warnings"] == [price_line(1, 7 * PRICES_PER_EVENT, "within")]

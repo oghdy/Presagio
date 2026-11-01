@@ -3,6 +3,7 @@
 import copy
 import json
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 import httpx
 
 from presagio.ingestion.odds_math import decimal_to_american
+from presagio.ingestion.sources.odds.the_odds_api import TEAM_NAME_SEED
 
 ODDS_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "odds"
 ODDS_FIXTURE = "the_odds_api_nba_odds_synthetic"
@@ -28,6 +30,11 @@ E_PHI_CLE = "5f0c1e2d3a4b5c6d7e8f9012345678e1"  # 23:00Z, same game as 002260000
 E_DEN_LAC = "5f0c1e2d3a4b5c6d7e8f9012345678e3"  # 2026-10-24 02:00Z, not in the schedule
 PHI_CLE_GAME = "0022600006"
 QUOTA = {"x-requests-remaining": "497", "x-requests-used": "3", "x-requests-last": "3"}
+# many_events: prices per event (3 bookmakers x 3 markets x 2 sides, as the real fixture's PHI-CLE).
+PRICES_PER_EVENT = 18
+MANY_EVENTS = 15  # every team once: a full slate, like the P-043 captures (run 120: 15 events)
+MANY_FIRST_COMMENCE = datetime(2026, 10, 25, 0, 0, tzinfo=UTC)  # after every test run time
+MANY_STARTED_COMMENCE = datetime(2026, 10, 21, 0, 0, tzinfo=UTC)  # before every test run time
 
 
 def odds_json(name: str = ODDS_FIXTURE) -> Any:
@@ -84,3 +91,68 @@ def odds_handler(
 
     handler.seen = seen  # type: ignore[attr-defined]
     return handler
+
+
+def many_events(count: int = MANY_EVENTS, *, started: int = 0) -> list[dict[str, Any]]:
+    """A /odds body of count events (every NBA team once), PRICES_PER_EVENT prices each.
+
+    Each event copies the real fixture's PHI-CLE event (3 bookmakers, h2h/spreads/totals)
+    with its own id, teams and a commence time from MANY_FIRST_COMMENCE on, one hour apart.
+    The first `started` events commence from MANY_STARTED_COMMENCE instead (already started
+    at any test capture time, so the adapter drops their prices).
+    """
+    if not 0 <= count <= len(TEAM_NAME_SEED) // 2:
+        raise ValueError(f"count must be 0..{len(TEAM_NAME_SEED) // 2}")
+    template = event_of(odds_json(REAL_ODDS_FIXTURE), REAL_PHI_CLE)
+    assert sum(1 for _ in outcomes_of([template])) == PRICES_PER_EVENT
+    names = [TEAM_NAME_SEED[code] for code in sorted(TEAM_NAME_SEED)]
+    events = []
+    for i in range(count):
+        home, away = names[2 * i], names[2 * i + 1]
+        event = copy.deepcopy(template)
+        event["id"] = f"p043-synthetic-{i:02d}"
+        event["home_team"], event["away_team"] = home, away
+        first = MANY_STARTED_COMMENCE if i < started else MANY_FIRST_COMMENCE
+        event["commence_time"] = (first + timedelta(hours=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        renamed = {template["home_team"]: home, template["away_team"]: away}
+        for outcome in outcomes_of([event]):
+            outcome["name"] = renamed.get(outcome["name"], outcome["name"])
+        events.append(event)
+    return events
+
+
+def set_bad_prices(
+    data: list[dict[str, Any]],
+    count: int | None = None,
+    *,
+    bookmaker: str | None = None,
+    event: int | None = None,
+) -> int:
+    """Set the first count prices (all when None; one bookmaker's / one event's when given) to 1.0.
+
+    1.0 is a price the adapter refuses (probability 100%), so each becomes a 'bad_price'
+    issue counted in skipped['rejected_outcomes'] (or ..._started when the event has started).
+    Returns how many were changed.
+    """
+    changed = 0
+    for index, item in enumerate(data):
+        if event is not None and index != event:
+            continue
+        for book in item.get("bookmakers", []):
+            if bookmaker is not None and book["key"] != bookmaker:
+                continue
+            for market in book["markets"]:
+                for outcome in market["outcomes"]:
+                    if count is not None and changed >= count:
+                        return changed
+                    outcome["price"] = 1.0
+                    changed += 1
+    return changed
+
+
+def price_line(bad: int, total: int, verdict: str, limit: str = "2%") -> str:
+    """The warning / partial message the loader writes for bad unusable prices of total."""
+    return (
+        f"{bad} price(s) of upcoming events could not be used ({bad}/{total} = "
+        f"{100 * bad / total:.2f}%; {verdict} ODDS_REJECTED_PRICE_MAX_RATIO {limit})"
+    )

@@ -63,6 +63,7 @@ def test_parse_fixture_into_long_format() -> None:
         "started_events": 1,
         "started_outcomes": 2,
         "rejected_outcomes": 0,
+        "rejected_outcomes_started": 0,
     }
     assert batch.issues == () and dict(batch.rejected) == {}
 
@@ -124,7 +125,8 @@ def test_unusable_prices_are_left_out_with_issues() -> None:
         "unrequested_market",
     ]
     assert all(i.key == E_DEN_LAC for i in batch.issues)
-    assert batch.skipped["rejected_outcomes"] == 5
+    assert batch.skipped["rejected_outcomes"] == 5  # DEN-LAC has not started at T0
+    assert batch.skipped["rejected_outcomes_started"] == 0
     # DEN-LAC kept only spreads/away and totals/over (the first Over, not the duplicate).
     kept = by_key(batch.events[2])
     assert sorted(kept) == [("draftkings", "spreads", "away"), ("draftkings", "totals", "over")]
@@ -293,6 +295,7 @@ def test_real_response_parses_without_issues() -> None:
         "started_events": 0,
         "started_outcomes": 0,
         "rejected_outcomes": 0,
+        "rejected_outcomes_started": 0,
     }
     phi = batch.events[0]
     assert (phi.source_event_id, phi.home_team_name, phi.away_team_name) == (
@@ -319,3 +322,18 @@ def test_real_team_names_are_the_seed() -> None:
     names = {e["home_team"] for e in events} | {e["away_team"] for e in events}
     assert names <= set(TEAM_NAME_SEED.values())
     assert len(parse(events).events) == 3
+
+
+def test_unusable_prices_of_started_events_are_counted_apart() -> None:
+    """Q-027: a bad price of an event that already started is dropped anyway, so it is counted
+    in rejected_outcomes_started, not rejected_outcomes; the issue is still recorded."""
+    data = odds_json()
+    event_of(data, E_STARTED)["bookmakers"][0]["markets"][0]["outcomes"][0]["price"] = 1.0
+    batch = parse(data)
+    assert [(i.kind, i.key) for i in batch.issues] == [("bad_price", E_STARTED)]
+    assert batch.skipped == {
+        "started_events": 1,
+        "started_outcomes": 1,  # the other price of LAL-GSW, dropped as started
+        "rejected_outcomes": 0,
+        "rejected_outcomes_started": 1,
+    }

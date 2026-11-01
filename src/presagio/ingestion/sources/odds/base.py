@@ -33,7 +33,11 @@ CAPTURE_KINDS = ("live", "historical")
 # Keys of OddsBatch.skipped.
 SKIPPED_STARTED_EVENTS = "started_events"
 SKIPPED_STARTED_OUTCOMES = "started_outcomes"
+# Unusable prices of events that had not started at captured_at: the ones actually lost.
 SKIPPED_REJECTED_OUTCOMES = "rejected_outcomes"
+# Unusable prices of events that had already started: dropped anyway (drop_started_prices),
+# so they are kept out of the P-043 partial ratio (Q-027).
+SKIPPED_REJECTED_OUTCOMES_STARTED = "rejected_outcomes_started"
 
 
 @dataclass(frozen=True)

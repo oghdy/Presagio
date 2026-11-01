@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from importlib import metadata
 
 import pytest
@@ -30,7 +30,7 @@ def _row(engine: Engine, run_id: int) -> IngestionRun:
 
 
 def _finished_after_start(engine: Engine, run_id: int) -> bool:
-    """finished_at >= started_at, compared inside the DB (both are DB-clock values)."""
+    """finished_at >= started_at, compared inside the DB (both are host-clock values, P-043)."""
     with engine.connect() as conn:
         return conn.execute(
             text("SELECT finished_at >= started_at FROM ingestion_runs WHERE run_id = :id"),
@@ -313,3 +313,117 @@ def test_code_version_is_git_commit_or_package_version(monkeypatch: pytest.Monke
         assert current_code_version() == metadata.version("presagio")
     finally:
         current_code_version.cache_clear()
+
+
+# --- P-043: started_at and finished_at are host-clock values -----------------------------------
+
+
+class HostClock:
+    """An injectable host clock: the test moves .now between calls."""
+
+    def __init__(self, now: datetime) -> None:
+        """Start at the given moment."""
+        self.now = now
+
+    def __call__(self) -> datetime:
+        """The current (fake) host time."""
+        return self.now
+
+
+T_START = datetime(2026, 10, 24, 1, 46, 25, 840000, tzinfo=UTC)  # like run 119's capture
+
+
+def _db_now(engine: Engine) -> datetime:
+    """The database clock."""
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT now()")).scalar_one()
+
+
+def test_run_timestamps_come_from_the_host_clock(engine: Engine) -> None:
+    """P-043 (f): the injected host time lands in started_at/finished_at, not the DB's now()."""
+    clock = HostClock(T_START)
+    assert _db_now(engine) - T_START > timedelta(days=1)  # the DB clock is nowhere near it
+    with track_run(engine, "odds", "the_odds_api", clock=clock) as run:
+        assert run.started_at == T_START
+        assert _row(engine, run.run_id).started_at == T_START
+        clock.now = T_START + timedelta(seconds=0.8)
+    row = _row(engine, run.run_id)
+    assert row.status == "succeeded"
+    assert (row.started_at, row.finished_at) == (T_START, T_START + timedelta(seconds=0.8))
+    assert _finished_after_start(engine, run.run_id)
+    # has_succeeded(started_after=) now compares host time with host time.
+    assert has_succeeded(engine, "odds", "the_odds_api", started_after=T_START)
+    assert not has_succeeded(
+        engine, "odds", "the_odds_api", started_after=T_START + timedelta(microseconds=1)
+    )
+
+
+def test_default_clock_is_the_host_now(engine: Engine) -> None:
+    """Without injection, started_at is datetime.now(UTC) of this process (within a minute)."""
+    before = datetime.now(UTC)
+    run = start_run(engine, "teams", "nba_api")
+    run.finish("succeeded")
+    row = _row(engine, run.run_id)
+    assert before - timedelta(minutes=1) <= row.started_at <= datetime.now(UTC)
+    assert row.started_at <= row.finished_at <= datetime.now(UTC) + timedelta(minutes=1)
+
+
+def test_a_clock_that_steps_back_cannot_break_finished_after_started(engine: Engine) -> None:
+    """If the host clock is set back during a run, finished_at is clamped to started_at."""
+    clock = HostClock(T_START)
+    with track_run(engine, "teams", "nba_api", clock=clock) as run:
+        clock.now = T_START - timedelta(minutes=5)
+    row = _row(engine, run.run_id)
+    assert row.started_at == row.finished_at == T_START
+
+
+def test_stale_rows_are_closed_with_the_host_clock(engine: Engine) -> None:
+    """abort_stale_runs compares age on the DB clock (hours) but stamps finished_at by host."""
+    dead = _insert_running(engine, "schedule", "season=2025-26", hours_ago=7)
+    at = _db_now(engine) + timedelta(minutes=17)  # a host clock 17 min ahead of the DB VM
+    assert abort_stale_runs(engine, 6, clock=HostClock(at)) == 1
+    row = _row(engine, dead)
+    assert row.status == "aborted" and row.finished_at == at
+    assert _finished_after_start(engine, dead)
+
+
+def test_partial_plus_failed_children_with_no_success_leave_the_parent_partial(
+    engine: Engine,
+) -> None:
+    """Review 1 (low 2): a partial child and a failed child, nothing succeeded -> parent partial.
+
+    The parent is recorded the way incremental._record does it: the failed child is a failed
+    item, the partial child a mark_partial reason. Something was stored, so not 'failed'.
+    """
+    with track_run(engine, "incremental", "date_kst=2026-10-24;odds_only") as parent:
+        with track_run(engine, "odds", "the_odds_api") as odds:
+            odds.item_succeeded(rows_written=180)
+            odds.mark_partial("90 price(s) of upcoming events could not be used")
+        with pytest.raises(RuntimeError), track_run(engine, "odds_events", "the_odds_api"):
+            raise RuntimeError("boom")
+        parent.mark_partial("odds the_odds_api: partial: 90 price(s) ...")
+        parent.item_failed("odds_events the_odds_api", "failed: RuntimeError: boom")
+    row = _row(engine, parent.run_id)
+    assert (row.status, row.items_succeeded, row.items_failed) == ("partial", 0, 1)
+    assert row.error_message == "failed: RuntimeError: boom"
+    assert _row(engine, odds.run_id).status == "partial"
+
+
+def test_a_failed_only_run_without_a_partial_reason_is_still_failed(engine: Engine) -> None:
+    """The old rule holds when nothing was marked partial: all items failed -> failed."""
+    with track_run(engine, "incremental", "date_kst=2026-10-25;odds_only") as parent:
+        parent.item_failed("odds the_odds_api", "failed: boom")
+    assert _row(engine, parent.run_id).status == "failed"
+
+
+def test_stale_age_is_measured_on_the_host_clock(engine: Engine) -> None:
+    """Review 1 (low 4): a host lagging the DB by more than the limit must not abort a live
+    run; a host ahead sees a row started 7 h ago (by its own clock) as stale."""
+    live = start_run(engine, "schedule", "season=2025-26", clock=HostClock(T_START))
+    behind = HostClock(T_START + timedelta(hours=1))  # 1 h later on the same host clock
+    assert abort_stale_runs(engine, 6, clock=behind) == 0  # even though the DB is days ahead
+    assert _row(engine, live.run_id).status == "running"
+    ahead = HostClock(T_START + timedelta(hours=7))
+    assert abort_stale_runs(engine, 6, clock=ahead) == 1
+    row = _row(engine, live.run_id)
+    assert row.status == "aborted" and row.finished_at == ahead.now
