@@ -11,7 +11,7 @@ from presagio.db.session import make_engine
 from presagio.quality.checks import CHECK_NAMES, run_checks
 from presagio.quality.report import render_text
 
-from .conftest import Baseline
+from .conftest import NOTHING_TO_COMPARE, Baseline
 
 
 def run(capsys: pytest.CaptureFixture[str], *args: str, engine: Engine | None) -> tuple[int, str]:
@@ -54,15 +54,18 @@ def test_clean_data_prints_a_table_and_exits_0(
         "#", "check", "target", "status", "passed", "failed", "examples", "description"
     ]  # fmt: skip
     for name in CHECK_NAMES:
-        status = " SKIP " if name == "feature_drift" else " PASS "  # nothing to compare yet
+        status = " SKIP " if name in NOTHING_TO_COMPARE else " PASS "  # nothing to compare yet
         assert any(f" {name} " in line and status in line for line in lines), name
     row = next(line for line in lines if " team_rows_per_game " in line)
     assert "final games (regular, playin, playoffs); season 2023-24" in row
     assert " 1232       0 " in row  # passed, failed
     assert "each final game has 2 team stat rows, 1 home" in row
     assert "  5. regular_season_games: expected 1230 +/- 0; 2023-24: 1230 final" in out
-    passed = len(CHECK_NAMES) - 1  # all but feature_drift
-    assert lines[-1] == f"Summary: {passed} pass, 0 fail, 0 warn, 0 error, 1 skip -> exit code 0"
+    skipped = len(NOTHING_TO_COMPARE)
+    passed = len(CHECK_NAMES) - skipped
+    assert lines[-1] == (
+        f"Summary: {passed} pass, 0 fail, 0 warn, 0 error, {skipped} skip -> exit code 0"
+    )
 
 
 def test_failure_exits_1_and_shows_the_game_id(
@@ -77,7 +80,9 @@ def test_failure_exits_1_and_shows_the_game_id(
     # The wrong pts also breaks pts = 2*fgm + fg3m + ftm for that row.
     arithmetic = next(line for line in out.splitlines() if " stat_arithmetic " in line)
     assert " FAIL  " in arithmetic and f"{broken_game}:" in arithmetic
-    assert out.splitlines()[-1].endswith("2 fail, 0 warn, 0 error, 1 skip -> exit code 1")
+    assert out.splitlines()[-1].endswith(
+        f"2 fail, 0 warn, 0 error, {len(NOTHING_TO_COMPARE)} skip -> exit code 1"
+    )
 
 
 def test_json_output_is_machine_readable(
