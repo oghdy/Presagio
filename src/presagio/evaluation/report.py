@@ -5,7 +5,9 @@ has two lines, (a) all games (model only) and (b) games with a market, the same 
 model and market; (b) is `available + pred_only` against the prediction-time market (B3)
 and `available` only against the closing market and CLV (B4). n is always printed and a
 market line with n < 100 is marked "reference only". Warm-up predictions (non-learning
-baselines before 2024-01-01) are counted but not scored in the tables.
+baselines before 2024-01-01) are counted but not scored in the tables. A totals-only model
+(p_home None, P-034 T-B0) fills the total columns only: its win cells are "-", the market
+comparison rows have n 0 and the calibration table is replaced by a note.
 """
 
 from __future__ import annotations
@@ -135,6 +137,12 @@ def _status_note(
     return "no market: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
 
 
+def _with_win_metrics(records: Sequence[EvaluationRecord]) -> list[EvaluationRecord]:
+    """Records whose prediction has a home probability (a totals-only model has none, so its
+    accuracy, log loss, Brier, ECE, calibration and market deltas are not aggregated)."""
+    return [r for r in records if r.log_loss is not None and r.prediction.p_home is not None]
+
+
 def model_rows(
     segments: Sequence[tuple[str, str, list[EvaluationRecord]]], s: ReportSettings
 ) -> list[list[str]]:
@@ -146,23 +154,29 @@ def model_rows(
             if not chosen:
                 rows.append([season, phase, label, "0", *["-"] * 6, _status_note(records)])
                 continue
-            ps = [r.prediction.p_home for r in chosen]
-            ys = [int(r.home_won) for r in chosen]
+            wins = _with_win_metrics(chosen)
             totals = [r for r in chosen if r.abs_error_total is not None]
             rmse = (sum(r.sq_error_total for r in totals) / len(totals)) ** 0.5 if totals else None
             note = ""
             if label.startswith("(b)") and len(chosen) < s.small_sample:
                 note = f"reference only (n < {s.small_sample})"
+            if wins:
+                ps = [r.prediction.p_home for r in wins]
+                ys = [int(r.home_won) for r in wins]
+                ece = expected_calibration_error(calibration_table(ps, ys))
+                accuracy = sum(r.correct for r in wins) / len(wins)
+            else:
+                ece = accuracy = None
             rows.append(
                 [
                     season,
                     phase,
                     label,
                     str(len(chosen)),
-                    _fmt(sum(r.correct for r in chosen) / len(chosen), 3),
-                    _fmt_ci(_mean_ci([r.log_loss for r in chosen], s)),
-                    _fmt_ci(_mean_ci([r.brier for r in chosen], s)),
-                    _fmt(expected_calibration_error(calibration_table(ps, ys))),
+                    _fmt(accuracy, 3),
+                    _fmt_ci(_mean_ci([r.log_loss for r in wins], s)),
+                    _fmt_ci(_mean_ci([r.brier for r in wins], s)),
+                    _fmt(ece),
                     _fmt_ci(_mean_ci([r.abs_error_total for r in totals], s), 2),
                     _fmt(rmse, 2),
                     note,
@@ -180,7 +194,7 @@ def _market_row(
     s: ReportSettings,
 ) -> list[str]:
     """One model-vs-market row on the segment's comparable games (same set for both)."""
-    chosen = [r for r in segment if r.market_status in comparable]
+    chosen = [r for r in _with_win_metrics(segment) if r.market_status in comparable]
     pairs = [(r, *pick(r)) for r in chosen]
     pairs = [(r, ll, br) for r, ll, br in pairs if ll is not None and br is not None]
     n = len(pairs)
@@ -436,9 +450,11 @@ def render_report(
     else:
         lines.append("No over probabilities with a reference line.")
     lines += ["", "## Calibration (all scored games, 10 equal bins)", ""]
-    table = calibration_table(
-        [r.prediction.p_home for r in reported], [int(r.home_won) for r in reported]
-    )
+    wins = _with_win_metrics(reported)
+    if not wins:
+        lines.append("No home win probabilities (totals-only model).")
+        return "\n".join(lines) + "\n"
+    table = calibration_table([r.prediction.p_home for r in wins], [int(r.home_won) for r in wins])
     lines += _table(
         ("bin", "n", "mean p", "home win rate"),
         [

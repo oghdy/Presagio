@@ -9,6 +9,8 @@ today's and future scores, never leaves the runner):
   results(): finished games passing R1 and R2 for (d, as_of),
   schedule(): score-free schedule of earlier dates (Cup final included, for rest features),
   market(game_id): the prediction-time market by rule R3,
+- a prediction carries p_home (win models), total_mean (totals-only models, p_home None,
+  P-034 T-B0) or both; one of them is required (schema v1 predictions.has_output),
 - for learning predictors, fit(TrainingMatrix) at refit days. The runner asks the training
   source for training_matrix(feature_version, fit_cutoff) only: a training row h carries the
   features of h's own prediction date (as_of(h)), never features recomputed at the refit
@@ -137,8 +139,8 @@ class PredictionValues(Protocol):
     """What predict() returns per game; any object with these attributes works."""
 
     @property
-    def p_home(self) -> float:
-        """Home win probability in (0, 1)."""
+    def p_home(self) -> float | None:
+        """Home win probability in (0, 1); None for a totals-only model (P-034 T-B0)."""
         ...
 
     @property
@@ -156,7 +158,7 @@ class PredictionValues(Protocol):
 class Prediction:
     """A plain PredictionValues for predictors that do not bring their own type."""
 
-    p_home: float
+    p_home: float | None
     total_mean: float | None = None
     over_prob: float | None = None
     total_sd: float | None = None
@@ -459,7 +461,7 @@ class PredictionRecord:
 
     game: TargetGame
     as_of: datetime
-    p_home: float
+    p_home: float | None  # None: a totals-only model (predictions.p_home NULL)
     total_mean: float | None
     over_prob: float | None
     total_sd: float | None
@@ -759,14 +761,17 @@ def run_walk_forward(
             _check_prediction_times(target.game_id, cutoff, as_of, target.start_time_utc)
             totals_ref = market.totals_reference
             p_home = _check_probability(values.p_home, "p_home", target.game_id)
-            if p_home is None:
-                raise PredictorOutputError(f"p_home for {target.game_id} is missing")
+            total_mean = _check_total(values.total_mean, "total_mean", target.game_id)
+            if p_home is None and total_mean is None:  # schema v1 predictions.has_output
+                raise PredictorOutputError(
+                    f"{target.game_id}: a prediction needs p_home or total_mean"
+                )
             result.predictions.append(
                 PredictionRecord(
                     game=target,
                     as_of=as_of,
                     p_home=p_home,
-                    total_mean=_check_total(values.total_mean, "total_mean", target.game_id),
+                    total_mean=total_mean,
                     over_prob=_check_probability(values.over_prob, "over_prob", target.game_id),
                     total_sd=_check_total(
                         getattr(values, "total_sd", None), "total_sd", target.game_id

@@ -43,6 +43,7 @@ class Result(Protocol):
 
     game_id: str
     season: str
+    game_type: str
     home_team_id: int
     away_team_id: int
     is_neutral: bool
@@ -52,12 +53,18 @@ class Result(Protocol):
         """Home team won."""
         ...
 
+    @property
+    def total(self) -> int:
+        """Total points."""
+        ...
+
 
 class Target(Protocol):
     """A game to predict (presagio.evaluation.walkforward.TargetGame): schedule only."""
 
     game_id: str
     season: str
+    game_type: str
     home_team_id: int
     away_team_id: int
     is_neutral: bool
@@ -69,6 +76,11 @@ class MarketLike(Protocol):
     @property
     def home(self) -> Any:
         """MarketProbability with p_home, or None."""
+        ...
+
+    @property
+    def total_line(self) -> float | None:
+        """Reference total line L at prediction time, or None."""
         ...
 
 
@@ -86,9 +98,10 @@ class Context(Protocol):
 
 @dataclass(frozen=True)
 class BaselinePrediction:
-    """What a win baseline returns per game: p_home only (no total, no over probability)."""
+    """What a baseline returns per game: p_home for the win baselines (no total), total
+    fields for the total baselines (p_home None, presagio.models.totals)."""
 
-    p_home: float
+    p_home: float | None
     total_mean: float | None = None
     over_prob: float | None = None
     total_sd: float | None = None

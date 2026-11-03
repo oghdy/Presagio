@@ -1,8 +1,9 @@
 """Registry of what `presagio backtest run --experiment <id>` can run (D-043).
 
-An experiment id names a predictor factory. Baselines (design 5-1) are registered under their
-baseline ids (B0, B1, B3; B2 and the total baselines arrive with P-034), hypotheses under
-H-NN. H-00 is the framework dummy of P-032: it has no ModelSpec, so it cannot be stored.
+An experiment id names a predictor factory. Win baselines (design 5-1) are registered under
+their baseline ids (B0..B3), total baselines (design 5-3) under T-Bn (T-B0 here; T-B1 needs
+the team-stat features, after P-035), hypotheses under H-NN. H-00 is the framework dummy of
+P-032: it has no ModelSpec, so it cannot be stored.
 """
 
 from __future__ import annotations
@@ -13,7 +14,9 @@ from dataclasses import dataclass
 from presagio.evaluation.dummy import ConstantPredictor
 from presagio.evaluation.walkforward import Predictor
 from presagio.models.baselines import AlwaysHomeBaseline, MarketBaseline, SeasonWinRateBaseline
+from presagio.models.elo import EloBaseline
 from presagio.models.spec import ModelSpec
+from presagio.models.totals import LeagueTotalBaseline
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,17 @@ EXPERIMENTS: dict[str, Experiment] = {
         ),
         Experiment("B0", "always home: season cumulative home win rate", AlwaysHomeBaseline),
         Experiment("B1", "season win rate difference, clipped", SeasonWinRateBaseline),
+        Experiment(
+            "B2",
+            "Elo rating (design 5-2): K=20, HCA=100, season carry 0.75, warmed up on earlier "
+            "seasons",
+            EloBaseline,
+        ),
         Experiment("B3", "prediction-time market probability (R3)", MarketBaseline),
+        Experiment(
+            "T-B0",
+            "league mean total of the last 100 games (design 5-3 T-B0); totals only",
+            LeagueTotalBaseline,
+        ),
     )
 }
