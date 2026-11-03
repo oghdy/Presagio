@@ -432,7 +432,7 @@
 | P-029 | 운영 문서를 단계 1 결정(D-005 보완·D-011/D-043·D-014·D-027)과 맞춘다 | pm | DONE | - |
 | P-030 | 🧑 모델링 설계안 v1 + 실험 계획 (예측 대상, 피처, 시장 기준선, 가설 목록, 지표, 보류 시즌) | ml-engineer | DONE | P-021 |
 | P-026 | 2022-23 시즌 추가 수집 (Elo 워밍업·carry 탐색용, D-049 M-11) | data-engineer | DONE (PR #34 `4f0d9af`) | P-031 DONE ✓ |
-| P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO | P-031 |
+| P-027 | 스탯 정정 빈도 품질 체크 (raw 버전 간 team_game_stats 변경 수, DR-2) | data-engineer | TODO (상세 확정·브리핑 11-03, "띄워" 대기) | P-031 |
 | P-028 | 주말 낮 경기 배당 캡처 2회 추가 (토·일 14:45·16:45 ET, D-027 개정, D-049 M-9) + 운영 관찰 ⑤⑥ 대응·23h 문구 | platform-engineer | DONE (10-28, #61 `9a3073b`) | P-024 DONE ✓ |
 | P-043 | odds 단위 partial 판정·종료 코드 분리(거부 가격 비율 임계, warn/fail) + `ingestion_runs.started_at` 호스트 시계 기록 (P-028 운영 관찰 ②③) | data-engineer | DONE (11-01, #70 `7ea51ff`) | P-028 관찰 |
 | P-044 | 🧑 매일 배당 수집 + 개발 DB를 소형 클라우드 VM(DigitalOcean $6, 싱가포르)으로 이전 — 하이브리드(nba_api는 맥 16:00 본 실행), Tailscale, 백업, 맥 launchd 축소 (D-058, 단계 6 선행) | platform-engineer | DONE (10-29, #63 `c63fb3c`; 전환 완료, 10-30 첫 VM 캡처 3/3 OK) | P-028, 사람 준비 |
@@ -594,13 +594,29 @@
   - 2026-10-23 PM 20:39: 기록 PR #35 머지 뒤 `gh pr update-branch 34`(HEAD `5e74b79`, CI 초록) → 사람 지시로 PM이 squash 머지 **`4f0d9af`**. **DONE.** 개발 DB 재수집 불필요(DB 값은 `fe1f2db` 코드로 받았고 머지된 src·tests와 동일). 리뷰 worktree 제거. 후속은 P-041(문서 정정 3건)·P-033 5(h)·D-053.
 
 ### P-027 스탯 정정 빈도 품질 체크 (설계안 DR-2)
-- **상태:** TODO (상세 완료 기준은 P-031 뒤 확정)
-- **담당 역할:** data-engineer
+- **상태:** TODO (상세 완료 기준 2026-11-03 PM 확정, 브리핑 `P-027-briefing.md` 작성 — 사람 "띄워" 대기)
+- **담당 역할:** data-engineer (Opus 5.5 높음, **클라우드 후보** — mock·임시 DB로 완결, D-052; 크레딧 11-05 만료 전)
 - **단계:** 2~3
-- **의존:** P-031
-- **목표:** 같은 경기·팀의 `team_game_stats` 값이 raw 버전 사이에 바뀐 횟수를 세는 품질 체크(2026-27부터). 정정이 잦으면 실시간과 백테스트의 입력이 체계적으로 달라 재현성(누수 질문 5)에 영향.
-- **메모:** 2026-10-23 PM: D-049(설계안 3-2 DR-2)로 생성. 우선순위 중간.
-
+- **의존:** P-031 (DONE)
+- **목표:** 같은 경기·팀의 `team_game_stats` 값이 raw 버전 사이에 바뀐 횟수를 세는 품질 체크(2026-27부터). 정정이 잦으면 실시간과 백테스트의 입력이 체계적으로 달라 재현성(누수 질문 5)에 영향. 매일 흐름은 현재 시즌 `LeagueGameLog`를 매일 다시 받아(schema-v1 6-2 규칙 3) 내용이 바뀌면 raw에 새 버전 행이 생기고(3장 유니크 규칙) clean은 `fetched_at` 가드로 최신 값을 덮어쓴다 — 그래서 **정정 전 값은 raw에만 남고, 정정이 일어났다는 사실을 지금은 아무도 세지 않는다.** 이 체크가 그 수를 센다.
+- **범위(건드릴 파일):** `src/presagio/quality/checks.py`(체크 1개 + 상수), `tests/quality/`(테스트), `README.md` 9절(표 1행 + 개수 문구).
+- **범위 밖:** 스키마·마이그레이션, `src/presagio/ingestion/`, CLI 옵션 추가, `scripts/`, `docs/design/*`(DR-2 행은 PM이 backlog에만 기록), 정정을 clean에 "되돌리기"(clean은 최신 값이 맞다, schema-v1 1-5), 박스스코어(`boxscoretraditionalv3`) 버전 비교(매일 흐름이 받지 않음).
+- **읽어야 할 파일:** `src/presagio/quality/checks.py`(`Check`·`Outcome`·`Scope.time_where`·`_result`, `check_gamelog_vs_schedule_score`가 raw jsonb를 읽는 방식, `check_feature_drift`의 예시 ID 형식, `CHECKS` 등록), `src/presagio/ingestion/sources/nba_api/team_stats.py`(`GAME_LOG_COLUMNS`·`parse_game_log_team_stats`의 헤더 이름 기반 열 찾기), `tests/quality/conftest.py`(`insert_raw`, baseline의 `leaguegamelog` raw가 `{"rows": []}`), `tests/quality/test_checks.py`(`NOTHING_TO_COMPARE`·`one()`), `tests/fixtures/nba_api/leaguegamelog__2026-27_RegularSeason.json`(실제 응답 모양), `docs/design/schema-v1.md` 3장(raw 버전 규칙·A→B→A 한계)·6-2(저장 열), README 9절, decisions D-040·D-053 4항·D-056 2항.
+- **완료 기준 (전부 만족해야 DONE; PM 확정 2026-11-03, 변경은 사람만 D-008):**
+  1. **체크 `stat_corrections`**가 `CHECKS` 끝(20번째)에 `finding=WARN`, `scoped=True`로 추가된다. 정의: `raw_api_responses`에서 `source='nba_api'`, `endpoint='leaguegamelog'`, `http_status` 2xx, `response_json IS NOT NULL`인 행을 `request_hash`별로 `fetched_at`(동률이면 `raw_response_id`) 순으로 세워 **연속한 두 버전의 쌍**을 만든다. 쌍마다 `resultSets[0]`의 `headers`로 열 위치를 찾고(이름 기반 — 위치 가정 금지), 두 버전에 모두 있는 `(GAME_ID, TEAM_ID)` 라인 쌍을 비교한다. **비교 열 = `team_game_stats`에 저장하는 게임로그 열 17개**(`MIN, PLUS_MINUS, PTS, FGM, FGA, FG3M, FG3A, FTM, FTA, OREB, DREB, REB, AST, STL, BLK, TOV, PF`). `FG_PCT`·`FG3_PCT`·`FT_PCT`·`WL`·`MATCHUP`·`VIDEO_AVAILABLE` 등 저장하지 않는 열의 변화는 세지 않는다.
+  2. **결과:** `checked` = 비교한 라인 쌍 수, `warnings` = 비교 열 중 하나라도 바뀐 라인 쌍(예시 ID `GAME_ID:TEAM_ID:첫 바뀐 열`, 예 `0022600118:1610612763:FGA`), `note` = `"{changed} of {checked} line pair(s) changed across {pairs} version pair(s); columns: FGA 3, FG3A 2, ..."`(열별 개수, 많은 순). 바뀐 라인은 WARN이라 종료 코드에 영향이 없다(D-040). 새 버전에만 있는 라인(새 경기)은 세지 않고, 옛 버전에만 있던 라인이 있으면 note에 개수를 덧붙인다.
+  3. **범위:** `--season S` → `request_params->>'Season' = S`(SeasonType 전부); `--date D` → **새 버전의 `fetched_at`**이 그 동부 날짜 안(`Scope.time_where`). 둘 다 없으면 전부. 범위 안에 버전 쌍이 0이면 **SKIP** + note `no second leaguegamelog version to compare`(백필 시즌, 게임로그 갱신이 없던 날). 쌍은 있는데 겹치는 라인이 0이면 PASS(checked 0) + note. (매일 흐름은 전날 동부 날짜 범위라 **어제 갱신의 정정이 오늘 보인다** — 하루 늦지만 각 쌍이 정확히 한 번 보고된다.)
+  4. **비교는 SQL(jsonb) 한 쿼리**에서 한다(`LAG() OVER (PARTITION BY request_hash ORDER BY fetched_at, raw_response_id)` + `jsonb_array_elements`). 응답 본문을 파이썬으로 끌어와 비교하지 않는다. 날짜·시즌 필터는 **라인을 펼치기 전에** 버전 쌍에 적용한다(매일 흐름이 시즌 전체 버전을 매번 펼치지 않게; 시즌 끝엔 버전 ~170개 × 라인 ~2,460). PM 실측(VM DB 11-03): raw 30개(2.2 MB)·라인 쌍 3,790개 비교 0.8초.
+  5. **저장 열 목록은 품질 모듈 안의 독립 상수**(`GAME_LOG_STAT_COLUMNS`)로 두고, `presagio.ingestion.sources.nba_api.team_stats.GAME_LOG_COLUMNS`에서 `GAME_ID`·`TEAM_ID`를 뺀 것과 같음을 테스트로 고정한다(D-056 2항 방식: 검사하는 쪽이 쓰는 쪽을 import하지 않는다).
+  6. **형식이 다른 버전**(`resultSets`/`headers`/`rowSet`이 없거나 `GAME_ID`·`TEAM_ID` 헤더가 없는 응답, 예: 테스트 baseline의 `{"rows": []}`)은 비교에서 빼고 note에 개수를 적는다. `ERROR`로 만들지 않는다.
+  7. **테스트**(임시 DB, 외부 호출 0, `PRESAGIO_REQUIRE_DB=1 uv run pytest -q` 전부 통과·skipped 0): (a) 두 버전, 라인 하나의 `FGA`만 바뀜 → WARN, `checked` = 겹치는 라인 수, `examples == ("GAME_ID:TEAM_ID:FGA",)`, note에 `FGA 1`; (b) `FG_PCT`·`VIDEO_AVAILABLE`만 바뀜 → PASS; (c) 버전 1개 → SKIP + note; (d) 새 버전에만 새 경기 라인 → 세지 않음(PASS, `checked` = 겹침 수); (e) 세 버전 A→B→C에서 같은 라인이 두 번 바뀜 → warnings 2; (f) `--date`가 새 버전 `fetched_at`의 동부 날짜로 쌍을 고르고(그 날 쌍이 없으면 SKIP), `--season`이 `request_params.Season`으로 골라 다른 시즌 raw는 무시; (g) 두 버전의 헤더 순서가 다르고 값은 같음 → PASS(이름 기반 비교 증명); (h) 형식 다른 raw 섞임 → 그 버전만 제외, note(기준 6); (i) 기존 전체 보고서 테스트(`NOTHING_TO_COMPARE`, `len(CHECK_NAMES)`)가 새 체크 포함으로 통과(baseline에서는 SKIP); (j) 기준 5 상수 일치; (k) 기존 테스트 회귀 0. 실제 DB 행 수·run_id를 테스트에 박지 않는다(D-053 4항).
+  8. **문서:** README 9절 표에 `stat_corrections (경고)` 행(쉬운 말: 게임로그를 다시 받았을 때 이미 저장된 경기·팀 스탯이 전 버전과 다르다 = NBA가 기록을 정정했다; 전날 범위라 하루 뒤에 보인다), 612행 개수 문구를 "전부 20개(…, 20은 P-027)"로. `docs/design/*`는 건드리지 않는다.
+  9. **범위 밖 변경 0:** `git diff main...HEAD --stat`에 `src/presagio/quality/checks.py`, `tests/quality/`, `README.md`만. `uv run ruff check . && uv run ruff format --check .` 통과, CI 초록. 스키마·`ingestion/`·`scripts/`·CLI 옵션 변경 없음.
+  10. **2단계 실데이터 확인(D-060 2항, 머지 뒤 PM이 VM DB로):** PR 본문 "머지 후 PM이 확인" 절에 명령과 기대값을 적는다 — `uv run presagio quality-check --season 2026-27 --check stat_corrections`(WARN, 11-03 기준 바뀐 라인 7개: FGA 3·FG3A 2·AST·BLK·TOV·OREB·DREB·REB·STL 각 1~2 — 아래 메모 실사례), `--date 2026-10-28 --check stat_corrections`(쌍 121→128 하나, warnings 6), `--date 2026-10-27`(쌍 114→121, PASS 0), `--season 2023-24`(SKIP, 버전 1개), 전 범위 실행 시간.
+- **확인 방법:** 위 7의 pytest + 10의 명령(PM). 리뷰어는 VM DB 읽기 쿼리로 실사례 표와 대조.
+- **메모:**
+  - 2026-10-23 PM: D-049(설계안 3-2 DR-2)로 생성. 우선순위 중간.
+  - 2026-11-03 PM **상세 확정 + 실측(VM DB 읽기):** 2026-27 정규 게임로그 raw 버전 14개(10-22~11-03, 라인 28→214, 76 KB 평균). 연속 쌍 13개·라인 쌍 1,290개 중 **저장 열이 바뀐 라인 7개**(0.54%; 지금까지 적재된 라인 ~214개 기준 3%쯤이 한 번 이상 정정됨): 10-25 갱신(쌍 104→110) 1건 — `0022600091` DAL `FGA 79→80, FG3A 37→38`(10-21 경기, 4일 뒤); 10-28 갱신(쌍 121→128) 6건 — `0022600009` HOU `AST 25→24`, `0022600103` SAC `FG3A 31→32`, `0022600109` DAL `FGA 88→87`, `0022600117` DET `BLK 11→10`, `0022600118` SAC `FGA 94→95, TOV 14→13`, `0022600118` MEM `FGA 95→96, FG3A 40→41, OREB 18→19, DREB 36→37, REB 54→56, STL 6→5, BLK 6→7`(10-23~25 경기, 3~5일 뒤). 나머지 11쌍은 변경 0. `FG_PCT`류만 바뀐 라인은 없었다(저장 열이 바뀌면 비율도 따라 바뀜). 정정은 경기 3~5일 뒤에 오므로 `--date <경기 날짜>`가 아니라 **갱신(새 버전) 날짜** 기준이 맞다(기준 3). 백필 시즌(2022-23~2025-26)은 버전 1~2개(2022-23 정규 2개는 중립 보완 재수집, 2025-26 PlayIn 2개는 내용 동일 재수집 아님 — 비교 결과 변경 0).
 ### P-028 주말 낮 경기 배당 캡처 2회 추가 (D-027 개정, D-049 M-9, DR-8)
 - **상태:** DONE (2026-10-28, PR #61 → main `9a3073b`, D-059)
 - **담당 역할:** platform-engineer (Opus 5.5 높음)
