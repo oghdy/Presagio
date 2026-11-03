@@ -629,7 +629,7 @@ uv run presagio quality-check --season 2023-24
 | `recent_failed_runs` (경고) | 최근 7일 수집 실행 중 `partial`/`failed`/`aborted`로 끝났고 나중에 다시 성공하지 않은 것 |
 | `features_after_tipoff` | 피처 행의 `as_of`가 그 경기의 시작 시각 이후다(누수, 설계안 9-1 5번). 모델링 표(마이그레이션 0002)가 없으면 이 체크부터 아래 5개는 `alembic_version`이 0002 전이면 `SKIP`, 0002 이후면 `ERROR` |
 | `predictions_after_tipoff` | 예측 행의 `as_of`가 그 경기의 **최신** 시작 시각 이후다(경기가 앞당겨진 경우 포함) |
-| `feature_drift` (경고) | 저장된 피처 값을 다시 계산하면 다르다(덮어쓰지 않고 보고만). 재계산 함수가 없거나(지금) 비교한 행이 0이면 `SKIP` |
+| `feature_drift` (경고) | 저장된 피처 값을 그 행의 `as_of`·`feature_version`으로 다시 계산하면 다르다(덮어쓰지 않고 보고만). P-035부터 `presagio.features.recompute`가 재계산 함수를 넣어 실제로 검사한다. 비교한 행이 0이면(피처 행 없음, 모르는 버전뿐) `SKIP` |
 | `prediction_feature_link` | 예측이 가리키는 피처 행(`feature_id`)이 다른 경기이거나, 피처 `as_of`가 예측 `as_of`보다 늦다(예측이 가질 수 없던 정보). `feature_id`가 없는 예측은 대상 밖 |
 | `predictions_market_status` | 예측 행의 `market_status`가 예측 시점 4값(`available`, `no_snapshot_at_as_of`, `no_odds_season`, `unmatched_event`) 밖이다(D-054. `pred_only`·`rescheduled`는 평가 행 전용) |
 | `stat_corrections` (경고) | 게임로그(`leaguegamelog`)를 다시 받았을 때 이미 저장된 경기·팀의 스탯이 바로 전 원본(raw) 버전과 다르다 = NBA가 기록을 정정했다(설계안 DR-2). 비교 열은 우리가 `team_game_stats`에 저장하는 17개뿐이고(`FG_PCT` 같은 비율 열은 안 봄), 새 버전에만 있는 새 경기는 세지 않는다. `--date`는 새 버전을 **받은** 동부 날짜이므로 매일 흐름(전날 범위)에서는 어제 갱신의 정정이 오늘 보인다. 비교할 두 번째 버전이 없으면 `SKIP` |

@@ -1,9 +1,11 @@
-"""`presagio` command line: ingestion (backfill, ingest-daily), quality-check, backtest.
+"""`presagio` command line: ingestion (backfill, ingest-daily), quality-check, backtest,
+features.
 
 Exit codes: 0 everything done, 1 some unit not done (or an error before starting), 2 stopped by
 a block (HTTP 403/429), 64 bad arguments (sysexits EX_USAGE, so it never reads as "blocked").
 `backtest run` adds 3 (a leakage guard fired) and 4 (stored rows differ from this run); see
-presagio.evaluation.cli.
+presagio.evaluation.cli. `features compute` uses 4 the same way and 2 for its argument errors
+(presagio.features.cli).
 """
 
 from __future__ import annotations
@@ -20,6 +22,9 @@ from sqlalchemy import Engine
 
 from presagio.config import get_settings
 from presagio.evaluation.cli import add_backtest_parser
+from presagio.evaluation.holdout import HoldoutLockedError, check_holdout
+from presagio.evaluation.timing import backtest_as_of
+from presagio.features.cli import FeaturePolicy, add_features_parser
 from presagio.ingestion.backfill import (
     EXIT_FAILED,
     RUN,
@@ -150,6 +155,16 @@ def build_parser() -> ArgumentParser:
     add_ingest_daily_parser(commands)  # P-017
     add_quality_check_parser(commands)
     add_backtest_parser(commands)  # P-032
+    # P-035: the feature package never imports presagio.evaluation (T6), so the CLI layer
+    # hands it the backtest as_of and the holdout gate.
+    add_features_parser(
+        commands,
+        FeaturePolicy(
+            backtest_as_of=backtest_as_of,
+            check_holdout=check_holdout,
+            holdout_error=HoldoutLockedError,
+        ),
+    )
     return parser
 
 

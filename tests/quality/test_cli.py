@@ -2,12 +2,16 @@
 
 import json
 from collections.abc import Iterator
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import Engine, text
 
 from presagio.cli import build_parser, main
 from presagio.db.session import make_engine
+from presagio.evaluation.timing import backtest_as_of
+from presagio.features.compute import compute_day
+from presagio.features.store import store_features
 from presagio.quality.checks import CHECK_NAMES, run_checks
 from presagio.quality.report import render_text
 
@@ -172,3 +176,41 @@ def test_unreachable_database_exits_1_without_traceback(
     data = json.loads(capsys.readouterr().out)
     assert (data["ok"], data["exit_code"]) == (False, 1)
     assert data["error"].startswith("OperationalError")
+
+
+def test_feature_drift_recomputes_stored_features_through_the_feature_module(
+    capsys: pytest.CaptureFixture[str], engine: Engine
+) -> None:
+    """D-056 / P-035: the command injects presagio.features.recompute.recompute_stored, so
+    stored rows PASS check 17 and a row edited by SQL is a WARN naming the row and key."""
+    day = date(2023, 10, 26)
+    with engine.begin() as conn:
+        rows = compute_day(conn, day, backtest_as_of(day))
+        store_features(
+            conn,
+            rows,
+            "backtest",
+            computed_at=datetime(2026, 10, 1, 12, tzinfo=UTC),
+            code_version="t",
+        )
+    try:
+        code, out = run(capsys, "--check", "feature_drift", engine=engine)
+        row = next(line for line in out.splitlines() if " feature_drift " in line)
+        assert code == 0 and " PASS " in row and f" {len(rows)}       0 " in row
+        with engine.begin() as conn:
+            feature_id, game_id = conn.execute(
+                text("SELECT feature_id, game_id FROM features ORDER BY feature_id LIMIT 1")
+            ).one()
+            conn.execute(
+                text(
+                    "UPDATE features SET \"values\" = jsonb_set(\"values\", '{home_adv}', '0') "
+                    "WHERE feature_id = :f"
+                ),
+                {"f": feature_id},
+            )
+        code, out = run(capsys, "--check", "feature_drift", engine=engine)
+        row = next(line for line in out.splitlines() if " feature_drift " in line)
+        assert code == 0 and " WARN " in row and f" {feature_id}:{game_id}:fv1:home_adv " in row
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM features"))
