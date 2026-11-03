@@ -27,7 +27,18 @@ from presagio.quality.checks import (
     run_checks,
 )
 
-from .conftest import CUP_FINAL, DAYS, FIRST_TIP, ODDS_EVENT, PLAYOFF_GAMES, Baseline, insert_stats
+from .conftest import (
+    CUP_FINAL,
+    DAYS,
+    FETCHED,
+    FIRST_TIP,
+    NOTHING_TO_COMPARE,
+    ODDS_EVENT,
+    PLAYOFF_GAMES,
+    Baseline,
+    insert_raw,
+    insert_stats,
+)
 
 REQUIRED = (  # completion criterion 1 of P-020
     "team_rows_per_game",
@@ -57,12 +68,8 @@ def first_odds_event(conn: Connection) -> int:
     ).scalar_one()
 
 
-# Without a recompute function (the feature module, P-035) feature_drift has nothing to compare.
-NOTHING_TO_COMPARE = {"feature_drift": SKIP}
-
-
 def test_baseline_passes_every_check(conn: Connection, baseline: Baseline) -> None:
-    """Clean data: every check passes (feature_drift skips), so the exit code is 0."""
+    """Clean data: every check passes (two skip, nothing to compare), so the exit code is 0."""
     report = run_checks(conn)
     assert [r.name for r in report.results] == list(CHECK_NAMES)
     expected = dict.fromkeys(CHECK_NAMES, PASS) | NOTHING_TO_COMPARE
@@ -326,8 +333,6 @@ def test_gamelog_scores_with_nothing_to_compare_are_skipped(conn: Connection) ->
 
 def test_scoreboard_raw_newer_than_schedule_is_used(conn: Connection, baseline: Baseline) -> None:
     """The latest raw with the game final wins: a newer scoreboard with another score fails."""
-    from .conftest import insert_raw
-
     game = baseline.games[baseline.regular_games[9]]
     board = {
         "scoreboard": {
@@ -843,7 +848,7 @@ def test_modeling_tables_missing_at_0002_is_an_error(conn: Connection) -> None:
     for name, table in MODELING_CHECKS.items():
         assert status[name] == (ERROR, note.format(table)), name
     others = {name: s for name, (s, _) in status.items() if name not in MODELING_CHECKS}
-    assert others == dict.fromkeys(others, PASS)
+    assert others == {name: NOTHING_TO_COMPARE.get(name, PASS) for name in others}
     assert report.exit_code == 1
 
 
@@ -902,3 +907,278 @@ def test_prediction_market_status_outside_the_four_values_fails(
     )
     scoped = one(conn, "predictions_market_status", season="2024-25")
     assert (scoped.status, scoped.checked) == (PASS, 0)
+
+
+# --- stat_corrections (P-027, DR-2) -----------------------------------------------------------
+
+# Header order of a real LeagueGameLog response
+# (tests/fixtures/nba_api/leaguegamelog__2026-27_RegularSeason.json).
+LOG_HEADERS = (
+    "SEASON_ID", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_NAME", "GAME_ID", "GAME_DATE", "MATCHUP",
+    "WL", "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT",
+    "OREB", "DREB", "REB", "AST", "STL", "BLK", "TOV", "PF", "PTS", "PLUS_MINUS",
+    "VIDEO_AVAILABLE",
+)  # fmt: skip
+# A season other than the baseline's, so its unreadable leaguegamelog raw stays out of scope.
+LOG_SEASON = "2024-25"
+LOG_PARAMS = {"Season": LOG_SEASON, "SeasonType": "Regular Season"}
+DAL, SAC, MEM, HOU = 1610612742, 1610612758, 1610612763, 1610612745
+GAME_A, GAME_B, GAME_C = "0022400091", "0022400118", "0022400130"
+
+
+def log_line(game_id: str, team_id: int, **changes: Any) -> dict[str, Any]:
+    """One LeagueGameLog team line keyed by header name, with some values overridden."""
+    line = {
+        "SEASON_ID": "22024", "TEAM_ID": team_id, "TEAM_ABBREVIATION": "DAL",
+        "TEAM_NAME": "Dallas Mavericks", "GAME_ID": game_id, "GAME_DATE": "2024-10-21",
+        "MATCHUP": "DAL vs. SAS", "WL": "W", "MIN": 240, "FGM": 39, "FGA": 79, "FG_PCT": 0.494,
+        "FG3M": 15, "FG3A": 37, "FG3_PCT": 0.405, "FTM": 28, "FTA": 32, "FT_PCT": 0.875,
+        "OREB": 14, "DREB": 35, "REB": 49, "AST": 27, "STL": 7, "BLK": 5, "TOV": 17, "PF": 22,
+        "PTS": 121, "PLUS_MINUS": 8, "VIDEO_AVAILABLE": 1,
+    }  # fmt: skip
+    return line | changes
+
+
+def two_games(**first: Any) -> list[dict[str, Any]]:
+    """Four lines (games A and B); `first` overrides values of the first line (game A, DAL)."""
+    return [
+        log_line(GAME_A, DAL, **first),
+        log_line(GAME_A, SAC),
+        log_line(GAME_B, SAC),
+        log_line(GAME_B, MEM),
+    ]
+
+
+def game_log(lines: list[dict[str, Any]], headers: tuple[str, ...] = LOG_HEADERS) -> dict:
+    """A LeagueGameLog body in the real shape (resultSets[0].headers / rowSet)."""
+    return {
+        "resource": "leaguegamelog",
+        "parameters": {"Season": LOG_SEASON},
+        "resultSets": [
+            {
+                "name": "LeagueGameLog",
+                "headers": list(headers),
+                "rowSet": [[line[h] for h in headers] for line in lines],
+            }
+        ],
+    }
+
+
+def insert_versions(
+    conn: Connection, *bodies: Any, params: dict[str, Any] = LOG_PARAMS, **kwargs: Any
+) -> list[int]:
+    """Store the bodies as successive versions of one request, one day apart from FETCHED."""
+    return [
+        insert_raw(
+            conn, "nba_api", "leaguegamelog", params, body, FETCHED + timedelta(days=i), **kwargs
+        )
+        for i, body in enumerate(bodies)
+    ]
+
+
+def corrections(conn: Connection, **kwargs: Any) -> CheckResult:
+    """The stat_corrections row for the test season (unless another scope is given)."""
+    return one(conn, "stat_corrections", **({"season": LOG_SEASON} | kwargs))
+
+
+def test_stat_columns_equal_the_loader_columns() -> None:
+    """P-027 (j): the independent constant is GAME_LOG_COLUMNS without the key (D-056 2)."""
+    from presagio.ingestion.sources.nba_api.team_stats import GAME_LOG_COLUMNS
+
+    expected = tuple(c for c in GAME_LOG_COLUMNS if c not in ("GAME_ID", "TEAM_ID"))
+    assert expected == checks.GAME_LOG_STAT_COLUMNS
+    assert len(checks.GAME_LOG_STAT_COLUMNS) == 17
+    check = next(c for c in checks.CHECKS if c.name == "stat_corrections")
+    assert (check.finding, check.scoped) == (WARN, True)
+
+
+def test_stat_change_between_versions_warns_with_the_column(conn: Connection) -> None:
+    """P-027 (a): one line's FGA differs in the newer version: WARN, ID with the column."""
+    insert_versions(conn, game_log(two_games()), game_log(two_games(FGA=80, FG_PCT=0.488)))
+    report = run_checks(conn, checks=["stat_corrections"], season=LOG_SEASON)
+    (result,) = report.results
+    assert (result.status, result.checked, result.failed) == (WARN, 4, 1)
+    assert result.examples == (f"{GAME_A}:{DAL}:FGA",)
+    assert result.note == "1 of 4 line pair(s) changed across 1 version pair(s); columns: FGA 1"
+    assert result.target == "leaguegamelog raw versions; season 2024-25"
+    assert report.exit_code == 0  # a warning, never exit code 1 (D-040)
+
+
+def test_corrections_of_2026_10_28_reproduced(conn: Connection) -> None:
+    """The real 121->128 pair (PM, 2026-11-03): six lines changed, examples capped at five,
+    the example column is the first changed one in stored-column order, counts per column."""
+    old = [
+        log_line("0022600009", HOU, AST=25),
+        log_line("0022600103", SAC, FG3A=31),
+        log_line("0022600109", DAL, FGA=88),
+        log_line("0022600117", 1610612765, BLK=11),
+        log_line("0022600118", SAC, FGA=94, TOV=14),
+        log_line("0022600118", MEM, FGA=95, FG3A=40, OREB=18, DREB=36, REB=54, STL=6, BLK=6),
+        log_line("0022600119", DAL),
+    ]
+    new = [
+        log_line("0022600009", HOU, AST=24),
+        log_line("0022600103", SAC, FG3A=32),
+        log_line("0022600109", DAL, FGA=87),
+        log_line("0022600117", 1610612765, BLK=10),
+        log_line("0022600118", SAC, FGA=95, TOV=13),
+        log_line("0022600118", MEM, FGA=96, FG3A=41, OREB=19, DREB=37, REB=56, STL=5, BLK=7),
+        log_line("0022600119", DAL),
+    ]
+    insert_versions(conn, game_log(old), game_log(new))
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (WARN, 7, 6)
+    assert result.examples == (
+        f"0022600009:{HOU}:AST",
+        f"0022600103:{SAC}:FG3A",
+        f"0022600109:{DAL}:FGA",
+        "0022600117:1610612765:BLK",
+        f"0022600118:{SAC}:FGA",
+    )
+    assert result.note == (
+        "6 of 7 line pair(s) changed across 1 version pair(s); columns: FGA 3, FG3A 2, BLK 2, "
+        "OREB 1, DREB 1, REB 1, AST 1, STL 1, TOV 1"
+    )
+
+
+def test_changes_in_unstored_columns_pass(conn: Connection) -> None:
+    """P-027 (b): FG_PCT and VIDEO_AVAILABLE are not stored, so their changes do not count."""
+    insert_versions(
+        conn, game_log(two_games()), game_log(two_games(FG_PCT=0.5, VIDEO_AVAILABLE=0, WL="L"))
+    )
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (PASS, 4, 0)
+    assert result.note == "0 of 4 line pair(s) changed across 1 version pair(s)"
+
+
+def test_single_version_skips(conn: Connection) -> None:
+    """P-027 (c): one version has nothing to compare with."""
+    insert_versions(conn, game_log(two_games()))
+    result = corrections(conn)
+    assert (result.status, result.checked) == (SKIP, 0)
+    assert result.note == "no second leaguegamelog version to compare"
+
+
+def test_lines_only_in_one_version_are_not_compared(conn: Connection) -> None:
+    """P-027 (d): new games in the newer version are not changes; a line that disappeared is
+    noted but not a change either."""
+    insert_versions(
+        conn,
+        game_log(two_games()),
+        game_log([*two_games(), log_line(GAME_C, DAL), log_line(GAME_C, HOU)]),
+    )
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (PASS, 4, 0)
+    assert result.note == "0 of 4 line pair(s) changed across 1 version pair(s)"
+    insert_raw(
+        conn, "nba_api", "leaguegamelog", LOG_PARAMS,
+        game_log([*two_games(FGA=80), log_line(GAME_C, DAL)]), FETCHED + timedelta(days=2),
+    )  # fmt: skip
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (WARN, 4 + 5, 1)
+    assert result.note == (
+        "1 of 9 line pair(s) changed across 2 version pair(s); columns: FGA 1; "
+        "1 line(s) only in the older version"
+    )
+
+
+def test_a_line_changed_twice_counts_once_per_pair(conn: Connection) -> None:
+    """P-027 (e): A->B->C with the same line changed in both steps gives two warnings; equal
+    column counts keep the stored-column order (FGA before AST)."""
+    insert_versions(
+        conn,
+        game_log(two_games()),
+        game_log(two_games(FGA=80)),
+        game_log(two_games(FGA=80, AST=26)),
+    )
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (WARN, 8, 2)
+    assert result.examples == (f"{GAME_A}:{DAL}:FGA", f"{GAME_A}:{DAL}:AST")
+    assert result.note == (
+        "2 of 8 line pair(s) changed across 2 version pair(s); columns: FGA 1, AST 1"
+    )
+
+
+def test_date_scope_is_the_eastern_day_the_newer_version_was_fetched(conn: Connection) -> None:
+    """P-027 (f): --date picks pairs by the newer version's fetched_at in US Eastern time."""
+    bodies = (game_log(two_games()), game_log(two_games(FGA=80)), game_log(two_games(FGA=81)))
+    # 2026-10-01 12:00Z, 2026-10-02 03:30Z (= Oct 1 23:30 ET), 2026-10-02 04:30Z (Oct 2 ET).
+    at = (
+        FETCHED,
+        FETCHED + timedelta(hours=15, minutes=30),
+        FETCHED + timedelta(hours=16, minutes=30),
+    )
+    for body, fetched_at in zip(bodies, at, strict=True):
+        insert_raw(conn, "nba_api", "leaguegamelog", LOG_PARAMS, body, fetched_at)
+    oct_1 = corrections(conn, date_et=date(2026, 10, 1))
+    assert (oct_1.status, oct_1.checked, oct_1.examples) == (WARN, 4, (f"{GAME_A}:{DAL}:FGA",))
+    assert oct_1.note.startswith("1 of 4 line pair(s) changed across 1 version pair(s)")
+    oct_2 = corrections(conn, date_et=date(2026, 10, 2))
+    assert (oct_2.status, oct_2.checked, oct_2.failed) == (WARN, 4, 1)
+    no_update = corrections(conn, date_et=date(2026, 9, 30))
+    assert (no_update.status, no_update.note) == (
+        SKIP,
+        "no second leaguegamelog version to compare",
+    )
+    whole = corrections(conn)
+    assert (whole.checked, whole.failed) == (8, 2)
+
+
+def test_season_scope_uses_the_request_season_parameter(conn: Connection) -> None:
+    """P-027 (f): --season selects versions by request_params.Season, any SeasonType."""
+    insert_versions(conn, game_log(two_games()), game_log(two_games(FGA=80)))
+    other = {"Season": "2025-26", "SeasonType": "Regular Season"}
+    insert_versions(conn, game_log(two_games()), game_log(two_games(AST=1)), params=other)
+    playoffs = {"Season": LOG_SEASON, "SeasonType": "Playoffs"}
+    insert_versions(
+        conn,
+        game_log([log_line(GAME_C, HOU)]),
+        game_log([log_line(GAME_C, HOU, PF=1)]),
+        params=playoffs,
+    )
+    result = corrections(conn)
+    assert (result.checked, result.examples) == (5, (f"{GAME_A}:{DAL}:FGA", f"{GAME_C}:{HOU}:PF"))
+    assert result.note == (
+        "2 of 5 line pair(s) changed across 2 version pair(s); columns: FGA 1, PF 1"
+    )
+    other_season = corrections(conn, season="2025-26")
+    assert (other_season.checked, other_season.examples) == (4, (f"{GAME_A}:{DAL}:AST",))
+    assert corrections(conn, season="2022-23").status == SKIP
+
+
+def test_columns_are_matched_by_header_name(conn: Connection) -> None:
+    """P-027 (g): the newer version lists the same values under reordered headers: no change."""
+    insert_versions(
+        conn, game_log(two_games()), game_log(two_games(), headers=tuple(reversed(LOG_HEADERS)))
+    )
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (PASS, 4, 0)
+
+
+def test_versions_in_another_shape_are_ignored_not_errors(conn: Connection) -> None:
+    """P-027 (h): versions without resultSets/headers/rowSet or without the key headers are
+    left out and counted; the readable versions around one form a pair."""
+    unreadable = [
+        {"rows": []},
+        {"resultSets": {}},
+        {"resultSets": [{"headers": ["GAME_ID", "PTS"], "rowSet": []}]},
+        {"resultSets": [{"headers": "GAME_ID,TEAM_ID", "rowSet": []}]},
+        {"resultSets": [{"headers": ["GAME_ID", "TEAM_ID"], "rowSet": {}}]},
+        "text",
+    ]
+    insert_versions(conn, game_log(two_games()), *unreadable, game_log(two_games(FGA=80)))
+    result = corrections(conn)
+    assert (result.status, result.checked, result.failed) == (WARN, 4, 1)
+    assert result.note == (
+        "1 of 4 line pair(s) changed across 1 version pair(s); columns: FGA 1; "
+        "6 unreadable version(s) ignored"
+    )
+    # The baseline's leaguegamelog raw ({"rows": []}) is such a version of season 2023-24.
+    baseline_season = one(conn, "stat_corrections", season="2023-24")
+    assert baseline_season.status == SKIP
+    assert baseline_season.note == (
+        "no second leaguegamelog version to compare; 1 unreadable version(s) ignored"
+    )
+    assert one(conn, "stat_corrections", date_et=date(2026, 10, 1)).note == (
+        "no second leaguegamelog version to compare; 1 unreadable version(s) ignored"
+    )
