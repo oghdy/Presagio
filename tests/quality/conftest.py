@@ -22,6 +22,7 @@ from sqlalchemy import URL, Connection, Engine, text
 from presagio.db.session import make_engine
 from presagio.ingestion.loaders.odds import seed_odds_team_aliases
 from presagio.ingestion.raw_store import canonical_json, request_hash, response_sha256
+from presagio.quality.checks import SKIP
 
 SEASON = "2023-24"
 FETCHED = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
@@ -31,6 +32,10 @@ DAYS = 82
 PLAYOFF_GAMES = ("0042300101", "0042300102")
 CUP_FINAL = "0062300001"
 ODDS_EVENT = "evt-baseline"
+# Checks that skip on the baseline: feature_drift has no recompute function (the feature module,
+# P-035); stat_corrections has one leaguegamelog raw only (and not in the LeagueGameLog shape),
+# so no version pair.
+NOTHING_TO_COMPARE = {"feature_drift": SKIP, "stat_corrections": SKIP}
 # Box score columns other than pts; filler values that keep reb = oreb + dreb and
 # pts = 2*fgm + fg3m + ftm true (see stat_values).
 STAT_COLUMNS = (
@@ -69,8 +74,19 @@ def round_robin(team_ids: list[int], day: int) -> list[tuple[int, int]]:
     return [(a, b) if (day + i) % 2 == 0 else (b, a) for i, (a, b) in enumerate(pairs)]
 
 
-def insert_raw(conn: Connection, source: str, endpoint: str, params: dict, body: Any) -> int:
-    """Insert one raw_api_responses row (HTTP 200, JSON body) and return its id."""
+def insert_raw(
+    conn: Connection,
+    source: str,
+    endpoint: str,
+    params: dict,
+    body: Any,
+    fetched_at: datetime = FETCHED,
+) -> int:
+    """Insert one raw_api_responses row (HTTP 200, JSON body) and return its id.
+
+    The same params twice (with different bodies) make two versions of one request_hash; pass
+    a later fetched_at for the newer one.
+    """
     data = canonical_json(body).encode()
     return conn.execute(
         text(
@@ -91,7 +107,7 @@ def insert_raw(conn: Connection, source: str, endpoint: str, params: dict, body:
             "body": data.decode(),
             "sha": response_sha256(data),
             "bytes": len(data),
-            "at": FETCHED,
+            "at": fetched_at,
         },
     ).scalar_one()
 

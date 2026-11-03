@@ -55,6 +55,29 @@ SCORE_SOURCES = {
     "scheduleleaguev2": "$.leagueSchedule.gameDates[*].games[*]",
     "scoreboardv3": "$.scoreboard.games[*]",
 }
+# LeagueGameLog columns that team_game_stats stores (schema v1 6-2), in the order the
+# ingestion loader lists them; stat_corrections compares only these between raw versions.
+# Defined here on purpose, not imported from the ingestion module (D-056 2): a test fixes that
+# it equals GAME_LOG_COLUMNS without the GAME_ID/TEAM_ID key.
+GAME_LOG_STAT_COLUMNS: tuple[str, ...] = (
+    "MIN",
+    "PLUS_MINUS",
+    "PTS",
+    "FGM",
+    "FGA",
+    "FG3M",
+    "FG3A",
+    "FTM",
+    "FTA",
+    "OREB",
+    "DREB",
+    "REB",
+    "AST",
+    "STL",
+    "BLK",
+    "TOV",
+    "PF",
+)
 # The Alembic revision that created the modeling tables (features, model_versions,
 # predictions, evaluations). Revisions are zero-padded, so they compare as strings.
 MODELING_REVISION = "0002"
@@ -863,6 +886,135 @@ def check_predictions_market_status(conn: Connection, scope: Scope, cfg: CheckSe
     )
 
 
+def check_stat_corrections(conn: Connection, scope: Scope, cfg: CheckSettings) -> Outcome:
+    """Team stat lines that changed between consecutive leaguegamelog raw versions (DR-2).
+
+    The daily flow fetches the season's LeagueGameLog again every day; a changed body is a new
+    raw version (schema v1 ch. 3) and team_game_stats keeps the latest value, so a stat the NBA
+    corrected days after the game is only visible by comparing versions. Versions of one
+    request (request_hash) are ordered by fetched_at and paired with their predecessor; lines
+    present in both versions are compared on the stored columns only. --season selects the
+    request's Season parameter, --date the day (ET) the newer version was fetched. Versions
+    that do not have the LeagueGameLog shape are ignored and counted in the note; a version
+    between two readable ones is skipped over, so those two form a pair.
+    """
+    season_where, params = "", {}
+    if scope.season is not None:
+        season_where = " AND r.request_params ->> 'Season' = :scope_season"
+        params["scope_season"] = scope.season
+    fetched_scope = Scope(date_et=scope.date_et)
+    pair_where, date_params = fetched_scope.time_where("o.fetched_at")
+    unreadable_where, _ = fetched_scope.time_where("v.fetched_at")
+    # One CASE per stored column, by position in the version's header list (positions are
+    # computed once per version in `usable`); the names come from the module constant.
+    changed_columns = ", ".join(
+        f"CASE WHEN o.line -> o.pos[{i}] IS DISTINCT FROM n.line -> n.pos[{i}] THEN '{column}' END"
+        for i, column in enumerate(GAME_LOG_STAT_COLUMNS, start=1)
+    )
+    row = _rows(
+        conn,
+        f"""
+        WITH versions AS (
+            SELECT r.raw_response_id, r.request_hash, r.fetched_at,
+                   CASE WHEN jsonb_typeof(r.response_json -> 'resultSets' -> 0 -> 'headers')
+                             = 'array'
+                         AND jsonb_typeof(r.response_json -> 'resultSets' -> 0 -> 'rowSet')
+                             = 'array'
+                        THEN ARRAY(SELECT jsonb_array_elements_text(
+                                       r.response_json -> 'resultSets' -> 0 -> 'headers'))
+                   END AS headers
+            FROM raw_api_responses r
+            WHERE r.source = 'nba_api' AND r.endpoint = 'leaguegamelog'
+              AND r.http_status BETWEEN 200 AND 299 AND r.response_json IS NOT NULL
+              {season_where}
+        ),
+        usable AS (
+            SELECT v.raw_response_id, v.request_hash, v.fetched_at,
+                   array_position(v.headers, 'GAME_ID') - 1 AS game_pos,
+                   array_position(v.headers, 'TEAM_ID') - 1 AS team_pos,
+                   ARRAY(SELECT array_position(v.headers, c.name) - 1
+                         FROM unnest(CAST(:columns AS text[])) WITH ORDINALITY AS c (name, ord)
+                         ORDER BY c.ord) AS pos
+            FROM versions v
+            WHERE v.headers @> ARRAY['GAME_ID', 'TEAM_ID']
+        ),
+        ordered AS (
+            SELECT u.raw_response_id AS new_id, u.fetched_at,
+                   lag(u.raw_response_id) OVER (
+                       PARTITION BY u.request_hash ORDER BY u.fetched_at, u.raw_response_id
+                   ) AS old_id
+            FROM usable u
+        ),
+        pairs AS (
+            SELECT o.old_id, o.new_id, o.fetched_at FROM ordered o
+            WHERE o.old_id IS NOT NULL {pair_where}
+        ),
+        new_lines AS (
+            SELECT p.new_id, p.fetched_at, u.pos, line,
+                   line ->> u.game_pos AS game_id, line ->> u.team_pos AS team_id
+            FROM pairs p
+            JOIN usable u ON u.raw_response_id = p.new_id
+            JOIN raw_api_responses r ON r.raw_response_id = p.new_id
+            CROSS JOIN LATERAL jsonb_array_elements(
+                r.response_json -> 'resultSets' -> 0 -> 'rowSet') AS line
+        ),
+        old_lines AS (
+            SELECT p.new_id, u.pos, line,
+                   line ->> u.game_pos AS game_id, line ->> u.team_pos AS team_id
+            FROM pairs p
+            JOIN usable u ON u.raw_response_id = p.old_id
+            JOIN raw_api_responses r ON r.raw_response_id = p.old_id
+            CROSS JOIN LATERAL jsonb_array_elements(
+                r.response_json -> 'resultSets' -> 0 -> 'rowSet') AS line
+        ),
+        matched AS (
+            SELECT n.new_id, n.fetched_at, n.game_id, n.team_id,
+                   array_remove(ARRAY[{changed_columns}], NULL) AS changed
+            FROM new_lines n
+            JOIN old_lines o
+              ON o.new_id = n.new_id AND o.game_id = n.game_id AND o.team_id = n.team_id
+        )
+        SELECT (SELECT count(*) FROM pairs) AS pairs,
+               (SELECT count(*) FROM matched) AS checked,
+               (SELECT count(*) FROM old_lines o
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM new_lines n
+                    WHERE n.new_id = o.new_id AND n.game_id = o.game_id
+                      AND n.team_id = o.team_id
+                )) AS older_only,
+               (SELECT count(*) FROM versions v
+                WHERE v.raw_response_id NOT IN (SELECT u.raw_response_id FROM usable u)
+                  {unreadable_where}) AS unreadable,
+               (SELECT coalesce(jsonb_agg(
+                           jsonb_build_array(m.game_id, m.team_id, to_jsonb(m.changed))
+                           ORDER BY m.fetched_at, m.new_id, m.game_id, m.team_id
+                       ), '[]'::jsonb)
+                FROM matched m WHERE cardinality(m.changed) > 0) AS changes
+        """,
+        {**params, **date_params, "columns": list(GAME_LOG_STAT_COLUMNS)},
+    )[0]
+    suffixes = []
+    if row.older_only:
+        suffixes.append(f"; {row.older_only} line(s) only in the older version")
+    if row.unreadable:
+        suffixes.append(f"; {row.unreadable} unreadable version(s) ignored")
+    if row.pairs == 0:
+        return Outcome(
+            0, note="no second leaguegamelog version to compare" + "".join(suffixes), skipped=True
+        )
+    warnings = [f"{game_id}:{team_id}:{changed[0]}" for game_id, team_id, changed in row.changes]
+    by_column = Counter(column for _, _, changed in row.changes for column in changed)
+    note = (
+        f"{len(warnings)} of {row.checked} line pair(s) changed across {row.pairs} version pair(s)"
+    )
+    if by_column:
+        ranked = sorted(
+            by_column.items(), key=lambda kv: (-kv[1], GAME_LOG_STAT_COLUMNS.index(kv[0]))
+        )
+        note += "; columns: " + ", ".join(f"{column} {n}" for column, n in ranked)
+    return Outcome(row.checked, warnings=warnings, note=note + "".join(suffixes))
+
+
 CHECKS: tuple[Check, ...] = (
     Check(
         "team_rows_per_game",
@@ -984,6 +1136,13 @@ CHECKS: tuple[Check, ...] = (
         "predictions",
         "market_status is one of the 4 prediction-time values (D-054)",
         check_predictions_market_status,
+    ),
+    Check(
+        "stat_corrections",
+        "leaguegamelog raw versions",
+        "stored team stat columns that changed between consecutive game-log raw versions",
+        check_stat_corrections,
+        finding=WARN,
     ),
 )
 CHECK_NAMES = tuple(c.name for c in CHECKS)
