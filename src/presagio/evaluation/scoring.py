@@ -4,6 +4,8 @@ Runs after the walk-forward is over, so nothing here can reach a prediction: res
 closing market and CLV are joined to predictions that were already made. One
 EvaluationRecord mirrors one future `evaluations` row (P-031 defines the table, P-033 stores
 it). Market fields are None unless the market_status allows the comparison (D-026, 4-6).
+A totals-only prediction (p_home None, P-034 T-B0) gets no win metric and no h2h CLV; its
+total errors and over metrics are scored like any other.
 """
 
 from __future__ import annotations
@@ -49,9 +51,11 @@ class EvaluationRecord:
     actual_margin: int
     actual_start_utc: datetime
     rescheduled: bool
-    log_loss: float
-    brier: float
-    correct: bool
+    # Win metrics are None together for a totals-only prediction (p_home None; the
+    # evaluations CHECK win_metrics_together).
+    log_loss: float | None
+    brier: float | None
+    correct: bool | None
     abs_error_total: float | None
     sq_error_total: float | None
     over_outcome: int | None  # 1 over, 0 under, None push or no line
@@ -140,9 +144,9 @@ def score_prediction(
         actual_margin=game.home_score - game.away_score,
         actual_start_utc=game.start_time_utc,
         rescheduled=rescheduled,
-        log_loss=game_log_loss(p, y),
-        brier=game_brier(p, y),
-        correct=game_correct(p, y),
+        log_loss=None if p is None else game_log_loss(p, y),
+        brier=None if p is None else game_brier(p, y),
+        correct=None if p is None else game_correct(p, y),
         abs_error_total=None if mu is None else abs(mu - total),
         sq_error_total=None if mu is None else (mu - total) ** 2,
         over_outcome=outcome,

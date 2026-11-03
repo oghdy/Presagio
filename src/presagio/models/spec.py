@@ -14,7 +14,9 @@ from typing import Any
 # modeling-v1 8-2 families (schema v1 9-1 item 4: the list lives in Python).
 BASELINE_HOME = "baseline_home"
 BASELINE_SEASON_WR = "baseline_season_wr"
+ELO = "elo"
 MARKET = "market"
+TOTAL_LEAGUE_MEAN = "total_league_mean"
 
 
 @dataclass(frozen=True)

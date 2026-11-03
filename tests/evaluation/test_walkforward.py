@@ -61,9 +61,10 @@ DEV = ("2023-24",)
 PIVOT = date(2024, 2, 15)  # a game date in the middle of 2023-24
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 # Predictors whose output depends on the visible results (T1/T2 power check); B3 reads only
-# the market, and 2023-24 has none (D-026), so it predicts nothing there.
+# the market, and 2023-24 has none (D-026), so it predicts nothing there. B2 (Elo ratings)
+# and T-B0 (league mean total) read results too (P-034).
 PROBE = "probe"
-RESULT_USERS = (PROBE, "H-00", "B0", "B1")
+RESULT_USERS = (PROBE, "H-00", "B0", "B1", "B2", "T-B0")
 ALL_PREDICTORS = (PROBE, *sorted(EXPERIMENTS))
 
 
