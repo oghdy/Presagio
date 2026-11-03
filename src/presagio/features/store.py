@@ -4,6 +4,8 @@ INSERT ... ON CONFLICT (game_id, as_of, feature_version) DO NOTHING; never UPDAT
 already exists is compared: equal values count as already stored, different values are
 counted as differing with an example `feature_id:game_id:<first differing key>` (at most
 MAX_EXAMPLES) and are not written (T11; the feature_drift check reports the same thing).
+Existing rows are read one chunk at a time (CHUNK keys per SELECT), so a rerun over a
+whole backfill costs a handful of round trips, not one per row.
 
 Checked before anything is written (the whole batch is refused otherwise):
 - as_of < start_time_utc of every row (R4; spans two tables, so the loader guards it and
@@ -58,12 +60,37 @@ class FeatureStoreSummary:
         return self.inserted + self.already_stored + self.differing
 
 
-def _chunks(
-    rows: Sequence[dict[str, Any]], size: int = CHUNK
-) -> Iterator[Sequence[dict[str, Any]]]:
-    """Row batches small enough for one multi-row INSERT."""
+def _chunks(rows: Sequence[Any], size: int | None = None) -> Iterator[Sequence[Any]]:
+    """Row batches small enough for one multi-row INSERT or one keyed SELECT."""
+    size = CHUNK if size is None else size
     for start in range(0, len(rows), size):
         yield rows[start : start + size]
+
+
+# The stored rows of a chunk's keys in one round trip (a superset by the three key columns,
+# matched exactly in Python): one SELECT per chunk, never one per row.
+EXISTING_SQL = text(
+    """
+    SELECT feature_id, game_id, as_of, feature_version, "values"
+    FROM features
+    WHERE game_id = ANY(:game_ids) AND as_of = ANY(:as_ofs) AND feature_version = ANY(:versions)
+    """
+)
+
+
+def _existing(
+    conn: Connection, chunk: Sequence[FeatureRow]
+) -> dict[tuple[str, datetime, str], tuple[int, dict[str, Any]]]:
+    """(game_id, as_of, feature_version) -> (feature_id, values) for the stored rows of a chunk."""
+    params = {
+        "game_ids": sorted({r.game_id for r in chunk}),
+        "as_ofs": sorted({r.as_of for r in chunk}),
+        "versions": sorted({r.feature_version for r in chunk}),
+    }
+    return {
+        (r.game_id, r.as_of, r.feature_version): (r.feature_id, r.values)
+        for r in conn.execute(EXISTING_SQL, params)
+    }
 
 
 def first_difference(stored: dict[str, Any], new: dict[str, Any]) -> str | None:
@@ -135,21 +162,17 @@ def store_features(
         raise FeatureStoreError(f"database refused the features batch: {exc.orig}") from exc
     summary.inserted = len(inserted)
     pending = [row for row in rows if (row.game_id, row.as_of, row.feature_version) not in inserted]
-    for row in pending:
-        stored = conn.execute(
-            text(
-                'SELECT feature_id, "values" FROM features '
-                "WHERE game_id = :g AND as_of = :a AND feature_version = :v"
-            ),
-            {"g": row.game_id, "a": row.as_of, "v": row.feature_version},
-        ).one()
-        key = first_difference(stored.values, row.values)
-        if key is None:
-            summary.already_stored += 1
-            continue
-        summary.differing += 1
-        if len(summary.examples) < MAX_EXAMPLES:
-            summary.examples.append(f"{stored.feature_id}:{row.game_id}:{key}")
+    for chunk in _chunks(pending):
+        existing = _existing(conn, chunk)
+        for row in chunk:
+            feature_id, values = existing[(row.game_id, row.as_of, row.feature_version)]
+            key = first_difference(values, row.values)
+            if key is None:
+                summary.already_stored += 1
+                continue
+            summary.differing += 1
+            if len(summary.examples) < MAX_EXAMPLES:
+                summary.examples.append(f"{feature_id}:{row.game_id}:{key}")
     logger.info(
         "stored features %s (%s, %s): +%d =%d !%d",
         rows[0].feature_version,

@@ -4,8 +4,7 @@ features.
 Exit codes: 0 everything done, 1 some unit not done (or an error before starting), 2 stopped by
 a block (HTTP 403/429), 64 bad arguments (sysexits EX_USAGE, so it never reads as "blocked").
 `backtest run` adds 3 (a leakage guard fired) and 4 (stored rows differ from this run); see
-presagio.evaluation.cli. `features compute` uses 4 the same way and 2 for its argument errors
-(presagio.features.cli).
+presagio.evaluation.cli. `features compute` uses 4 the same way (presagio.features.cli).
 """
 
 from __future__ import annotations

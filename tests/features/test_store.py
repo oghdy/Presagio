@@ -9,10 +9,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, event, text
 
 from evaluation.league import LIVE_AVAILABLE
 from presagio.evaluation.timing import backtest_as_of
+from presagio.features import store as store_module
 from presagio.features.compute import FeatureRow, compute_day
 from presagio.features.store import FeatureStoreError, first_difference, store_features
 
@@ -179,3 +180,37 @@ def test_empty_batch_is_a_no_op(conn: Connection) -> None:
     summary = store_features(conn, [], "backtest", computed_at=NOW)
     assert (summary.inserted, summary.already_stored, summary.differing) == (0, 0, 0)
     assert count(conn) == 0
+
+
+def test_existing_rows_are_read_once_per_chunk(
+    conn: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rerun reads the stored rows one chunk at a time (review finding 1): with 6 rows
+    and a chunk of 2, the second store issues 3 SELECTs on features and 3 INSERTs, never
+    one query per row; the counts and examples are the same as before."""
+    rows: list[FeatureRow] = []
+    for day in (date(2023, 12, 13), date(2023, 12, 15), date(2023, 12, 17)):
+        rows += rows_for(conn, day)
+    monkeypatch.setattr(store_module, "CHUNK", 2)
+    statements: list[str] = []
+
+    def record(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        """Keep every SQL text sent on this connection."""
+        statements.append(statement)
+
+    event.listen(conn, "before_cursor_execute", record)
+    try:
+        first = store_features(conn, rows, "backtest", computed_at=NOW, code_version=CODE)
+        assert (first.inserted, first.already_stored, first.differing) == (6, 0, 0)
+        assert sum("INSERT INTO features" in s for s in statements) == 3
+        assert sum("FROM features" in s for s in statements) == 0  # nothing to compare
+        statements.clear()
+        changed = [rows[0], *(replace(r, values={**r.values, "home_adv": 3}) for r in rows[1:])]
+        second = store_features(conn, changed, "backtest", computed_at=NOW, code_version=CODE)
+        assert (second.inserted, second.already_stored, second.differing) == (0, 1, 5)
+        assert len(second.examples) == 5
+        assert sum("INSERT INTO features" in s for s in statements) == 3
+        assert sum("FROM features" in s for s in statements) == 3  # one per chunk of 2
+        assert all("WHERE game_id = ANY" in s for s in statements if "FROM features" in s)
+    finally:
+        event.remove(conn, "before_cursor_execute", record)

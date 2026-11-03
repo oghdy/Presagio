@@ -19,8 +19,9 @@ layer instead; this module never imports presagio.cli either (no import cycle).
 Output: `features fv1: computed N on D days; inserted a, already stored b, differing c`
 (a dry run reports key count and NULL share instead of the store counts).
 Exit codes: 0 done, 4 some stored rows differ from this run (never overwritten; the same
-code as the backtest's determinism check, D-055), 2 argument error (holdout locked, an
-impossible option combination), 1 failure (database unreachable, store refused).
+code as the backtest's determinism check, D-055), 64 argument error (the repository's usage
+code: holdout locked, an impossible option combination, argparse errors), 1 failure
+(database unreachable, store refused).
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ logger = logging.getLogger("presagio.features")
 COMMAND = "features"
 EXIT_OK = 0
 EXIT_FAILED = 1
-EXIT_ARGS = 2
+EXIT_ARGS = 64  # sysexits EX_USAGE, like every presagio subcommand (and backtest's holdout)
 EXIT_MISMATCH = 4
 ORIGIN_BACKTEST = "backtest"
 ORIGIN_LIVE = "live"

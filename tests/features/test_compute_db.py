@@ -525,8 +525,20 @@ def test_stats_fetched_at_of_visible_rows_only(conn: Connection, league: League)
         text("UPDATE team_game_stats SET fetched_at = :t WHERE game_id = :g"),
         {"t": datetime(2026, 11, 2, 3, 4, 5, tzinfo=UTC), "g": h},
     )
-    newer = compute_features(conn, g, as_of(G_DAY)).input_fingerprint["max_stats_fetched_at"]
+    newer_fp = compute_features(conn, g, as_of(G_DAY)).input_fingerprint
+    newer = newer_fp["max_stats_fetched_at"]
     assert newer == "2026-11-02T03:04:05+00:00"
+    # A finished game with one stat row left is not visible (R2): its row's fetched_at, even
+    # newer than everything else, never enters the fingerprint (review mutation M23).
+    h2 = games_on(league, G_DAY - timedelta(days=4))[0]
+    conn.execute(text("DELETE FROM team_game_stats WHERE game_id = :g AND is_home"), {"g": h2})
+    conn.execute(
+        text("UPDATE team_game_stats SET fetched_at = :t WHERE game_id = :g"),
+        {"t": datetime(2026, 12, 31, tzinfo=UTC), "g": h2},
+    )
+    one_row = compute_features(conn, g, as_of(G_DAY)).input_fingerprint
+    assert one_row["max_stats_fetched_at"] == newer
+    assert one_row["n_prior_games_away"] == newer_fp["n_prior_games_away"] - 1  # T5 again
 
 
 def test_fingerprint_shape(conn: Connection, league: League) -> None:

@@ -15,7 +15,7 @@ from datetime import date
 
 from sqlalchemy import Engine
 
-from presagio.features.recompute import recompute_stored
+from presagio.features.recompute import FeatureRecomputer
 from presagio.ingestion.runs import error_line
 from presagio.quality.checks import CHECK_NAMES, CheckSettings, run_checks
 from presagio.quality.report import EXIT_FAILED, render_json, render_text
@@ -113,7 +113,7 @@ def cmd_quality_check(args: argparse.Namespace, *, engine: Engine | None = None)
     settings = CheckSettings(
         regular_games_tolerance=args.games_tolerance,
         recent_run_days=args.recent_days,
-        feature_recompute=recompute_stored,  # check 17 feature_drift (D-056, P-035)
+        feature_recompute=FeatureRecomputer(),  # check 17 feature_drift (D-056, P-035)
     )
     try:
         if engine is None:

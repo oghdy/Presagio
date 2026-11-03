@@ -1,5 +1,5 @@
 """`presagio features compute` end to end on the temp league DB (P-035 criterion 5, 8 (k),
-(l)): --store twice, --dry-run, the holdout gate, --date --origin live, exit codes 0/2/4,
+(l)): --store twice, --dry-run, the holdout gate, --date --origin live, exit codes 0/64/4,
 and the quality checks 15 and 17 after a store."""
 
 from __future__ import annotations
@@ -116,14 +116,14 @@ def test_dry_run_writes_nothing_and_summarises_keys(
 def test_holdout_season_is_refused_without_an_unlock(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """(k) 2025-26 is refused (exit 2, 'holdout' in the message, nothing written); with a
-    valid reason it is computed."""
+    """(k) 2025-26 is refused (exit 64 like `backtest run`, 'holdout' in the message,
+    nothing written); with a valid reason it is computed."""
     code = features(engine, "--seasons", "2025-26", "--store")
     captured = capsys.readouterr()
-    assert code == 2 and "holdout" in captured.err and captured.out == ""
+    assert code == 64 and "holdout" in captured.err and captured.out == ""
     assert counts(engine)["n"] == 0
     code = features(engine, "--seasons", "2023-24,2025-26", "--dry-run")
-    assert code == 2 and "holdout" in capsys.readouterr().err
+    assert code == 64 and "holdout" in capsys.readouterr().err
     code = features(
         engine, "--seasons", "2025-26", "--dry-run", "--unlock-holdout", "H-08 final model"
     )
@@ -174,9 +174,9 @@ def test_date_with_backtest_origin_uses_the_backtest_as_of(
 def test_live_without_date_is_an_argument_error(
     engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--origin live needs --date (exit 2)."""
+    """--origin live needs --date (exit 64, the usage code)."""
     code = features(engine, "--seasons", "2023-24", "--origin", "live", "--dry-run")
-    assert code == 2 and "--date" in capsys.readouterr().err
+    assert code == 64 and "--date" in capsys.readouterr().err
 
 
 def test_a_changed_stored_value_exits_4(engine: Engine, capsys: pytest.CaptureFixture[str]) -> None:
