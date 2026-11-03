@@ -562,7 +562,7 @@
   6. **기준 작성 교훈(D-060 2항 보완):** 비율·카운트를 "현재 코드와 같음"으로 정의하기 전에 그 카운트가 실데이터에서 무엇을 세는지 확인한다(리뷰어가 VM DB 읽기로 잡음). 리뷰어에게 개발 DB 읽기 쿼리를 허용한 것이 결정적이었다.
 - **왜:** 10-24·10-31·11-01 세 번 `RESULT exit=1 FAILED`가 났지만 데이터는 전부 저장됐다 — 거짓 실패는 알림(단계 6)을 시끄럽게 하고 품질 체크 14번을 매번 warn으로 만든다. 반대로 구조적 누락(북메이커 통째)은 여전히 partial로 잡혀야 한다. 시계는 as_of 무결성에는 영향이 없었지만(`captured_at`은 호스트) run 기록의 시각 비교(`has_succeeded`, 백필 재개)가 같은 시계여야 정직하다.
 - **다른 선택지:** 건수 임계(캡처 크기에 비례하지 않음, 기각), 임계 상향(구조적 누락 감지력 약화, 기각), 새 종료 코드(래퍼·README 호환 깨짐, 기각), `quality_issues`에 kind `warning`(항목 단위라 뜻이 다름, 기각), 시작한 이벤트 거부를 그대로 분자에(Q-027 (b), 늦은 슬롯 재발, 기각).
-- **검증:** 리뷰 2회(독립, PR 본문 미열람). 실제 Postgres 임시 DB 913 passed·skipped 0(main 880 → +33), ruff, 스키마·`scripts/`·`quality/` diff 0, 1회차 재현 12개 재실행(경계 1/50 OK·1/49 partial, 시작 경기 거부만 → succeeded 경고 없음, 재적재 멱등, partial+failed 혼합 → partial, 호스트 시계 역행·7시간 지연). 2단계 실데이터 확인은 11-02 04:45 KST 첫 VM 캡처(backlog P-043 메모).
+- **검증:** 리뷰 2회(독립, PR 본문 미열람). 실제 Postgres 임시 DB 913 passed·skipped 0(main 880 → +33), ruff, 스키마·`scripts/`·`quality/` diff 0, 1회차 재현 12개 재실행(경계 1/50 OK·1/49 partial, 시작 경기 거부만 → succeeded 경고 없음, 재적재 멱등, partial+failed 혼합 → partial, 호스트 시계 역행·7시간 지연). 2단계 실데이터 확인은 11-02 04:45 KST 첫 VM 캡처(backlog P-043 메모). 11-02 첫 자연 캡처 5회 succeeded(기준 9 O). **2항 첫 실발동 11-03 11:45 KST run 227: 시작한 경기의 거부 가격 3건 → `rejected_outcomes_started=3`, `rejected_outcomes=0`, succeeded·경고 0·exit 0**(옛 정의면 partial).
 - **다시 볼 때:** 첫 자연 캡처 결과, 경고가 실제로 찍히는 빈도(시작 전 경기 거부), 단계 6 알림 설계 때 `warnings` 키 활용, 늦은 재적재 때 시작 판정 기준 시각(리뷰 2회차 참고 1).
 
 ---
