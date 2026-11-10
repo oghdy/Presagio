@@ -161,6 +161,20 @@ def test_r3_picks_last_quote_at_or_before_as_of_within_24_hours() -> None:
     assert latest_quotes(quotes, AS_OF - timedelta(minutes=2)) == {}
 
 
+def test_r3_drops_the_latest_quote_once_it_is_older_than_24_hours() -> None:
+    """latest_quotes keeps the last quote per key at or before as_of only while it is at
+    most 24 h old (P-036 finding 8, mutation C6-M10): a 25 h old h2h pair is dropped even
+    though nothing newer exists for its keys, a 23 h old totals pair of the same book stays,
+    24 h exactly stays, and the window is the max_age argument."""
+    stale = h2h("draftkings", "1.80", "2.10", AS_OF - timedelta(hours=25))
+    fresh = totals("draftkings", "220.5", "1.91", "1.91", AS_OF - timedelta(hours=23))
+    kept = latest_quotes([*stale, *fresh], AS_OF)
+    assert set(kept) == {("draftkings", "totals", "over"), ("draftkings", "totals", "under")}
+    edge = h2h("draftkings", "1.80", "2.10", AS_OF - timedelta(hours=24))
+    assert len(latest_quotes(edge, AS_OF)) == 2
+    assert len(latest_quotes(stale, AS_OF, max_age=timedelta(hours=26))) == 2
+
+
 def test_consensus_median_needs_three_books_with_both_sides_at_one_capture() -> None:
     """Three books -> median of their fair home probabilities; a book whose latest home and
     away quotes are from different captures does not count."""

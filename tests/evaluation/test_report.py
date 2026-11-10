@@ -10,7 +10,7 @@ from presagio.evaluation.dummy import ConstantPredictor
 from presagio.evaluation.report import ReportSettings, render_report
 from presagio.evaluation.scoring import score_run
 from presagio.evaluation.walkforward import WalkForwardConfig, run_walk_forward
-from presagio.models.baselines import MarketBaseline
+from presagio.models.baselines import MarketBaseline, SeasonWinRateBaseline
 from presagio.models.totals import LeagueTotalBaseline
 
 from .league import League
@@ -100,3 +100,28 @@ def test_always_home_line_per_segment_and_totals_only_market_note(
         assert "| 2026-27 | regular | 0 | - | - | - | - | - | - |" in body
         assert body.count("totals-only model (no p_home)") == 1
         assert "no market:" not in body
+
+
+def test_always_home_line_is_the_home_win_rate_for_a_model_that_does_not_always_pick_home(
+    conn: Connection, league: League
+) -> None:
+    """P-037 PR A review low 2 (mutation M15): for B1 (season win rate; it picks the away
+    side on some games, so its accuracy differs from the home win rate) the always-home line
+    is the share of home wins, not the model's accuracy."""
+    run = run_walk_forward(
+        conn, SeasonWinRateBaseline(), WalkForwardConfig(seasons=("2024-25",)), now=NOW
+    )
+    text = render_report(run, score_run(conn, run), experiment="B1", settings=FAST)
+    regular = [
+        g for g in league.games.values() if g["season"] == "2024-25" and g["game_id"][:3] == "002"
+    ]
+    rate = sum(g["home_score"] > g["away_score"] for g in regular) / len(regular)
+    (model,) = [
+        line for line in text.splitlines() if line.startswith("| 2024-25 | regular | (a) all games")
+    ]
+    accuracy = model.split("|")[5].strip()
+    assert model.split("|")[4].strip() == "170" and accuracy != f"{rate:.3f}"  # power
+    assert (
+        f"| 2024-25 | regular | always home (= home win rate) | 170 | {rate:.3f} "
+        "| - | - | - | - | - |  |"
+    ) in text

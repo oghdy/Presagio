@@ -215,6 +215,27 @@ def test_reference_delta_is_zero_and_always_home_is_the_home_win_rate(
     assert "| all | all |" not in out
 
 
+def test_always_home_is_the_home_win_rate_with_a_reference_that_does_not_always_pick_home(
+    engine: Engine, league: League, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """P-037 PR A review low 2 (mutation M9): with B1 as the reference (it picks the away
+    side on some games, so its accuracy differs from the home win rate) the always-home row
+    is still the share of home wins, not the reference's accuracy."""
+    assert (
+        compare(engine, "--experiments", "B0,B1", "--reference", "B1", "--seasons", "2024-25") == 0
+    )
+    out = capsys.readouterr().out
+    regular = [
+        g for g in league.games.values() if g["season"] == "2024-25" and g["game_id"][:3] == "002"
+    ]
+    home_rate = sum(g["home_score"] > g["away_score"] for g in regular) / len(regular)
+    b1 = cells(out, "2024-25", "regular", "B1")
+    assert b1[3] == "170" and b1[4] != f"{home_rate:.3f}"  # power: B1 is not always home
+    home = cells(out, "2024-25", "regular", "always home (= home win rate)")
+    assert home[3:5] == ["170", f"{home_rate:.3f}"]
+    assert cells(out, "2024-25", "regular", "B0")[4] == f"{home_rate:.3f}"
+
+
 def test_market_experiment_limits_the_set_to_games_with_a_market(
     engine: Engine, conn: Connection, capsys: pytest.CaptureFixture[str]
 ) -> None:

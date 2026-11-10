@@ -226,6 +226,26 @@ def test_sql_reads_games_and_the_primary_view_only_with_bound_dates() -> None:
         assert "presagio.evaluation" not in code, name
 
 
+@pytest.mark.parametrize("name", ["SCHEDULE_SQL", "RESULTS_SQL"])
+def test_r1_is_strict_in_the_schedule_and_results_sql(name: str) -> None:
+    """P-036 finding 3: R1 reads D(h) < D(g), never <=, in both statements. In RESULTS_SQL a
+    `<=` is inert today (the schedule statement leaves same-date games out of `prior` and
+    load_history drops results not in it: equivalent mutation C6-M1), so only the SQL text
+    pins it. Whitespace and line breaks do not matter."""
+    sql = getattr(compute, name).text
+    assert re.search(r"\)::date\s*<\s*:target_date\b", sql), name
+    assert not re.search(r"<=\s*:target_date\b", sql), name
+    assert sql.count(":target_date") == 1, name  # no second date condition
+
+
+def test_r2_is_inclusive_in_the_results_sql() -> None:
+    """R2 in RESULTS_SQL: start_time_utc + :lag <= :as_of (equality counts as known, T4), the
+    only condition on :as_of."""
+    sql = compute.RESULTS_SQL.text
+    assert re.search(r"\bg\.start_time_utc\s*\+\s*:lag\s*<=\s*:as_of\b", sql)
+    assert sql.count(":as_of") == 1 and sql.count(":lag") == 1
+
+
 # --- the leakage tests of design 9-3 -----------------------------------------------
 
 
