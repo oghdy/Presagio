@@ -618,6 +618,23 @@
 
 ---
 
+## D-065 단계 2 누수 감사 1차 결과와 AST 금지 범위 확정 (P-036, 감사 보고서 `P-036-audit.md` + PM 재현)
+- **날짜:** 2026-11-10 (PM 수락 13:1x, 사람 "수락해줘")
+- **무엇을:**
+  1. **판정: 단계 2 전체 "누수 없음".** 대상 main `f087c48`의 평가 틀(P-032)·기준선과 저장(P-033)·Elo와 T-B0(P-034)·피처 fv1(P-035)·저장 데이터(`predictions` 10,564·`features` 2,638·`odds_snapshots` 30,556). 감사자는 작성자·리뷰어와 다른 로컬 leakage-auditor 세션(Fable 5.1 xhigh), 코드 수정 0.
+  2. **AST 금지 범위(검사기 `tests/evaluation/test_boundaries.py`, 구현은 P-045).** **추가:** 프레임 속성 `tb_frame`·`f_back`·`f_locals`·`f_globals`·`gi_frame`·`cr_frame`·`ag_frame`(수신자 무관); `sys._current_frames`·`sys.exc_info`, `traceback.walk_stack`·`extract_stack`·`walk_tb`, `logging.currentframe`, `inspect.trace`·`getframeinfo`·`getinnerframes`; `getattr`·`__dict__`·`vars`·`sys.modules`에 금지 이름·금지 모듈 문자열 리터럴; 상수 문자열이 아닌 `__import__`/`import_module`; `import gc` 모듈 단위; 검사 대상에 `evaluation` 추가; 호출 이름 `shuffle`·`permutation`·`permuted`·`random.sample`, `from sklearn.utils import shuffle`; `.sample(`은 `replace=True`일 때만 허용. **유지:** 교차검증·분할 이름 9개, `lightgbm.cv`·`xgboost.cv`, `shuffle=True`, `sklearn.model_selection`은 `TimeSeriesSplit`만, `sys._getframe`, `inspect.currentframe/stack/getouterframes`, `gc.get_*`, `ctypes`, 리터럴 동적 import. **허용 유지:** `random_state=`, `np.random.default_rng(seed).integers`, `df.sample(frac=1, replace=True)`, `inspect.signature`, `numpy.stack`, `sys.argv`. **제외:** `__globals__`·`__closure__`·`__code__`·`pickle`·`inspect.getmembers`(실행기 지역 변수에 닿지 않음을 확인, 금지하면 오탐만 는다).
+  3. **AST 검사는 tripwire다.** 문자열을 실행 중에 조립하면 못 잡는다. 최종 방어는 합성 리그 T1·T2, 실데이터 복제본 시간 여행(감사 스크립트 `time_travel.py`를 단계 3 리뷰 절차에 재사용), 작성자 ≠ 리뷰어, frozen `PredictionContext`의 네 겹이다.
+  4. **단계 3 첫 학습 모델 PR은 P-045 머지 뒤에 받는다.** 그 PR에서 P-036 2차 감사(`StoredFeatureTrainingSource`, `predictions.feature_id`, T14 실데이터, D-065 적용 여부, 재학습 `train_cutoff`). as_of가 바뀌면(Q-025) 저장 데이터 SQL 감사를 다시 돌린다. fv2 시장 피처가 들어오면 features 쪽 R3를 다시 감사한다.
+  5. **실시간 가용 시각 실측(Q-025 재료).** 2026-27 종료 146/148경기가 다음 날 백테스트 as_of(07:00:00 UTC) **뒤**에 처음 게임로그에 나타났다(정상 실행일 +4~75초, 맥 실행이 늦은 4일 +2.3~3.9시간, 실패한 3일 +20~68시간). `team_game_stats.fetched_at`는 최초 수집이 아니라 마지막 upsert 시각이다(최초 가용은 raw 게임로그 버전으로 재구성). 배당은 R3 등호 때문에 as_of 07:00:00에서 9.7초 뒤의 그날 A0 캡처가 빠진다(07:15면 B3 `p_home` 평균 |Δ| 0.026·최대 0.077). 전부 정보가 적은 방향이라 누수가 아니다. 백테스트 정의(Δ 3h = "세상이 아는 시각")는 유지하고 **실시간 경로의 as_of**만 P-038에서 정한다.
+  6. **낮음 발견의 처리:** 테스트 공백 4건(피처 SQL 부등호 미고정, 학습 가드 3개 상호 겹침, T13 단일 테스트, R3 24h 실행기 테스트) → P-045; `load_event_matching` SQL에 as_of 없음(라벨 전용, 예측값 영향 0) → P-046; 지문 `max_stats_fetched_at`가 2,638행 전부 같은 값(2022-23 백필이 지배) → fv2에서 행별 정의로(fv1 저장 행은 바꾸지 않는다).
+  7. **기준 작성 교훈(D-064 7항 보완):** (a) grep 기반 파일 수는 실제 매치를 보고 적는다(`text(`가 `context(`에 걸려 9파일이라 적었지만 SQL은 7파일). (b) "생존 변이 = 테스트 공백"이라고 쓸 때 등가 변이(다른 층이 같은 규칙을 재적용)를 구분한다. (c) 배당에 의존하는 검사는 "배당이 있는 기준일에서만"이라고 적는다. (d) 감사·리뷰 브리핑의 실데이터 표에는 "브리핑 날짜 기준, 실행 때 달라진다"를 적는다.
+- **왜:** 누수가 있으면 모든 성능 수치가 거짓이 된다(CLAUDE.md 원칙 1). 단계 2는 학습 모델이 없어 구조가 단순한 지금 한 번 전수 감사해 두면, 단계 3에서 무엇이 새로 위험해지는지(학습 행 피처 경로, 모델 코드의 우회)를 좁혀 볼 수 있다. 금지 목록은 "현재 코드에 0건이지만 일부러 짜면 실행기 지역 변수의 미래 점수에 닿는 형태"를 감사관이 실제로 실행해 정확도 1.0을 낸 것만 추가했고, 닿지 않는 것은 오탐을 줄이려고 제외했다.
+- **다른 선택지:** 금지 목록을 넓게(`__globals__`·`pickle`까지 — 모델 저장에 필요, 오탐) / AST 검사 대신 예측기를 별도 프로세스로 격리(가장 강하지만 단계 3 실행기 재설계 — 보류, 단계 6 이후 재검토) / 감사를 단계 3 뒤로 미룸(누수가 실험 표에 섞인 뒤 발견 — 기각) / 백테스트 as_of를 실측 가용 시각에 맞춤(데이터 의존이라 재현·설명이 어렵다 — Q-025 (b)와 같은 이유로 기각 방향).
+- **검증:** 실데이터 복제본(VM 덤프 2026-11-09) 기준일 2024-02-15·2024-10-22·2026-10-23에서 fv1 820·1,320·28행과 B0·B1·B2·B3·T-B0 예측 4,100·6,600·140행이 "기준일 이후 300-0·스탯 극단값·경기 +10/−5·배당 27,506~28,680행 변경·`as_of + 1µs` 456행 주입" 뒤에도 해시 동일, 검정력 74/194·2/3·25/29행 변화. 저장 데이터 SQL 위반 전부 0(`elo_prob` = B2 `p_home` 2,638/2,638). 변이 20개 중 15개 잡힘, 생존 5개는 등가. 우회 5형태 실증(`rogue_predictor.py`). PM 재현: 저장 데이터 SQL 2개(0/10,564, 0/2,638)와 변이 C6-M4(`bisect_left → bisect_right`, 같은 테스트 3개 실패 뒤 되돌림) 일치; 복제본 DROP·VM은 SELECT만·worktree 깨끗 확인.
+- **다시 볼 때:** P-045 리뷰(생존 5변이 재실행), 단계 3 첫 학습 모델 PR(2차 감사), Q-025 결정(P-038), fv2 설계(지문·시장 피처), 단계 6(예측기 프로세스 격리·수집 지연 알림).
+
+---
+
 ## 승인 대기 중인 결정 (PM이 사람에게 올린 것)
 
 | 번호 | 내용 | 올린 날 | 상태 |
