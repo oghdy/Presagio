@@ -649,6 +649,13 @@ uv run presagio quality-check --season 2025-26 --json          # 기계가 읽�
 - `--recent-days N`: 수집 실행을 며칠치 볼지(기본 7).
 - 코드에서 부를 때는 `presagio.quality.run_checks(engine, season=..., date_et=...)`가 결과 객체(`QualityReport`)를 돌려준다. `report.exit_code`, `report.as_dict()`를 쓴다.
 
+### 10. 실험 명령 (백테스트, 읽기 전용)
+
+- `uv run presagio backtest run --experiment B2 --seasons 2023-24,2024-25` — 실험 하나를 walk-forward로 돌려 지표 표를 낸다(`--store`를 붙여야만 DB에 쓴다). B2는 상수를 바꿔 `"B2[k=25,hca=75,carry=0.9]"`로도 부를 수 있다.
+- `uv run presagio backtest compare --experiments B0,B1,B2 --reference B0 --seasons 2023-24,2024-25` — 여러 실험을 **같은 경기 집합**에서 비교하고 기준 대비 Δ와 짝 부트스트랩 90% 구간을 낸다. 쓰지 않는다.
+- `uv run presagio backtest grid --experiment B2 --param k=10,15,20,25,30 --param hca=50,75,100,125 --select-season 2023-24` — Elo 상수 격자를 선택 시즌 하나에서만 돌려 최적 칸과 다음 비교 명령을 낸다(다른 시즌 지표는 출력하지 않는다). 쓰지 않는다.
+- 보류 시즌 2025-26은 `compare`·`grid`에서 늘 막혀 있다(exit 64). 가설·판정 기준과 결과 기록은 [docs/experiments.md](docs/experiments.md).
+
 ## 기술 스택 (기본안)
 
 Python 3.12 · uv · PostgreSQL · SQLAlchemy 2 + Alembic · nba_api + httpx · scikit-learn + LightGBM · FastAPI · pytest + ruff
