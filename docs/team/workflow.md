@@ -40,7 +40,7 @@
   요청 간 딜레이 0.6초, 지수 백오프 3회, 타임아웃 10초.
   모든 응답을 raw_api_responses에 저장한다.
 
-  Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+  Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
   ```
 
 ## 4. PR (작업자)
