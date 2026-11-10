@@ -2,12 +2,15 @@
 
 Segments: season x (regular / postseason), then all requested seasons together. Every segment
 has two lines, (a) all games (model only) and (b) games with a market, the same game set for
-model and market; (b) is `available + pred_only` against the prediction-time market (B3)
-and `available` only against the closing market and CLV (B4). n is always printed and a
-market line with n < 100 is marked "reference only". Warm-up predictions (non-learning
+model and market, plus an "always home" line: the accuracy of always picking the home team on
+the (a) games, i.e. the home win rate (D-055 item 6, P-037 A4); (b) is
+`available + pred_only` against the prediction-time market (B3) and `available` only against
+the closing market and CLV (B4). n is always printed and a market line with n < 100 is
+marked "reference only". Warm-up predictions (non-learning
 baselines before 2024-01-01) are counted but not scored in the tables. A totals-only model
 (p_home None, P-034 T-B0) fills the total columns only: its win cells are "-", the market
-comparison rows have n 0 and the calibration table is replaced by a note.
+comparison rows have n 0 with the note "totals-only model (no p_home)" and the calibration
+table is replaced by a note.
 """
 
 from __future__ import annotations
@@ -43,6 +46,10 @@ SMALL_SAMPLE = 100
 ALL = "all"
 REGULAR = "regular"
 POSTSEASON = "postseason"
+# Model-metrics row of every segment: accuracy of always picking home (D-055 item 6).
+ALWAYS_HOME = "always home (= home win rate)"
+# Market-comparison note of a model without home win probabilities (D-063 "다시 볼 때" (a)).
+TOTALS_ONLY_NOTE = "totals-only model (no p_home)"
 
 
 @dataclass(frozen=True)
@@ -182,6 +189,11 @@ def model_rows(
                     note,
                 ]
             )
+        # D-055 item 6: the accuracy of always picking home (= the home win rate) of (a).
+        home_rate = sum(r.home_won for r in records) / len(records)
+        rows.append(
+            [season, phase, ALWAYS_HOME, str(len(records)), _fmt(home_rate, 3), *["-"] * 5, ""]
+        )
     return rows
 
 
@@ -199,6 +211,8 @@ def _market_row(
     pairs = [(r, ll, br) for r, ll, br in pairs if ll is not None and br is not None]
     n = len(pairs)
     if n == 0:
+        if not any(r.prediction.p_home is not None for r in segment):
+            return [season, phase, "0", *["-"] * 6, TOTALS_ONLY_NOTE]
         return [season, phase, "0", *["-"] * 6, _status_note(segment, comparable)]
     model_ll = [r.log_loss for r, _, _ in pairs]
     market_ll = [ll for _, ll, _ in pairs]

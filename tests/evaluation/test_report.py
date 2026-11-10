@@ -11,6 +11,9 @@ from presagio.evaluation.report import ReportSettings, render_report
 from presagio.evaluation.scoring import score_run
 from presagio.evaluation.walkforward import WalkForwardConfig, run_walk_forward
 from presagio.models.baselines import MarketBaseline
+from presagio.models.totals import LeagueTotalBaseline
+
+from .league import League
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
 FAST = ReportSettings(n_boot=50)
@@ -69,3 +72,31 @@ def test_unlocked_holdout_is_announced(conn: Connection) -> None:
     """An unlocked run says so in the header with the reason."""
     text = report(conn, ("2025-26",), unlock_holdout="H-08 final model")
     assert "Holdout UNLOCKED for 2025-26: H-08 final model" in text
+
+
+def test_always_home_line_per_segment_and_totals_only_market_note(
+    conn: Connection, league: League
+) -> None:
+    """P-037 A4: every segment has an "always home" line whose accuracy is the home win
+    rate of the (a) games (D-055 item 6); a totals-only model's market rows carry the note
+    "totals-only model (no p_home)" instead of a no-market reason (D-063 (a))."""
+    text = report(conn, ("2024-25",))
+    regular = [
+        g for g in league.games.values() if g["season"] == "2024-25" and g["game_id"][:3] == "002"
+    ]
+    rate = sum(g["home_score"] > g["away_score"] for g in regular) / len(regular)
+    assert (
+        f"| 2024-25 | regular | always home (= home win rate) | 170 | {rate:.3f} "
+        "| - | - | - | - | - |  |"
+    ) in text
+    assert "| 2024-25 | postseason | always home (= home win rate) | 1 | " in text
+    assert "| all | all | always home (= home win rate) | 171 | " in text
+    run = run_walk_forward(
+        conn, LeagueTotalBaseline(), WalkForwardConfig(seasons=("2026-27",)), now=NOW
+    )
+    totals = render_report(run, score_run(conn, run), experiment="T-B0", settings=FAST)
+    for section in ("## vs prediction-time market B3", "## vs closing market B4"):
+        body = totals.split(section)[1].split("##")[0]
+        assert "| 2026-27 | regular | 0 | - | - | - | - | - | - |" in body
+        assert body.count("totals-only model (no p_home)") == 1
+        assert "no market:" not in body
