@@ -4,6 +4,7 @@ criterion 6 (a)..(f)). No database: small hand-built results in a frozen context
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -145,6 +146,52 @@ def test_b_two_games_in_a_row_by_hand() -> None:
     assert round(ratings[A], 4) == round(R_HOME_AFTER + 20 * e2, 4) == 1519.6139
     # The order matters (sequential update): the two games swapped give other ratings.
     assert elo_ratings(list(reversed(games)))[A] != ratings[A]
+
+
+# --- T13: start order, not game_id order (design 9-3 T13, P-036 finding 5) -------------
+# Real data: 0022300061 is the 2023-24 opening night (10-24) while 0022300001 is played on
+# 11-03, so game_id order is not start order. The runner hands results over in start order.
+OPENER = "0022300061"
+LATER_BY_DATE = "0022300001"
+# In start order: A beats B at home (A 1507.1987, B 1492.8013), then B hosts A and wins:
+# E_h(B) = 0.620758, B <- 1492.8013 + 20 x 0.379242 = 1500.3861, A <- 1499.6139.
+# In game_id order the two games swap and the ratings mirror (A 1500.3861, B 1499.6139).
+R_A_START_ORDER = 1499.6139
+R_B_START_ORDER = 1500.3861
+
+
+def opener_then_lower_id() -> list[GameResult]:
+    """Two 2023-24 results in start order whose game_ids run the other way."""
+    first = replace(result(0, "2023-24", A, B, 100, 90), game_id=OPENER)
+    second = replace(result(10, "2023-24", B, A, 100, 90), game_id=LATER_BY_DATE)
+    assert first.start_time_utc < second.start_time_utc and first.game_id > second.game_id
+    return [first, second]
+
+
+def test_t13_ratings_follow_the_given_start_order_not_game_id_order() -> None:
+    """elo_ratings processes results in the order given (the runner's start order) and never
+    re-sorts them by game_id: the hand values of the start order, not the mirrored ones."""
+    games = opener_then_lower_id()
+    ratings = elo_ratings(games)
+    assert round(ratings[A], 4) == R_A_START_ORDER
+    assert round(ratings[B], 4) == R_B_START_ORDER
+    by_id = elo_ratings(sorted(games, key=lambda r: r.game_id))
+    assert (round(by_id[A], 4), round(by_id[B], 4)) == (R_B_START_ORDER, R_A_START_ORDER)
+
+
+def test_t13_the_prediction_uses_start_order_ratings() -> None:
+    """B2 through a frozen context whose results are in start order: A hosting C and B
+    hosting C are predicted from the start-order ratings (B ahead of A), not the game_id
+    order ones."""
+    ctx = context(opener_then_lower_id())
+    out = p_home(EloBaseline(), [target("ac", "2023-24", A, C), target("bc", "2023-24", B, C)], ctx)
+    assert out["ac"] == pytest.approx(
+        expected_home(R_A_START_ORDER, 1500.0, hca=100, is_neutral=False), abs=1e-6
+    )
+    assert out["bc"] == pytest.approx(
+        expected_home(R_B_START_ORDER, 1500.0, hca=100, is_neutral=False), abs=1e-6
+    )
+    assert out["bc"] > out["ac"]
 
 
 # --- (c) season boundary ---------------------------------------------------------------

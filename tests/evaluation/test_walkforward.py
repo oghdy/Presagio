@@ -18,9 +18,14 @@ from presagio.evaluation.data import load_games, load_prediction_quotes
 from presagio.evaluation.dummy import ConstantPredictor, HomeRateLearner
 from presagio.evaluation.experiments import EXPERIMENTS
 from presagio.evaluation.holdout import HoldoutLockedError
-from presagio.evaluation.market import prediction_market
+from presagio.evaluation.market import AVAILABLE, NO_SNAPSHOT_AT_AS_OF, prediction_market
 from presagio.evaluation.scoring import score_run
-from presagio.evaluation.timing import backtest_as_of, et_date
+from presagio.evaluation.timing import (
+    DEFAULT_AVAILABILITY_LAG,
+    available_at,
+    backtest_as_of,
+    et_date,
+)
 from presagio.evaluation.walkforward import (
     SKIP_AFTER_NOW,
     SKIP_MIN_TRAINING,
@@ -466,6 +471,79 @@ def test_r3_sql_boundary_includes_as_of_and_excludes_later(
     assert market.home.captured_at == as_of
 
 
+def snapshot_before_as_of(conn: Connection, league: League, age: timedelta) -> datetime:
+    """A matched event for the 10-23 game with one draftkings h2h pair captured `age`
+    before that game's as_of (its only quote); returns the as_of."""
+    game = league.games[LIVE_NOT_FINAL]
+    as_of = backtest_as_of(et_date(game["start_time_utc"]))
+    raw = conn.execute(text("SELECT min(raw_response_id) FROM raw_api_responses")).scalar_one()
+    event = conn.execute(
+        text(
+            """
+            INSERT INTO odds_events (source, source_event_id, home_team_name, away_team_name,
+                commence_time, game_id, match_method, matched_at, fetched_at, raw_response_id)
+            VALUES ('the_odds_api', 'evt-r3-age', 'H', 'A', :start, :gid, 'alias+time', :at,
+                :at, :raw)
+            RETURNING odds_event_id
+            """
+        ),
+        {"start": game["start_time_utc"], "gid": LIVE_NOT_FINAL, "at": as_of - age, "raw": raw},
+    ).scalar_one()
+    for side, price in (("home", "1.80"), ("away", "2.10")):
+        insert_snapshot(
+            conn, event, game["start_time_utc"], as_of - age, "draftkings", "h2h", side, price, raw
+        )
+    return as_of
+
+
+def b3_outcome(result: WalkForwardResult, game_id: str) -> tuple[str, datetime | None]:
+    """(market_status, market captured_at) of one game in a B3 run, predicted or not."""
+    for p in result.predictions:
+        if p.game.game_id == game_id:
+            assert p.market.home is not None
+            return p.market_status, p.market.home.captured_at
+    (miss,) = [n for n in result.not_predicted if n.game.game_id == game_id]
+    return miss.market_status, None
+
+
+@pytest.mark.parametrize("hours", [25, 24, 23])
+def test_r3_24_hour_limit_at_runner_level(conn: Connection, league: League, hours: int) -> None:
+    """P-036 finding 8: a game whose only snapshot is 25 h before its as_of has no market at
+    as_of, so B3 does not predict it and its reason is no_snapshot_at_as_of; 24 h (equality)
+    and 23 h are a market. Through the real loader both R3 layers apply (the SQL lower bound
+    and the Python 24 h filter), so this falls only when both are removed (C6-M10 + C6-M13)."""
+    age = timedelta(hours=hours)
+    as_of = snapshot_before_as_of(conn, league, age)
+    outcome = b3_outcome(run(conn, "B3", seasons=("2026-27",)), LIVE_NOT_FINAL)
+    if hours > 24:
+        assert outcome == (NO_SNAPSHOT_AT_AS_OF, None)
+    else:
+        assert outcome == (AVAILABLE, as_of - age)
+
+
+def test_r3_24_hour_limit_holds_in_python_when_the_sql_window_is_wide(
+    conn: Connection, league: League, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The runner's Python R3 layer alone keeps the 25 h snapshot out (mutation C6-M10):
+    with the loader asked for a 30-day window the stale quote does reach prediction_market,
+    and B3 still does not predict the game (no_snapshot_at_as_of). The SQL lower bound is the
+    second layer (equivalent mutation C6-M13)."""
+    wide = timedelta(days=30)
+
+    def wide_loader(
+        conn: Connection, game_ids: Sequence[str], as_of: datetime, max_age: timedelta
+    ) -> dict:
+        """load_prediction_quotes with the SQL window widened to 30 days."""
+        return load_prediction_quotes(conn, game_ids, as_of, wide)
+
+    as_of = snapshot_before_as_of(conn, league, timedelta(hours=25))
+    stale = load_prediction_quotes(conn, [LIVE_NOT_FINAL], as_of, wide)[LIVE_NOT_FINAL]
+    assert [q.captured_at for q in stale] == [as_of - timedelta(hours=25)] * 2
+    monkeypatch.setattr(walkforward, "load_prediction_quotes", wide_loader)
+    outcome = b3_outcome(run(conn, "B3", seasons=("2026-27",)), LIVE_NOT_FINAL)
+    assert outcome == (NO_SNAPSHOT_AT_AS_OF, None)
+
+
 @pytest.mark.parametrize("name", ALL_PREDICTORS)
 def test_t12_same_run_twice_gives_identical_predictions(conn: Connection, name: str) -> None:
     """T12 in memory (the store checks it against the database): two runs, identical values."""
@@ -530,15 +608,21 @@ class BadSource:
 
     def __init__(self, conn: Connection, mode: str) -> None:
         """mode: 'refit_as_of' (features at the refit date), 'future' (D(h) moved to the
-        cutoff date) or 'same_day' (a game of the cutoff date whose only broken rule is
+        cutoff date), 'same_day' (a game of the cutoff date whose only broken rule is
         D(h) < fit_cutoff: features as of its own date, before its tip-off, and a reported
-        available_at at the refit as_of)."""
+        available_at at the refit as_of) or 'fit_as_of_lie' (honest rows, but the matrix
+        claims a refit as_of one day after backtest_as_of(fit_cutoff): the per-row
+        available_at rule would then be checked against the claim, so only the fit_as_of
+        cross-check refuses it, P-036 finding 4 / mutation C4-T2)."""
         self.inner = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
         self.mode = mode
 
     def training_matrix(self, feature_version: str, fit_cutoff: date) -> TrainingMatrix:
-        """The honest matrix with one row corrupted."""
+        """The honest matrix with one row corrupted (or its fit_as_of)."""
         good = self.inner.training_matrix(feature_version, fit_cutoff)
+        if self.mode == "fit_as_of_lie":
+            claimed = good.fit_as_of + timedelta(days=1)
+            return TrainingMatrix(good.feature_version, good.fit_cutoff, claimed, good.rows)
         row = good.rows[-1]
         if self.mode == "refit_as_of":
             bad = TrainingRow(**{**row.__dict__, "feature_as_of": good.fit_as_of})
@@ -559,12 +643,15 @@ class BadSource:
         )
 
 
-@pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
+BAD_MODES = ["refit_as_of", "future", "same_day", "fit_as_of_lie"]
+
+
+@pytest.mark.parametrize("mode", BAD_MODES)
 def test_training_guard_rules_hold_without_the_cross_check(conn: Connection, mode: str) -> None:
     """Each 6-2 rule pinned on its own (P-033 review: the games cross-check must not be the
     only thing catching these): called without `games`, the guard still refuses features at
-    the refit date, D(h) moved to the cutoff date, and the same-day row whose only broken
-    rule is the strict R1 `D(h) < fit_cutoff`."""
+    the refit date, D(h) moved to the cutoff date, the same-day row whose only broken
+    rule is the strict R1 `D(h) < fit_cutoff`, and a matrix that lies about its fit_as_of."""
     cutoff = date(2024, 11, 20)
     matrix = BadSource(conn, mode).training_matrix("dummy-fv0", cutoff)
     with pytest.raises(LeakageGuardError):
@@ -573,9 +660,10 @@ def test_training_guard_rules_hold_without_the_cross_check(conn: Connection, mod
     _check_training(honest.training_matrix("dummy-fv0", cutoff), cutoff, backtest_as_of(cutoff))
 
 
-@pytest.mark.parametrize("mode", ["refit_as_of", "future", "same_day"])
+@pytest.mark.parametrize("mode", BAD_MODES)
 def test_runner_guard_rejects_training_rows_that_break_6_2(conn: Connection, mode: str) -> None:
-    """Features recomputed at the refit date, or a game not before the cutoff -> error."""
+    """Features recomputed at the refit date, a game not before the cutoff, or a matrix
+    claiming another refit as_of -> error."""
     with pytest.raises(LeakageGuardError):
         run_walk_forward(
             conn,
@@ -584,6 +672,79 @@ def test_runner_guard_rejects_training_rows_that_break_6_2(conn: Connection, mod
             training_source=BadSource(conn, mode),
             now=NOW,
         )
+
+
+# The T4 late game (2024-01-10 23:00 ET = 04:00 UTC 01-11) is available exactly at the
+# 2024-01-11 as_of (07:00 UTC) with the 3 h lag; one minute more and it is not.
+LATE_CUTOFF = date(2024, 1, 11)
+ONE_MINUTE_LATE = DEFAULT_AVAILABILITY_LAG + timedelta(minutes=1)
+
+
+def late_matrix(conn: Connection, lag: timedelta = ONE_MINUTE_LATE) -> TrainingMatrix:
+    """The honest LATE_CUTOFF matrix at `lag` plus the T4 late game reported truthfully:
+    D(h) = 01-10 < fit_cutoff, features as of its own date before its tip-off, and the
+    games-table available_at (04:00 UTC + lag = 07:01 UTC) one minute after the refit as_of."""
+    games = load_games(conn)
+    source = ScheduleOnlyTrainingSource(games, lag=lag, train_start_season="2023-24")
+    good = source.training_matrix("dummy-fv0", LATE_CUTOFF)
+    assert T4_LATE_GAME not in {r.game_id for r in good.rows}
+    g = next(g for g in games if g.game_id == T4_LATE_GAME)
+    late = TrainingRow(
+        game_id=g.game_id,
+        season=g.season,
+        et_date=g.et_date,
+        start_time_utc=g.start_time_utc,
+        feature_as_of=backtest_as_of(g.et_date),
+        available_at=available_at(g.start_time_utc, lag),
+        features={"home_adv": 1.0},
+        home_won=g.home_score > g.away_score,
+        total=g.home_score + g.away_score,
+    )
+    return TrainingMatrix(good.feature_version, good.fit_cutoff, good.fit_as_of, (*good.rows, late))
+
+
+@pytest.mark.parametrize("with_games", [False, True])
+def test_training_guard_refuses_a_row_not_yet_available_at_the_refit(
+    conn: Connection, with_games: bool
+) -> None:
+    """P-036 finding 4 (mutation C4-T5 + C4-T6 together): a training game before the cutoff
+    whose result is known only after the refit as_of is refused, with and without the games
+    cross-check (the row is truthful, so the cross-check passes it). On a refit day the
+    per-row `available_at <= fit_as_of` and `max_available_at <= as_of` are the same rule
+    (fit_as_of = as_of), so one of the two is enough here; the next two tests pin each."""
+    matrix = late_matrix(conn)
+    as_of = backtest_as_of(LATE_CUTOFF)
+    assert matrix.fit_as_of == as_of < matrix.max_available_at
+    games = {g.game_id: g for g in load_games(conn)} if with_games else None
+    with pytest.raises(LeakageGuardError):
+        _check_training(matrix, LATE_CUTOFF, as_of, games=games, lag=ONE_MINUTE_LATE)
+    honest = TrainingMatrix(matrix.feature_version, LATE_CUTOFF, as_of, matrix.rows[:-1])
+    _check_training(honest, LATE_CUTOFF, as_of, games=games, lag=ONE_MINUTE_LATE)
+
+
+def test_per_row_available_at_is_checked_against_the_matrix_fit_as_of(conn: Connection) -> None:
+    """Mutation C4-T5 alone: with a prediction as_of one day after the refit, the late row
+    is before as_of (the max_available_at rule passes), but it was not known at the refit
+    as_of the matrix was built for, which the per-row rule refuses."""
+    matrix = late_matrix(conn)
+    later = backtest_as_of(LATE_CUTOFF + timedelta(days=1))
+    assert matrix.fit_as_of < matrix.max_available_at <= later
+    with pytest.raises(LeakageGuardError, match="not available at the refit"):
+        _check_training(matrix, LATE_CUTOFF, later)
+
+
+def test_training_set_may_not_reach_past_the_prediction_as_of(conn: Connection) -> None:
+    """Mutation C4-T6 alone: the honest 01-11 matrix (every row known at its own refit
+    as_of) used for a prediction as_of one day earlier holds the 01-10 games, known only
+    after that as_of; the max_available_at rule refuses it."""
+    cutoff = LATE_CUTOFF
+    source = ScheduleOnlyTrainingSource(load_games(conn), train_start_season="2023-24")
+    matrix = source.training_matrix("dummy-fv0", cutoff)
+    earlier = backtest_as_of(cutoff - timedelta(days=1))
+    assert matrix.max_available_at is not None
+    assert earlier < matrix.max_available_at <= matrix.fit_as_of
+    with pytest.raises(LeakageGuardError, match="reaches past the prediction as_of"):
+        _check_training(matrix, cutoff, earlier)
 
 
 class BadPredictor(ConstantPredictor):
