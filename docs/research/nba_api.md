@@ -142,6 +142,7 @@
 | --- | --- | --- |
 | `scheduleleaguev2__2023-24/2024-25/2025-26.json` | 각 4.4MB, 약 1,400경기 | 날짜 순서로 프리시즌·정규·NBA컵 결승·플레이인·플레이오프 경기를 **유형마다 첫 1경기**만 남김(5경기). 경기 객체 안(방송사, 득점 1위 등)은 그대로. `weeks`는 앞 2개만 |
 | `scheduleleaguev2__2026-27.json` | 4.0MB, 1,274경기 | 종료된 정규 2경기, 예정 1경기, 팀 미정(TBD) 1경기, NBA컵 결승 1경기. `weeks` 앞 2개 |
+| `scheduleleaguev2__2023-24_neutral.json`, `scheduleleaguev2__2022-23_neutral.json` | 각 21~22KB(자른 뒤) | 중립 경기장 보완 규칙(D-046·D-053) 테스트용으로 나중에 추가했다(P-025 PR #21, P-026 PR #34). 2023-24는 4개 날짜 5경기(`0022300172`·`0022300527`·`0022300965`·`0022301229`·`0022301230`), 2022-23은 5개 날짜 5경기(`0022200001`·`0022200439`·`0022200635`·`0022200678`·`0022201199`) — 보완 목록(D-046·D-053의 game_id 고정 목록)에 있는 경기와 목록 밖 경기가 함께 들어 있다 |
 | `leaguegamelog__<시즌>_<유형>.json` (8개) | 정규 390KB 등 | `rowSet`에서 **처음 나온 `GAME_ID` 2개의 행만**(경기당 홈·원정 2행 → 4행). `headers`, `parameters`는 그대로 |
 | `leaguegamefinder__2025-26_Playoffs.json` | 34KB | 같은 방법, 2경기 4행 |
 | `boxscoretraditionalv3__*.json`(3), `boxscoresummaryv3__0022300061.json`, `scoreboardv3__*.json`(2), `commonteamyears__00.json`, `live_scoreboard__todaysScoreboard_00.json` | 2~45KB | 자르지 않음(원본 그대로) |
